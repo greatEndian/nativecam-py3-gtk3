@@ -687,7 +687,7 @@ class Tools(object):
 class VKB(object):
 
     def __init__(self, toplevel, tooltip, min_value, max_value, data_type, convertible) :
-        self.dlg = gtk.Dialog()
+        self.dlg = gtk.Dialog(parent=toplevel, flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
         self.dlg.set_decorated(False)
         self.dlg.set_border_width(3)
         self.dlg.set_property("skip-taskbar-hint", True)
@@ -1158,7 +1158,7 @@ class CellRendererMx(gtk.CellRendererText):
             return vkb.run(self.not_allowed)
 
     def edit_list(self, time_out = 0.05):
-        self.list_window = gtk.Dialog()
+        self.list_window = gtk.Dialog(parent=self.tv.get_toplevel(), flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
         self.list_window.set_border_width(0)
         self.list_window.set_decorated(False)
         self.list_window.set_property("skip-taskbar-hint", True)
@@ -1214,16 +1214,22 @@ class CellRendererMx(gtk.CellRendererText):
 
         response = self.list_window.run()
 
-        model, ls_itr = ls_view.get_selection().get_selected()
-        new_val = model.get_value(ls_itr, 1)
-        
+        if response == gtk.ResponseType.OK:
+            model, ls_itr = ls_view.get_selection().get_selected()
+            if ls_itr is not None:
+                new_val = model.get_value(ls_itr, 1)
+            else:
+                new_val = self.param_value
+        else:
+            new_val = self.param_value
+
         self.lst_is_closing = True
-        self.list_window.destroy() 
-        
+        self.list_window.destroy()
+
         return response, new_val
 
     def edit_string(self, time_out = 0.05):
-        self.stringedit_window = gtk.Dialog()
+        self.stringedit_window = gtk.Dialog(parent=self.tv.get_toplevel(), flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
         self.stringedit_window.hide()
         self.stringedit_window.set_decorated(False)
         self.stringedit_window.set_border_width(0)
@@ -1250,10 +1256,13 @@ class CellRendererMx(gtk.CellRendererText):
             self.stringedit_entry.set_text(self.param_value)
         self.inputKey = ''
         response = self.stringedit_window.run()
-        new_val = self.stringedit_entry.get_text()
-        
+        if response == gtk.ResponseType.OK:
+            new_val = self.stringedit_entry.get_text()
+        else:
+            new_val = self.param_value
+
         self.str_is_closing = True
-        self.stringedit_window.destroy()  
+        self.stringedit_window.destroy()
         return response, new_val
 
     def list_keypress(self, widget, event) :
@@ -1338,6 +1347,8 @@ class CellRendererMx(gtk.CellRendererText):
                     filt.add_pattern(option)
 
                 filechooserdialog.add_filter(filt)
+                filechooserdialog.set_transient_for(treeview.get_toplevel())
+                filechooserdialog.set_destroy_with_parent(True)
                 filechooserdialog.set_keep_above(True)
 
                 filt = gtk.FileFilter()
@@ -1362,7 +1373,7 @@ class CellRendererMx(gtk.CellRendererText):
             self.selection = treeview.get_selection()
             self.treestore, self.treeiter = self.selection.get_selected()
 
-            self.textedit_window = gtk.Dialog()
+            self.textedit_window = gtk.Dialog(parent=treeview.get_toplevel(), flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
             self.textedit_window.set_decorated(False)
             self.textedit_window.set_property("skip-taskbar-hint", True)
 
@@ -4296,6 +4307,7 @@ class NCam(gtk.VBox):
             filechooserdialog.set_current_folder(NGC_DIR)
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
+            filechooserdialog.set_destroy_with_parent(True)
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 filename = filechooserdialog.get_filename()
@@ -5143,6 +5155,7 @@ class NCam(gtk.VBox):
             filechooserdialog.set_current_folder(os.path.join(NCAM_DIR, CATALOGS_DIR, self.catalog_dir, PROJECTS_DIR))
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
+            filechooserdialog.set_destroy_with_parent(True)
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 fname = filechooserdialog.get_filename()
@@ -5247,11 +5260,12 @@ class NCam(gtk.VBox):
             filechooserdialog.set_do_overwrite_confirmation(True)
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
+            filechooserdialog.set_destroy_with_parent(True)
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 xml = self.treestore_to_xml()
                 CURRENT_PROJECT = filechooserdialog.get_filename()
-                if CURRENT_PROJECT[-4] != ".xml" not in CURRENT_PROJECT :
+                if not CURRENT_PROJECT.lower().endswith(".xml") :
                     CURRENT_PROJECT += ".xml"
                 etree.ElementTree(xml).write(CURRENT_PROJECT, pretty_print = True)
                 self.file_changed = False
@@ -5291,6 +5305,7 @@ class NCam(gtk.VBox):
             filechooserdialog.set_current_folder(dir_)
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
+            filechooserdialog.set_destroy_with_parent(True)
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 filename = filechooserdialog.get_filename()
@@ -5324,6 +5339,7 @@ class NCam(gtk.VBox):
             filechooserdialog.set_current_folder(os.path.join(NCAM_DIR, CUSTOM_DIR))
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
+            filechooserdialog.set_destroy_with_parent(True)
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 self.add_feature(None, filechooserdialog.get_filename())
