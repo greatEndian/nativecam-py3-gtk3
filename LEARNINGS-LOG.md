@@ -9,7 +9,11 @@
 
 ## G-Code Syntax Audit (Increment 3)
 - **CRLF Issues**: Discovered that almost all files in the `lathe` port had Windows line endings (`\r\n`). This caused "occasional syntax errors" in LinuxCNC as the `\r` character was interpreted as part of the G-code words or block delimiters. Batch converted all `.cfg` and `.ngc` files to LF.
-- **Python Crash**: Fixed a broken filename check in `ncam.py`'s `action_save_ngc` that used invalid logic (`if filename[-4] != ".ngc" not in filename :`), which would crash in Python 3.
 - **Indentation Audit**: Fixed inconsistent indentation in `facing.ngc` to ensure block delete characters (`/`) are handled correctly by all parsers.
 - **Variable Consistency**: Confirmed that named parameters in LinuxCNC are case-insensitive (`#<_X_rapid>` == `#<_x_rapid>`), but standardized on consistent casing where possible.
+
+## GTK3 Dialog Hardening (Increment 2)
+- **Phantom Popups & Segfaults**: GTK3 dialogs instantiated with `gtk.Dialog()` and no parent can become "phantom popups" when the main application (e.g., LinuxCNC) exits. Adding `parent=toplevel` and `flags=gtk.DialogFlags.DESTROY_WITH_PARENT` ensures proper cleanup.
+- **Safe `dialog.run()` Access**: When a dialog is destroyed by its parent during a `run()` loop, it returns `gtk.ResponseType.NONE`. Safely check `if response == gtk.ResponseType.OK:` before accessing child widgets (like `entry.get_text()` or `treeview.get_selection()`) to prevent `TypeError` or segmentation faults caused by accessing partially destroyed widgets.
+- **Python 3 Substring Logic**: Replaced buggy string validation (`if filename[-4] != ".ngc" not in filename`) with explicit `filename.lower().endswith(".ngc")`.
 

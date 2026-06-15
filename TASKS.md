@@ -7,10 +7,10 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 - [ ] **Lathe Contour Cycles**: Verify and fix G71/G72 integration for complex paths.
 - [x] **Missing CFG Files**: Added polyline-arc-to, polyline-arc-ij, polyline-polar. Improved roughing in poly_lathe_mill.ngc.
 
-## 2. UI & Stability (Priority: High)
-- [ ] **GTK3 Dialog Hardening**: Investigate and fix potential segmentation faults in the calculator and parameter editor dialogs.
+## 2. GTK3 Stability & Hardening (Priority: High)
+- [x] **GTK3 Dialog Hardening**: Fixed phantom popups and segmentation faults in calculator (VKB) and parameter editor dialogs by setting transient parents, `DESTROY_WITH_PARENT` flags, and adding safe-access guards around `dialog.run()` results.
 - [ ] **UI Scaling**: Further refine `set_position` and Paned window logic to ensure visibility on low-res screens.
-- [ ] **Phantom Popups**: Ensure 100% of popups (combos, VKB) are destroyed on LinuxCNC exit.
+- [x] **Phantom Popups**: Ensure 100% of popups (combos, VKB) are destroyed on LinuxCNC exit.
 
 ## 3. G-Code Generation & Compatibility (Priority: Medium)
 - [ ] **LinuxCNC 2.10+ Compatibility**: Test in a 2.10 environment to diagnose "disappearing window" issues.
