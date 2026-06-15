@@ -511,7 +511,7 @@ if platform.system() != 'Windows' :
     try :
         import linuxcnc
     except ImportError as detail :
-        err_exit(detail)
+        err_exit(_('NativeCAM failed to import the linuxcnc module. Is LinuxCNC installed or are you running this script inside a LinuxCNC environment?\n\nDetails: %s') % detail)
 
 # One hidden Tk for Tcl "send" to Axis. A fresh Tk() on every auto-refresh makes Tk set
 # XSetErrorHandler while GDK may have an error trap pushed → Gdk-WARNING (GladeVCP + GTK3).
@@ -577,9 +577,14 @@ def require_ncam_lib(fname, ini_instance):
             else :
                 thedir = os.path.join(os.path.realpath(os.path.dirname(fname)), d)
             if os.path.isdir(thedir) :
-                print("   %s" % (os.path.realpath(thedir)))
+                real_dir = os.path.realpath(thedir)
+                print("   %s" % real_dir)
                 if not found_lib_dir :
-                    found_lib_dir = thedir.find(require_lib) == 0
+                    # Use os.path.samefile or string startswith on real paths
+                    if os.path.exists(require_lib):
+                        found_lib_dir = os.path.samefile(real_dir, require_lib) or real_dir.startswith(require_lib)
+                    else:
+                        found_lib_dir = real_dir.startswith(require_lib)
 
         print("")
 
