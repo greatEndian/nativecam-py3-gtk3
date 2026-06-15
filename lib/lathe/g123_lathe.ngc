@@ -1,0 +1,37 @@
+(Lathe G123: Trace a segment in XZ plane)
+(CALL to_z[1], to_x_radius[2], dir[3], i_z_offset[4], j_x_offset[5], ...)
+(Author: Fernand Veilleux / Adapted for Lathe)
+o<g123_lathe> sub
+        #<to_z>  = #1
+        #<to_x>  = #2
+        #<dir>   = #3
+        #<k_off> = #4
+        #<i_off> = #5
+        #<len>   = #6
+        #<feed>  = #7
+        #<speed> = #8
+        #<debug> = #9
+
+        o<cut_if_0> if [#<dir> EQ 0]
+                (Rapid move if dir is 0 - though usually handled by lead_in)
+                G0 X[#<to_x> * #<_diameter_mode>] Z#<to_z>
+
+        o<cut_if_0> else
+                (Roughing/Plunge logic from mill, adapted for X-offset if needed)
+                (In this simple version, we just output the move)
+                
+                o<if002> if [#<feed> GT 0]
+                        F[#<_feed_normal> * [#<feed> MOD 1]]
+                o<if002> endif
+
+                o<cut_10> if [#<dir> EQ 1]
+                        G#<dir> X[#<to_x> * #<_diameter_mode>] Z#<to_z>
+                o<cut_10> else
+                        G#<dir> X[#<to_x> * #<_diameter_mode>] Z#<to_z> I#<i_off> K#<k_off>
+                o<cut_10> endif
+        o<cut_if_0> endif
+        
+        #<_cut_current_x> = #<to_z>
+        #<_cut_current_y> = #<to_x>
+
+o<g123_lathe> endsub

@@ -1,0 +1,22 @@
+# Open Points & Development Tasks
+
+This file tracks unresolved issues and planned improvements for the NativeCAM Python 3 / GTK3 port.
+
+## 1. Lathe Feature Parity (Priority: High)
+- [x] **Lathe Polyline Support**: Adapt the `mill` polyline logic for `lathe` coordinates (X/Z).
+- [ ] **Lathe Contour Cycles**: Verify and fix G71/G72 integration for complex paths.
+- [x] **Missing CFG Files**: Added polyline-arc-to, polyline-arc-ij, polyline-polar. Improved roughing in poly_lathe_mill.ngc.
+
+## 2. UI & Stability (Priority: High)
+- [ ] **GTK3 Dialog Hardening**: Investigate and fix potential segmentation faults in the calculator and parameter editor dialogs.
+- [ ] **UI Scaling**: Further refine `set_position` and Paned window logic to ensure visibility on low-res screens.
+- [ ] **Phantom Popups**: Ensure 100% of popups (combos, VKB) are destroyed on LinuxCNC exit.
+
+## 3. G-Code Generation & Compatibility (Priority: Medium)
+- [ ] **LinuxCNC 2.10+ Compatibility**: Test in a 2.10 environment to diagnose "disappearing window" issues.
+- [ ] **Subroutine Validation**: Improve error reporting when `SUBROUTINE_PATH` is misconfigured.
+- [x] **EOF / O-Word Errors**: Fixed CRLF issues in all lathe cfg/ngc files. Corrected crash in ncam.py action_save_ngc. Optimized Facing and Tool Change.
+
+## 4. Technical Debt (Priority: Low)
+- [ ] **GTK Action/UIManager Migration**: Plan a transition from deprecated `Gtk.Action` to modern `GAction` and `GMenu`.
+- [ ] **Dependency Management**: Update `debian/control` and add a `requirements.txt` for non-debian users.

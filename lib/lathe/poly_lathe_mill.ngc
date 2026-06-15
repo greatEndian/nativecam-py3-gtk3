@@ -1,0 +1,78 @@
+(Lathe Polyline Milling)
+(CALL data ptr[1], start_radius[2], final_radius[3], compensation[4], show final cut[5], dz[6], dx[7], rot[8], tool eng pct[9], cz[10], cx[11])
+(Author: Fernand Veilleux / Adapted for Lathe)
+o<poly_lathe_mill> sub
+        #<pds>          = #1
+        #<start_radius>  = #2
+        #<final_radius>  = #3
+        #<comp>         = #4
+        #<show_final>   = #5
+        #<dz>           = #6
+        #<dx>           = #7
+        #<rot>          = #8
+        #<tool_eng>     = #9
+        #<cz>           = #10
+        #<cx>           = #11
+
+        (Lathe always G18)
+        G18
+
+        (get and save current coords system offsets)
+        #<old_coord_system> = [#<_coord_system> / 10]
+        o<get_offsets> CALL
+        #<offset_x> = #<_offsets_x>
+        #<offset_z> = #<_offsets_z>
+        #<offset_r> = #<_offsets_r>
+
+        (change coords system)
+        G#<_off_rot_coord_system>
+
+        (rotate and apply offsets: Z is mill-X, X is mill-Y)
+        o<rotate_xy> CALL [#<_offsets_z>] [#<_offsets_x>] [#<_offsets_z> + #<cz>] [#<_offsets_x> + #<cx>] [#<_offsets_r> + #<rot>]
+        
+        o1001 if [#<final_radius> EQ #<start_radius>]
+                #<cut_step> = 0
+                #<rough_passes> = 1
+        o1001 else
+                #<rough_passes> = FUP[ABS[#<final_radius> - #<start_radius>] / #<_rough_cut>]
+                #<cut_step> = [[#<final_radius> - #<start_radius>] / #<rough_passes>]
+        o1001 endif
+
+        o<set_feed_rate_and_speed> CALL [#<tool_eng>]
+
+        (Initial setup for tracing)
+        #<_cut_loop_final_z> = 0
+        #<_ramp_down_ratio> = 0
+        
+        #<current_radius> = #<start_radius>
+        o<wh_00> while [1]
+                #<x_shift> = [[#<current_radius> - #<final_radius>] * #<_diameter_mode>]
+                
+                (Apply shifted coordinate system)
+                G10 L2 P#5220 X[#<_rotated_y> + #<dx> + #<x_shift>] Z[#<_rotated_x> + #<dz>] R[#<_offsets_r> + #<rot>]
+                
+                (Note: we need to handle lead-in properly if we want to use compensation)
+                (For now, we just trace)
+                o<trace_lathe> CALL [#<pds>] [0] [1]
+                
+                o<if_next> if [#<current_radius> EQ #<final_radius>]
+                        o<wh_00> break
+                o<if_next> endif
+                
+                #<current_radius> = [#<current_radius> + #<cut_step>]
+                (check if we passed final_radius)
+                o<if_done> if [[#<start_radius> GT #<final_radius>] AND [#<current_radius> LT #<final_radius>]]
+                        #<current_radius> = #<final_radius>
+                o<if_done> elseif [[#<start_radius> LT #<final_radius>] AND [#<current_radius> GT #<final_radius>]]
+                        #<current_radius> = #<final_radius>
+                o<if_done> endif
+        o<wh_00> endwhile
+
+        G0 X[#<_wp_dia_od> + #<_X_rapid>]
+        G40
+
+        (restore coordinate system)
+        G#<old_coord_system>
+        G10 L2 P#5220 X#<offset_x> Z#<offset_z> R#<offset_r>
+
+o<poly_lathe_mill> endsub

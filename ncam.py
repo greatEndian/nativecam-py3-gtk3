@@ -4298,9 +4298,8 @@ class NCam(gtk.VBox):
             filechooserdialog.set_transient_for(self.get_toplevel())
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
-                gcode = self.to_gcode()
                 filename = filechooserdialog.get_filename()
-                if filename[-4] != ".ngc" not in filename :
+                if not filename.lower().endswith(".ngc") :
                     filename += ".ngc"
                 with open(filename, "w") as f:
                     f.write(self.to_gcode())
