@@ -1,0 +1,11 @@
+(Lathe Lead In)
+o<lead_in> sub
+(CALL with data ptr[1] dir[2] comp_or_opt[3] cut_start[4] depth_reached[5] final_cut[6] cut_depth[7])
+    (For now, just move to start position and set compensation)
+    #<ptr> = [#1 + 1]
+    #<start_z> = [#[#<ptr>]]
+    #<start_x> = [#[#<ptr> + 1]]
+    
+    G0 X[#<start_x> * #<_diameter_mode>] Z#<start_z>
+    G#3
+o<lead_in> endsub

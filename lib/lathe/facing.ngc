@@ -10,7 +10,7 @@ o<facing> sub
 	#<finishing_passes> = #5
 
 	/ G0 X#<begin_x> Z#<end_z>
-    / G1 X#<end_x>
+	/ G1 X#<end_x>
 	/ o<facing> return
 
 	#<cut_rough_total> = ABS[#<begin_z> - #<end_z>]

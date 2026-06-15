@@ -1,0 +1,7 @@
+(Lathe Lead Out)
+o<lead_out> sub
+(CALL with data ptr[1] rec_index[2] dir[3] opt[4] exit_with_arc[5])
+    (For now, just cancel compensation and move to safe X)
+    G40
+    G0 X[#<_wp_dia_od> + #<_X_rapid>]
+o<lead_out> endsub
