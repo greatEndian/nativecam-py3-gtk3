@@ -13,10 +13,11 @@
 - **Indentation Audit**: Fixed inconsistent indentation in `facing.ngc` to ensure block delete characters (`/`) are handled correctly by all parsers.
 - **Variable Consistency**: Confirmed that named parameters in LinuxCNC are case-insensitive (`#<_X_rapid>` == `#<_x_rapid>`), but standardized on consistent casing where possible.
 
-## GTK3 Dialog Hardening (Increment 2)
+## GTK3 Stability & UI Scaling (Increment 2)
 - **Phantom Popups & Segfaults**: GTK3 dialogs instantiated with `gtk.Dialog()` and no parent can become "phantom popups" when the main application (e.g., LinuxCNC) exits. Adding `parent=toplevel` and `flags=gtk.DialogFlags.DESTROY_WITH_PARENT` ensures proper cleanup.
 - **Safe `dialog.run()` Access**: When a dialog is destroyed by its parent during a `run()` loop, it returns `gtk.ResponseType.NONE`. Safely check `if response == gtk.ResponseType.OK:` before accessing child widgets (like `entry.get_text()` or `treeview.get_selection()`) to prevent `TypeError` or segmentation faults caused by accessing partially destroyed widgets.
 - **Python 3 Substring Logic**: Replaced buggy string validation (`if filename[-4] != ".ngc" not in filename`) with explicit `filename.lower().endswith(".ngc")`.
+- **Paned Window Scaling**: Restoring saved Paned positions (via `set_position()`) unconditionally can cause UI elements to be clipped or completely hidden on low-resolution screens. Implemented `size-allocate` event hooks on `GtkHPaned` and `GtkVPaned` to dynamically clamp the position based on `allocation.width` and `allocation.height`, ensuring both children remain visible. Also lowered `width_request` properties in `ncam.glade` to allow GTK3 to compress the window naturally for smaller displays.
 
 ## Competitive Analysis & Inspiration
 - **QTDragon Integration**: QTDragon is a modern Qt/Python3 GUI that includes advanced probing and basic conversational wizards (facing, holes). A frequent community request is embedding NativeCAM *inside* QTDragon for advanced conversational features. We should ensure our Python 3/GTK3 port architecture is modular enough to allow embedding in QtVCP/QTDragon environments via XEMBED or similar mechanisms.
