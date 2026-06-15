@@ -19,6 +19,9 @@
 - **Python 3 Substring Logic**: Replaced buggy string validation (`if filename[-4] != ".ngc" not in filename`) with explicit `filename.lower().endswith(".ngc")`.
 - **Paned Window Scaling**: Restoring saved Paned positions (via `set_position()`) unconditionally can cause UI elements to be clipped or completely hidden on low-resolution screens. Implemented `size-allocate` event hooks on `GtkHPaned` and `GtkVPaned` to dynamically clamp the position based on `allocation.width` and `allocation.height`, ensuring both children remain visible. Also lowered `width_request` properties in `ncam.glade` to allow GTK3 to compress the window naturally for smaller displays.
 
+## Future Architectural Requirements
+- **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.
+
 ## Competitive Analysis & Inspiration
 - **QTDragon Integration**: QTDragon is a modern Qt/Python3 GUI that includes advanced probing and basic conversational wizards (facing, holes). A frequent community request is embedding NativeCAM *inside* QTDragon for advanced conversational features. We should ensure our Python 3/GTK3 port architecture is modular enough to allow embedding in QtVCP/QTDragon environments via XEMBED or similar mechanisms.
 - **Features vs NativeCAM**: NativeCAM is the direct successor to the legacy 'Features' system. Key advantages to maintain and emphasize include instant live preview, 'grouping' capabilities for repeated toolpaths, and direct tool-table synchronization.

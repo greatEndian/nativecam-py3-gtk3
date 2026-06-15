@@ -13,8 +13,8 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 - [x] **Phantom Popups**: Ensure 100% of popups (combos, VKB) are destroyed on LinuxCNC exit.
 
 ## 3. G-Code Generation & Compatibility (Priority: Medium)
-- [ ] **LinuxCNC 2.10+ Compatibility**: Test in a 2.10 environment to diagnose "disappearing window" issues.
-- [ ] **Subroutine Validation**: Improve error reporting when `SUBROUTINE_PATH` is misconfigured.
+- [ ] **LinuxCNC 2.10+ Compatibility**: Investigating XEMBED / Socket Plug lifecycle issues that cause disappearing windows in newer GtkVCP environments.
+- [x] **Subroutine Validation**: Improved error reporting and path validation logic using `os.path.samefile` to correctly handle symlinks in `SUBROUTINE_PATH`.
 - [x] **EOF / O-Word Errors**: Fixed CRLF issues in all lathe cfg/ngc files. Corrected crash in ncam.py action_save_ngc. Optimized Facing and Tool Change.
 
 ## 4. Technical Debt (Priority: Low)
