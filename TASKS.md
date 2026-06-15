@@ -4,7 +4,7 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 
 ## 1. Lathe Feature Parity (Priority: High)
 - [x] **Lathe Polyline Support**: Adapt the `mill` polyline logic for `lathe` coordinates (X/Z).
-- [ ] **Lathe Contour Cycles**: Verify and fix G71/G72 integration for complex paths.
+- [x] **Lathe Contour Cycles**: Verify and fix G71/G72 integration for complex paths. Added native G71.1/G72.1 support via `[DEFINITIONS]` O-word subroutines.
 - [x] **Missing CFG Files**: Added polyline-arc-to, polyline-arc-ij, polyline-polar. Improved roughing in poly_lathe_mill.ngc.
 
 ## 2. GTK3 Stability & Hardening (Priority: High)
