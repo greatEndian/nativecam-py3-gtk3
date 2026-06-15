@@ -3758,7 +3758,9 @@ class NCam(gtk.VBox):
         self.add_toolbar.set_icon_size(toolbar_icon_size)
 
         self.feature_pane = self.builder.get_object("ncam_pane")
+        self.feature_pane.connect('size-allocate', self._on_vpane_size_allocate)
         self.feature_Hpane = self.builder.get_object("hpaned1")
+        self.feature_Hpane.connect('size-allocate', self._on_hpane_size_allocate)
         self.params_scroll = self.builder.get_object("params_scroll")
         self.frame2 = self.builder.get_object("frame2")
         self.addVBox = self.builder.get_object("frame3")
@@ -3957,8 +3959,37 @@ class NCam(gtk.VBox):
         else:
             tv.expand_row(path, True)
 
+    def _on_hpane_size_allocate(self, widget, allocation):
+        total_w = allocation.width
+        if total_w > 100:
+            pos = widget.get_position()
+            # If the position leaves less than 120px for the right pane, adjust it
+            if pos > total_w - 120:
+                widget.set_position(total_w - 120)
+            # Prevent treeview from getting completely squished
+            elif pos < 100:
+                widget.set_position(100)
+
+    def _on_vpane_size_allocate(self, widget, allocation):
+        total_h = allocation.height
+        if total_h > 100:
+            pos = widget.get_position()
+            # Ensure bottom pane is visible
+            if pos > total_h - 100:
+                widget.set_position(total_h - 100)
+            # Prevent top pane from getting squished
+            elif pos < 50:
+                widget.set_position(50)
+
     def tv_w_adj_value_changed(self, *arg):
-        self.feature_Hpane.set_position(int(self.tv_w_adj.get_value()))
+        pos = int(self.tv_w_adj.get_value())
+        total_w = self.feature_Hpane.get_allocated_width()
+        if total_w > 100:
+            if pos > total_w - 120:
+                pos = total_w - 120
+            if pos < 100:
+                pos = 100
+        self.feature_Hpane.set_position(pos)
 
     def col_width_adj_value_changed(self, *arg):
         self.treeview.get_column(0).set_min_width(int(self.col_width_adj.get_value()))
