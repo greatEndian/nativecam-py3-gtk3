@@ -1852,7 +1852,6 @@ class Feature(object):
         return ''
 
     def include_once(self, src) :
-        global INCLUDE
         if src not in INCLUDE :
             INCLUDE.append(src)
             return self.include(src)
@@ -2051,7 +2050,7 @@ class Feature(object):
 class Preferences(object):
 
     def __init__(self):
-        global default_metric, machine_metric
+        global default_metric
         default_metric = None
         self.pref_file = None
         self.cfg_file = None
@@ -2063,7 +2062,7 @@ class Preferences(object):
         global default_digits, default_metric, add_menu_icon_size, \
             add_dlg_icon_size, quick_access_icon_size, menu_icon_size, \
             treeview_icon_size, vkb_width, vkb_height, vkb_cancel_on_out, \
-            toolbar_icon_size, gmoccapy_time_out, NCAM_DIR, no_ini
+            toolbar_icon_size, gmoccapy_time_out
 
         def read_float(cf, section, key, default):
             try :
@@ -2292,7 +2291,6 @@ class Preferences(object):
         return False
 
     def create_defaults(self):
-        global machine_metric
 
         if self.use_pct :
             self.default = '%\n'
@@ -2400,7 +2398,7 @@ class NCam(gtk.VBox):
         # Standalone: __main__ builds GtkDialog then NCam() before vbox.add(ncam), so there is no
         # parent during __init__ — pass accel_toplevel=window to attach AccelGroup before create_menubar().
         self._accel_toplevel_override = kw.pop('accel_toplevel', None)
-        global NCAM_DIR, default_metric, NGC_DIR, SYS_DIR, no_ini, TOOL_TABLE, \
+        global NCAM_DIR, default_metric, NGC_DIR, no_ini, TOOL_TABLE, \
             GLOBAL_PREF, machine_metric
 
         arg_start = (sys.argv[0:].index('-U') + 1) if "-U" in sys.argv[0:] else 1
@@ -5007,7 +5005,6 @@ class NCam(gtk.VBox):
 
 
     def get_col_value(self, column, cell, model, itr, *arg) :
-        global CURRENT_PROJECT
 
         param = model.get_value(itr, 0)
         val = param.get_value()
