@@ -20,8 +20,9 @@
 - **Paned Window Scaling**: Restoring saved Paned positions (via `set_position()`) unconditionally can cause UI elements to be clipped or completely hidden on low-resolution screens. Implemented `size-allocate` event hooks on `GtkHPaned` and `GtkVPaned` to dynamically clamp the position based on `allocation.width` and `allocation.height`, ensuring both children remain visible. Also lowered `width_request` properties in `ncam.glade` to allow GTK3 to compress the window naturally for smaller displays.
 
 ## GitHub Infrastructure & CI/CD (June 16, 2026)
+- **Flake8 Version Drift**: A persistent CI failure was caused by a version mismatch between the local `flake8` (v5) and the CI `flake8` (v7+). The CI command used `--select=E9,F63,F7,F82`. Version 7 introduced `F824` (unused global variable), which was caught by the `F82` wildcard, causing CI to fail while local tests passed. **Lesson**: Never use wildcards for linter selection codes; always list exact codes (e.g., `F821,F822`) or pin linter versions in CI.
 - **CI Build Pathing**: When verifying a Debian build in GitHub Actions, `debian/rules` must be executed from the project root (e.g., `./debian/rules clean`), not from within the `debian/` directory, so that `dh` can find the `control` file.
-- **Gettext Linting**: Functions injected into the global namespace via `gettext.install()` (like `_`) will trigger `F821 undefined name` errors in static analysis tools. Use `# noqa: F821` on the affected lines to maintain CI "green" status without introducing runtime boilerplate.
+- **Gettext Linting**: Functions injected into the global namespace via `gettext.install()` (like `_`) will trigger `F821 undefined name` errors in static analysis tools. Use `--builtins="_"` in the `flake8` configuration to maintain CI "green" status without introducing runtime boilerplate.
 - **XEMBED vs Wayland**: Confirmed that NativeCAM's tab-embedding strategy (XEMBED) is fundamentally incompatible with Wayland. Added a diagnostic check to `ncam.py` to alert users in these environments.
 
 ## Future Architectural Requirements
