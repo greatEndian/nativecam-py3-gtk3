@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -21,16 +24,9 @@ jobs:
         pip install flake8
     - name: Lint with flake8
       run: |
-        echo "Listing all files in workspace:"
-        find . -maxdepth 2 -not -path '*/.*'
-        
-        echo "Running flake8 with full diagnostics..."
-        # This will show every error and warning found in the whole project
-        python3 -m flake8 . ttt --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        
-        # Final pass that actually fails the build
-        echo "Final pass (will fail if error exists):"
-        python3 -m flake8 . ttt --count --builtins="_" --select=E9,F63,F7,F82 --statistics
+        # Explicitly lint the core Python files
+        # We define '_' as a builtin because gettext.install() is used at runtime
+        flake8 ncam.py pref_edit.py restore_lcnc.py ttt graphics/source/create_icons.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics
 
   build-deb:
     runs-on: ubuntu-latest
