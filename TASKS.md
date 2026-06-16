@@ -19,4 +19,4 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 
 ## 4. Technical Debt (Priority: Low)
 - [ ] **GTK Action/UIManager Migration**: Plan a transition from deprecated `Gtk.Action` to modern `GAction` and `GMenu`.
-- [ ] **Dependency Management**: Update `debian/control` and add a `requirements.txt` for non-debian users.
+- [x] **Dependency Management**: Update `debian/control` and add a `requirements.txt` for non-debian users.
