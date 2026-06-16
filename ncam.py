@@ -56,43 +56,12 @@ try:
 except Exception:
     pass
 
-# PyGObject warns on every Gtk.Action / UIManager / ImageMenuItem call until a GAction port.
+# PyGObject warns on every Gtk.Action / GAction bridge / ImageMenuItem call.
 warnings.filterwarnings(
     'ignore', category=DeprecationWarning,
     message=r'.*Gtk\..* is deprecated')
 
 SYS_DIR = os.path.dirname(os.path.realpath(__file__))
-
-# GTK3 + deprecated GtkAction: create_menu_item() triggers harmless Gtk-CRITICAL in C
-# (gtk_accel_label_set_accel_closure). Filter that line only; other CRITICALs still log.
-@contextlib.contextmanager
-def _suppress_gtk_accel_menu_item_critical():
-    needle = 'gtk_accel_label_set_accel_closure'
-    ids = []
-
-    def _handler(domain, level, message, udata):
-        try:
-            msg = message if isinstance(message, str) else message.decode('utf-8', 'replace')
-        except Exception:
-            msg = ''
-        if needle in msg:
-            return
-        GLib.log_default_handler(domain, level, message, udata)
-
-    for dom in ('Gtk', 'Gdk'):
-        try:
-            ids.append((dom, GLib.log_set_handler(
-                dom, GLib.LogLevelFlags.LEVEL_CRITICAL, _handler, None)))
-        except Exception:
-            pass
-    try:
-        yield
-    finally:
-        for dom, hid in ids:
-            try:
-                GLib.log_remove_handler(dom, hid)
-            except Exception:
-                pass
 
 locale.setlocale(locale.LC_ALL, '')
 decimal_point = locale.localeconv()["decimal_point"]
@@ -204,100 +173,6 @@ UNIQUE_ID = 9
 # True only when running `python3 ncam.py` (standalone dialog). GladeVCP embeds NCam and owns gtk.main();
 # calling gtk.main_quit() from a handler there tears down GTK while the X embed is still dying → Gdk warnings.
 NCAM_STANDALONE = False
-
-UI_INFO = '''
-<ui>
-    <toolbar name='dummy'>
-        <toolitem action='SingleView' />
-        <toolitem action='DualView'/>
-        <toolitem action='TopBottom'/>
-        <toolitem action='SideSide'/>
-        <toolitem action='HideCol'/>
-        <toolitem action='SubHdrs'/>
-    </toolbar>
-
-    <toolbar name='ToolBar'>
-        <toolitem action='Build' />
-        <separator />
-        <toolitem action='Add' />
-        <toolitem action='Duplicate' />
-        <toolitem action='Delete' />
-        <separator />
-        <toolitem action='Undo' />
-        <toolitem action='Redo' />
-        <separator />
-        <toolitem action='MoveUp' />
-        <toolitem action='MoveDown' />
-        <separator />
-        <toolitem action='AppendItm' />
-        <toolitem action='RemoveItm' />
-        <separator />
-        <toolitem action='Collapse' />
-    </toolbar>
-
-    <popup name='PopupMenu'>
-        <menuitem action='Rename' />
-        <menu action='SetDigits'>
-            <menuitem action='Digit1'/>
-            <menuitem action='Digit2'/>
-            <menuitem action='Digit3'/>
-            <menuitem action='Digit4'/>
-            <menuitem action='Digit5'/>
-            <menuitem action='Digit6'/>
-        </menu>
-        <menuitem action='DataType' />
-        <menuitem action='RevertType' />
-        <separator />
-        <menuitem action='Undo' />
-        <menuitem action='Redo' />
-        <separator />
-        <menuitem action='HideField' />
-        <menuitem action='ShowFields' />
-        <menuitem action='ChngGrp' />
-        <separator />
-        <menuitem action='Add' />
-        <menuitem action='Duplicate' />
-        <menuitem action='Delete' />
-        <separator />
-        <menuitem action='Cut' />
-        <menuitem action='Copy' />
-        <menuitem action='Paste' />
-        <separator />
-        <menuitem action='MoveUp' />
-        <menuitem action='MoveDown' />
-        <separator />
-        <menuitem action='AppendItm' />
-        <menuitem action='RemoveItm' />
-        <separator />
-        <menuitem action='SaveUser' />
-        <menuitem action='DeleteUser' />
-    </popup>
-
-    <popup name='PopupMenu2'>
-        <menu action='SetDigits'>
-            <menuitem action='Digit1'/>
-            <menuitem action='Digit2'/>
-            <menuitem action='Digit3'/>
-            <menuitem action='Digit4'/>
-            <menuitem action='Digit5'/>
-            <menuitem action='Digit6'/>
-        </menu>
-        <menuitem action='DataType' />
-        <menuitem action='RevertType' />
-        <separator />
-        <menuitem action='Undo' />
-        <menuitem action='Redo' />
-        <separator />
-        <menuitem action='HideField' />
-        <menuitem action='ShowFields' />
-        <menuitem action='ChngGrp' />
-        <separator />
-        <menuitem action='SaveUser' />
-        <menuitem action='DeleteUser' />
-    </popup>
-</ui>
-
-'''
 
 
 def get_int(s10) :
@@ -2605,17 +2480,13 @@ class NCam(gtk.VBox):
 
         self.create_treeview()
 
-        # create actions, uimanager and add menu and toolbars
+        # create actions and add menu and toolbars
         self.action_group = gtk.ActionGroup(name="my_actions")
+        self.accel_group = gtk.AccelGroup()
+        self.accels = {}
         self.gaction_group = Gio.SimpleActionGroup()
         self.insert_action_group("app", self.gaction_group)
         self.create_actions()
-
-        self.uimanager = gtk.UIManager()
-        self.accel_group = self.uimanager.get_accel_group()
-
-        self.uimanager.insert_action_group(self.action_group, 0)
-        self.uimanager.add_ui_from_string(UI_INFO)
 
         self.get_actions_reference()
         w = self._accel_toplevel_override
@@ -2670,8 +2541,7 @@ class NCam(gtk.VBox):
         self.get_toolbar_actions()
         self.create_nc_toolbar()
 
-        self.pop_up = self.uimanager.get_widget("/PopupMenu")
-        self.pop_up2 = self.uimanager.get_widget("/PopupMenu2")
+        self.create_popups()
 
         self.create_add_dialog()
 
@@ -2833,227 +2703,264 @@ class NCam(gtk.VBox):
                     mess_dlg(_("Error creating link : %(s)s -> %(d)s\nCode : %(c)s")
                              % {'s': tdir, 'd': srcdir, 'c': err})
 
-    def _null_accel_label_closure(self, widget):
-        """GTK3: GtkAction.create_menu_item() can leave GtkAccelLabel with a closure that
-        gtk_accel_group_from_accel_closure does not resolve → CRITICAL. Clearing the
-        closure removes the broken shortcut *display*; keys may still work via the window."""
-        def visit(w):
-            if isinstance(w, gtk.AccelLabel):
-                try:
-                    w.set_accel_closure(None)
-                except Exception:
-                    pass
-            if isinstance(w, gtk.Container):
-                try:
-                    w.foreach(lambda c: visit(c))
-                except Exception:
-                    pass
-        try:
-            visit(widget)
-        except Exception:
-            pass
+    def _create_menu_item(self, _action, imgfile = None):
+        # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
+        if isinstance(_action, (gtk.ToggleAction, gtk.RadioAction)):
+            mi = gtk.CheckMenuItem.new_with_mnemonic(_action.get_label() or "")
+        else :
+            mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
+
+        mi.set_action_name("app." + _action.get_name())
+
+        aname = _action.get_name()
+        if aname in self.accels:
+            key, mods = self.accels[aname]
+            mi.add_accelerator("activate", self.accel_group, key, mods, gtk.AccelFlags.VISIBLE)
+
+        if imgfile is None :
+            if hasattr(_action, 'get_stock_id') and _action.get_stock_id() :
+                img = gtk.Image.new_from_icon_name(_action.get_stock_id(), menu_icon_size)
+                if hasattr(mi, 'set_image') :
+                    mi.set_image(img)
+        else :
+            img = gtk.Image()
+            img.set_from_pixbuf(get_pixbuf(imgfile, add_menu_icon_size))
+            if hasattr(mi, 'set_image') :
+                mi.set_image(img)
+        return mi
+
+    def create_popups(self):
+        # PopupMenu
+        self.pop_up = gtk.Menu()
+        self.pop_up.append(self._create_menu_item(self.actionRename))
+        
+        digits_menu = gtk.Menu()
+        digits_menu.append(self._create_menu_item(self.actionDigit1))
+        digits_menu.append(self._create_menu_item(self.actionDigit2))
+        digits_menu.append(self._create_menu_item(self.actionDigit3))
+        digits_menu.append(self._create_menu_item(self.actionDigit4))
+        digits_menu.append(self._create_menu_item(self.actionDigit5))
+        digits_menu.append(self._create_menu_item(self.actionDigit6))
+        d_menu = self._create_menu_item(self.actionSetDigits)
+        d_menu.set_submenu(digits_menu)
+        self.pop_up.append(d_menu)
+        
+        self.pop_up.append(self._create_menu_item(self.actionDataType))
+        self.pop_up.append(self._create_menu_item(self.actionRevertType))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionUndo))
+        self.pop_up.append(self._create_menu_item(self.actionRedo))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionHideField))
+        self.pop_up.append(self._create_menu_item(self.actionShowF))
+        self.pop_up.append(self._create_menu_item(self.actionChngGrp))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionAdd))
+        self.pop_up.append(self._create_menu_item(self.actionDuplicate))
+        self.pop_up.append(self._create_menu_item(self.actionDelete))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionCut))
+        self.pop_up.append(self._create_menu_item(self.actionCopy))
+        self.pop_up.append(self._create_menu_item(self.actionPaste))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionMoveUp))
+        self.pop_up.append(self._create_menu_item(self.actionMoveDown))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionAppendItm))
+        self.pop_up.append(self._create_menu_item(self.actionRemoveItm))
+        self.pop_up.append(gtk.SeparatorMenuItem())
+        self.pop_up.append(self._create_menu_item(self.actionSaveUser))
+        self.pop_up.append(self._create_menu_item(self.actionDeleteUser))
+        self.pop_up.show_all()
+
+        # PopupMenu2
+        self.pop_up2 = gtk.Menu()
+        digits_menu2 = gtk.Menu()
+        digits_menu2.append(self._create_menu_item(self.actionDigit1))
+        digits_menu2.append(self._create_menu_item(self.actionDigit2))
+        digits_menu2.append(self._create_menu_item(self.actionDigit3))
+        digits_menu2.append(self._create_menu_item(self.actionDigit4))
+        digits_menu2.append(self._create_menu_item(self.actionDigit5))
+        digits_menu2.append(self._create_menu_item(self.actionDigit6))
+        d_menu2 = self._create_menu_item(self.actionSetDigits)
+        d_menu2.set_submenu(digits_menu2)
+        self.pop_up2.append(d_menu2)
+
+        self.pop_up2.append(self._create_menu_item(self.actionDataType))
+        self.pop_up2.append(self._create_menu_item(self.actionRevertType))
+        self.pop_up2.append(gtk.SeparatorMenuItem())
+        self.pop_up2.append(self._create_menu_item(self.actionUndo))
+        self.pop_up2.append(self._create_menu_item(self.actionRedo))
+        self.pop_up2.append(gtk.SeparatorMenuItem())
+        self.pop_up2.append(self._create_menu_item(self.actionHideField))
+        self.pop_up2.append(self._create_menu_item(self.actionShowF))
+        self.pop_up2.append(self._create_menu_item(self.actionChngGrp))
+        self.pop_up2.append(gtk.SeparatorMenuItem())
+        self.pop_up2.append(self._create_menu_item(self.actionSaveUser))
+        self.pop_up2.append(self._create_menu_item(self.actionDeleteUser))
+        self.pop_up2.show_all()
 
     def create_menubar(self):
-        def create_mi(_action, imgfile = None):
-            try:
-                _action.disconnect_accelerator()
-            except Exception:
-                pass
-            mi = _action.create_menu_item()
-            self._null_accel_label_closure(mi)
-            # Radio/Toggle actions yield GtkCheckMenuItem — no set_image (GTK3).
-            if isinstance(mi, gtk.ImageMenuItem):
-                if imgfile is None:
-                    mi.set_image(_action.create_icon(menu_icon_size))
-                else:
-                    img = gtk.Image()
-                    img.set_from_pixbuf(get_pixbuf(imgfile, add_menu_icon_size))
-                    mi.set_image(img)
-            return mi
+        if self.menubar is not None :
+            self.menubar.destroy()
+        self.menubar = gtk.MenuBar()
 
-        def create_gmi(_action, imgfile = None):
-            # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
-            if isinstance(_action, (gtk.ToggleAction, gtk.RadioAction)):
-                mi = gtk.CheckMenuItem.new_with_mnemonic(_action.get_label() or "")
-            else:
-                mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
-            
-            mi.set_action_name("app." + _action.get_name())
-            
-            if imgfile is None:
-                if hasattr(_action, 'get_stock_id') and _action.get_stock_id():
-                    img = gtk.Image.new_from_icon_name(_action.get_stock_id(), menu_icon_size)
-                    if hasattr(mi, 'set_image'):
-                        mi.set_image(img)
-            else:
-                img = gtk.Image()
-                img.set_from_pixbuf(get_pixbuf(imgfile, add_menu_icon_size))
-                if hasattr(mi, 'set_image'):
-                    mi.set_image(img)
-            return mi
+        # Projects menu
+        file_menu = gtk.Menu()
+        file_menu.append(self._create_menu_item(self.actionNew))
+        file_menu.append(self._create_menu_item(self.actionOpen))
+        file_menu.append(self._create_menu_item(self.actionOpenExample))
+        file_menu.append(gtk.SeparatorMenuItem())
+        file_menu.append(self._create_menu_item(self.actionSave))
+        file_menu.append(self._create_menu_item(self.actionCurrent))
+        file_menu.append(self._create_menu_item(self.actionSaveTemplate))
+        file_menu.append(gtk.SeparatorMenuItem())
+        file_menu.append(self._create_menu_item(self.actionSaveNGC))
 
-        with _suppress_gtk_accel_menu_item_critical():
-            if self.menubar is not None :
-                self.menubar.destroy()
-            self.menubar = gtk.MenuBar()
+        f_menu = self._create_menu_item(self.actionProject)
+        f_menu.set_submenu(file_menu)
+        self.menubar.append(f_menu)
 
-            # Projects menu
-            file_menu = gtk.Menu()
-            file_menu.append(create_gmi(self.actionNew))
-            file_menu.append(create_gmi(self.actionOpen))
-            file_menu.append(create_gmi(self.actionOpenExample))
-            file_menu.append(gtk.SeparatorMenuItem())
-            file_menu.append(create_gmi(self.actionSave))
-            file_menu.append(create_gmi(self.actionCurrent))
-            file_menu.append(create_gmi(self.actionSaveTemplate))
-            file_menu.append(gtk.SeparatorMenuItem())
-            file_menu.append(create_gmi(self.actionSaveNGC))
+        # Edit menu
+        ed_menu = gtk.Menu()
+        ed_menu.append(self._create_menu_item(self.actionUndo))
+        ed_menu.append(self._create_menu_item(self.actionRedo))
+        ed_menu.append(gtk.SeparatorMenuItem())
 
-            f_menu = create_gmi(self.actionProject)
-            f_menu.set_submenu(file_menu)
-            self.menubar.append(f_menu)
+        ed_menu.append(self._create_menu_item(self.actionCut))
+        ed_menu.append(self._create_menu_item(self.actionCopy))
+        ed_menu.append(self._create_menu_item(self.actionPaste))
+        ed_menu.append(gtk.SeparatorMenuItem())
 
-            # Edit menu
-            ed_menu = gtk.Menu()
-            ed_menu.append(create_gmi(self.actionUndo))
-            ed_menu.append(create_gmi(self.actionRedo))
-            ed_menu.append(gtk.SeparatorMenuItem())
+        ed_menu.append(self._create_menu_item(self.actionAdd))
+        ed_menu.append(self._create_menu_item(self.actionDuplicate))
+        ed_menu.append(self._create_menu_item(self.actionDelete))
+        ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_gmi(self.actionCut))
-            ed_menu.append(create_gmi(self.actionCopy))
-            ed_menu.append(create_gmi(self.actionPaste))
-            ed_menu.append(gtk.SeparatorMenuItem())
+        ed_menu.append(self._create_menu_item(self.actionMoveUp))
+        ed_menu.append(self._create_menu_item(self.actionMoveDown))
+        ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_gmi(self.actionAdd))
-            ed_menu.append(create_gmi(self.actionDuplicate))
-            ed_menu.append(create_gmi(self.actionDelete))
-            ed_menu.append(gtk.SeparatorMenuItem())
+        ed_menu.append(self._create_menu_item(self.actionAppendItm))
+        ed_menu.append(self._create_menu_item(self.actionRemoveItm))
 
-            ed_menu.append(create_gmi(self.actionMoveUp))
-            ed_menu.append(create_gmi(self.actionMoveDown))
-            ed_menu.append(gtk.SeparatorMenuItem())
+        self.sep1 = gtk.SeparatorMenuItem()
+        ed_menu.append(self.sep1)
+        self.adt_mi = self._create_menu_item(self.actionDataType)
+        ed_menu.append(self.adt_mi)
+        self.art_mi = self._create_menu_item(self.actionRevertType)
+        ed_menu.append(self.art_mi)
 
-            ed_menu.append(create_gmi(self.actionAppendItm))
-            ed_menu.append(create_gmi(self.actionRemoveItm))
+        edit_menu = self._create_menu_item(self.actionEditMenu)
+        edit_menu.set_submenu(ed_menu)
+        self.menubar.append(edit_menu)
 
-            self.sep1 = gtk.SeparatorMenuItem()
-            ed_menu.append(self.sep1)
-            self.adt_mi = create_gmi(self.actionDataType)
-            ed_menu.append(self.adt_mi)
-            self.art_mi = create_gmi(self.actionRevertType)
-            ed_menu.append(self.art_mi)
+        # View menu
+        v_menu = gtk.Menu()
+        self.aren_mi = self._create_menu_item(self.actionRename)
+        v_menu.append(self.aren_mi)
+        self.agrp_mi = self._create_menu_item(self.actionChngGrp)
+        v_menu.append(self.agrp_mi)
+        self.sep3 = gtk.SeparatorMenuItem()
+        v_menu.append(self.sep3)
+        v_menu.append(self._create_menu_item(self.actionHideField))
+        v_menu.append(self._create_menu_item(self.actionShowF))
+        self.sep2 = gtk.SeparatorMenuItem()
+        v_menu.append(self.sep2)
 
-            edit_menu = create_gmi(self.actionEditMenu)
-            edit_menu.set_submenu(ed_menu)
-            self.menubar.append(edit_menu)
+        digits_menu = gtk.Menu()
+        digits_menu.append(self._create_menu_item(self.actionDigit1))
+        digits_menu.append(self._create_menu_item(self.actionDigit2))
+        digits_menu.append(self._create_menu_item(self.actionDigit3))
+        digits_menu.append(self._create_menu_item(self.actionDigit4))
+        digits_menu.append(self._create_menu_item(self.actionDigit5))
+        digits_menu.append(self._create_menu_item(self.actionDigit6))
+        self.d_menu = self._create_menu_item(self.actionSetDigits)
+        self.d_menu.set_submenu(digits_menu)
+        v_menu.append(self.d_menu)
 
-            # View menu
-            v_menu = gtk.Menu()
-            self.aren_mi = create_gmi(self.actionRename)
-            v_menu.append(self.aren_mi)
-            self.agrp_mi = create_gmi(self.actionChngGrp)
-            v_menu.append(self.agrp_mi)
-            self.sep3 = gtk.SeparatorMenuItem()
-            v_menu.append(self.sep3)
-            v_menu.append(create_gmi(self.actionHideField))
-            v_menu.append(create_gmi(self.actionShowF))
-            self.sep2 = gtk.SeparatorMenuItem()
-            v_menu.append(self.sep2)
+        v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(self._create_menu_item(self.actionSingleView))
+        v_menu.append(self._create_menu_item(self.actionDualView))
+        v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(self._create_menu_item(self.actionTopBottom))
+        v_menu.append(self._create_menu_item(self.actionSideSide))
+        v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(self._create_menu_item(self.actionHideCol))
+        v_menu.append(self._create_menu_item(self.actionSubHdrs))
+        v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(self._create_menu_item(self.actionSaveLayout))
 
-            digits_menu = gtk.Menu()
-            digits_menu.append(create_gmi(self.actionDigit1))
-            digits_menu.append(create_gmi(self.actionDigit2))
-            digits_menu.append(create_gmi(self.actionDigit3))
-            digits_menu.append(create_gmi(self.actionDigit4))
-            digits_menu.append(create_gmi(self.actionDigit5))
-            digits_menu.append(create_gmi(self.actionDigit6))
-            self.d_menu = create_gmi(self.actionSetDigits)
-            self.d_menu.set_submenu(digits_menu)
-            v_menu.append(self.d_menu)
+        view_menu = self._create_menu_item(self.actionViewMenu)
+        view_menu.set_submenu(v_menu)
+        self.menubar.append(view_menu)
 
-            v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_gmi(self.actionSingleView))
-            v_menu.append(create_gmi(self.actionDualView))
-            v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_gmi(self.actionTopBottom))
-            v_menu.append(create_gmi(self.actionSideSide))
-            v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_gmi(self.actionHideCol))
-            v_menu.append(create_gmi(self.actionSubHdrs))
-            v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_gmi(self.actionSaveLayout))
+        # Add menu
+        menuAdd = gtk.Menu()
+        self.add_catalog_items(menuAdd)
+        menuAdd.append(gtk.SeparatorMenuItem())
+        menuAdd.append(self._create_menu_item(self.actionLoadCfg))
+        menuAdd.append(self._create_menu_item(self.actionImportXML))
 
-            view_menu = create_gmi(self.actionViewMenu)
-            view_menu.set_submenu(v_menu)
-            self.menubar.append(view_menu)
+        add_menu = self._create_menu_item(self.actionAddMenu)
+        add_menu.set_submenu(menuAdd)
+        self.menubar.append(add_menu)
 
-            # Add menu
-            menuAdd = gtk.Menu()
-            self.add_catalog_items(menuAdd)
-            menuAdd.append(gtk.SeparatorMenuItem())
-            menuAdd.append(create_gmi(self.actionLoadCfg))
-            menuAdd.append(create_gmi(self.actionImportXML))
+        # Utilities menu
+        menu_utils = gtk.Menu()
 
-            add_menu = create_gmi(self.actionAddMenu)
-            add_menu.set_submenu(menuAdd)
-            self.menubar.append(add_menu)
+        menu_utils.append(self._create_menu_item(self.actionChUnits))
+        menu_utils.append(self._create_menu_item(self.actionAutoRefresh))
+        menu_utils.append(gtk.SeparatorMenuItem())
+        menu_utils.append(self._create_menu_item(self.actionLoadTools))
+        menu_utils.append(gtk.SeparatorMenuItem())
+        menu_utils.append(self._create_menu_item(self.actionSaveUser))
+        menu_utils.append(self._create_menu_item(self.actionDeleteUser))
 
-            # Utilities menu
-            menu_utils = gtk.Menu()
+        menu_utils.append(gtk.SeparatorMenuItem())
 
-            menu_utils.append(create_gmi(self.actionChUnits))
-            menu_utils.append(create_gmi(self.actionAutoRefresh))
-            menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_gmi(self.actionLoadTools))
-            menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_gmi(self.actionSaveUser))
-            menu_utils.append(create_gmi(self.actionDeleteUser))
+        menu_val = gtk.Menu()
+        # Global validation messages toggle
+        self.chk_val_all = gtk.CheckMenuItem(label=_('Show All Messages'))
+        self.chk_val_all.set_active(not self.pref.val_all_excluded())
+        self.chk_val_all.connect('toggled', self.action_toggle_val_all)
+        menu_val.append(self.chk_val_all)
+        menu_val.append(gtk.SeparatorMenuItem())
+        # Per-feature type validation toggle (updated dynamically)
+        self.chk_val_feat = gtk.CheckMenuItem(label=_('Show Messages For Current Type'))
+        self.chk_val_feat.set_active(True)
+        self.chk_val_feat.connect('toggled', self.action_toggle_val_feat)
+        menu_val.append(self.chk_val_feat)
 
-            menu_utils.append(gtk.SeparatorMenuItem())
+        u_menu = self._create_menu_item(self.actionValidationMenu)
+        u_menu.set_submenu(menu_val)
+        menu_utils.append(u_menu)
 
-            menu_val = gtk.Menu()
-            # Global validation messages toggle
-            self.chk_val_all = gtk.CheckMenuItem(label=_('Show All Messages'))
-            self.chk_val_all.set_active(not self.pref.val_all_excluded())
-            self.chk_val_all.connect('toggled', self.action_toggle_val_all)
-            menu_val.append(self.chk_val_all)
-            menu_val.append(gtk.SeparatorMenuItem())
-            # Per-feature type validation toggle (updated dynamically)
-            self.chk_val_feat = gtk.CheckMenuItem(label=_('Show Messages For Current Type'))
-            self.chk_val_feat.set_active(True)
-            self.chk_val_feat.connect('toggled', self.action_toggle_val_feat)
-            menu_val.append(self.chk_val_feat)
+        menu_utils.append(gtk.SeparatorMenuItem())
+        menu_utils.append(self._create_menu_item(self.actionPreferences))
 
-            u_menu = create_gmi(self.actionValidationMenu)
-            u_menu.set_submenu(menu_val)
-            menu_utils.append(u_menu)
+        u_menu = self._create_menu_item(self.actionUtilMenu)
+        u_menu.set_submenu(menu_utils)
+        self.menubar.append(u_menu)
 
-            menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_gmi(self.actionPreferences))
+        # Help menu
+        menu_help = gtk.Menu()
+        menu_help.append(self._create_menu_item(self.actionYouTube, "youtube.png"))
+#        menu_help.append(self._create_menu_item(self.actionYouTrans, "youtube.png"))
+        menu_help.append(gtk.SeparatorMenuItem())
+        menu_help.append(self._create_menu_item(self.actionCNCHome, "linuxcncicon.png",))
+        menu_help.append(self._create_menu_item(self.actionForum, "linuxcncicon.png",))
+        menu_help.append(gtk.SeparatorMenuItem())
+        menu_help.append(self._create_menu_item(self.actionAbout))
 
-            u_menu = create_gmi(self.actionUtilMenu)
-            u_menu.set_submenu(menu_utils)
-            self.menubar.append(u_menu)
+        h_menu = self._create_menu_item(self.actionHelpMenu)
+        h_menu.set_submenu(menu_help)
+        self.menubar.append(h_menu)
 
-            # Help menu
-            menu_help = gtk.Menu()
-            menu_help.append(create_gmi(self.actionYouTube, "youtube.png"))
-    #        menu_help.append(create_gmi(self.actionYouTrans, "youtube.png"))
-            menu_help.append(gtk.SeparatorMenuItem())
-            menu_help.append(create_gmi(self.actionCNCHome, "linuxcncicon.png",))
-            menu_help.append(create_gmi(self.actionForum, "linuxcncicon.png",))
-            menu_help.append(gtk.SeparatorMenuItem())
-            menu_help.append(create_gmi(self.actionAbout))
+        self.mnu_current_project = gtk.MenuItem(label = '')
+        self.menubar.append(self.mnu_current_project)
 
-            h_menu = create_gmi(self.actionHelpMenu)
-            h_menu.set_submenu(menu_help)
-            self.menubar.append(h_menu)
-
-            self.mnu_current_project = gtk.MenuItem(label = '')
-            self.menubar.append(self.mnu_current_project)
-
-            self.main_box.pack_start(self.menubar, False, False, 0)
-            self._connect_action_accelerators_after_menu()
+        self.main_box.pack_start(self.menubar, False, False, 0)
 
     def action_build(self, *arg) :
         self.autorefresh_call()
@@ -3199,9 +3106,7 @@ class NCam(gtk.VBox):
         self.autorefresh_call()
 
     def _prime_accel_for_window(self, w):
-        """Attach UIManager AccelGroup to GtkWindow (realize first). Do not connect_accelerator
-        here — create_menubar uses disconnect_accelerator + create_menu_item; then
-        _connect_action_accelerators_after_menu() restores keys."""
+        """Attach AccelGroup to GtkWindow (realize first)."""
         if w is None or not isinstance(w, gtk.Window):
             return
         if getattr(self, '_accel_group_on_toplevel', False):
@@ -3214,15 +3119,8 @@ class NCam(gtk.VBox):
         except Exception:
             pass
 
-    def _connect_action_accelerators_after_menu(self):
-        for act in self.action_group.list_actions():
-            try:
-                act.connect_accelerator()
-            except Exception:
-                pass
-
     def _setup_toplevel_integration(self):
-        """Attach UIManager accel group to embedding GtkWindow; hook destroy for cleanup."""
+        """Attach AccelGroup to embedding GtkWindow; hook destroy for cleanup."""
         toplevel = self.get_toplevel()
         if toplevel is None or toplevel == self:
             return
@@ -3657,11 +3555,17 @@ class NCam(gtk.VBox):
                 orig_set_sensitive(sensitive)
                 gact.set_enabled(sensitive)
             act.set_sensitive = new_set_sensitive
+            
+            if accel:
+                key, mods = gtk.accelerator_parse(accel)
+                if key != 0:
+                    self.accel_group.connect(key, mods, gtk.AccelFlags.VISIBLE, lambda *a: gact.activate(None))
+                    self.accels[actionname] = (key, mods)
                 
             import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", DeprecationWarning)
-                self.action_group.add_action_with_accel(act, accel)
+                self.action_group.add_action(act)
 
             self.gaction_group.add_action(gact)
             
@@ -3794,12 +3698,12 @@ class NCam(gtk.VBox):
         self.actionRevertType = ca("RevertType", None, _("Revert to original type"), None, _('Revert to original type'), self.action_revert_type)
 
     def get_actions_reference(self) :
-        self.actionSingleView = self.uimanager.get_action("/dummy/SingleView")
-        self.actionDualView = self.uimanager.get_action("/dummy/DualView")
-        self.actionTopBottom = self.uimanager.get_action("/dummy/TopBottom")
-        self.actionSideSide = self.uimanager.get_action("/dummy/SideSide")
-        self.actionHideCol = self.uimanager.get_action("/dummy/HideCol")
-        self.actionSubHdrs = self.uimanager.get_action("/dummy/SubHdrs")
+        self.actionSingleView = self.action_group.get_action("SingleView")
+        self.actionDualView = self.action_group.get_action("DualView")
+        self.actionTopBottom = self.action_group.get_action("TopBottom")
+        self.actionSideSide = self.action_group.get_action("SideSide")
+        self.actionHideCol = self.action_group.get_action("HideCol")
+        self.actionSubHdrs = self.action_group.get_action("SubHdrs")
 
     def action_saveLayout(self, *arg) :
         cfg_file = os.path.join(NCAM_DIR, CATALOGS_DIR, CONFIG_FILE)
