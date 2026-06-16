@@ -21,11 +21,23 @@ jobs:
         pip install flake8
     - name: Lint with flake8
       run: |
-        # Explicitly lint known Python files to pinpoint failure
-        flake8 ncam.py --count --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 pref_edit.py --count --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 restore_lcnc.py --count --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 ttt --count --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics
+        # Verbose linting of all identified Python-related files
+        # Using --exit-zero to ensure we see all output even if it fails
+        echo "Checking ncam.py..."
+        flake8 ncam.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Checking pref_edit.py..."
+        flake8 pref_edit.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Checking restore_lcnc.py..."
+        flake8 restore_lcnc.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Checking ttt..."
+        flake8 ttt --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Checking create_icons.py..."
+        flake8 graphics/source/create_icons.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Checking test_paned.py..."
+        flake8 test_paned.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        
+        # Finally, run the count and exit with error if > 0
+        flake8 ncam.py pref_edit.py restore_lcnc.py ttt graphics/source/create_icons.py test_paned.py --count --builtins="_" --select=E9,F63,F7,F82 --statistics
 
   build-deb:
     runs-on: ubuntu-latest
