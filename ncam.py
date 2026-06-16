@@ -23,6 +23,7 @@ from gi.repository import Gdk as gdk
 from gi.repository import Pango as pango
 from gi.repository import GdkPixbuf
 from gi.repository import GLib
+from gi.repository import Gio
 from lxml import etree
 from gi.repository import GObject as gobject
 from gi.repository import Gdk
@@ -2606,6 +2607,8 @@ class NCam(gtk.VBox):
 
         # create actions, uimanager and add menu and toolbars
         self.action_group = gtk.ActionGroup(name="my_actions")
+        self.gaction_group = Gio.SimpleActionGroup()
+        self.insert_action_group("app", self.gaction_group)
         self.create_actions()
 
         self.uimanager = gtk.UIManager()
@@ -3586,12 +3589,20 @@ class NCam(gtk.VBox):
     def create_actions(self):
         def ca(actionname, stock_id, label, accel, tooltip, callback, *args):
             act = gtk.Action(name=actionname, label=label, tooltip=tooltip, stock_id=stock_id)
+            gact = Gio.SimpleAction.new(actionname, None)
+            
             if callback is not None:
                 act.connect('activate', callback, args)
+                # GAction activate signature is (action, parameter). Wrap to match legacy expectations.
+                # Gtk.Action callback expects (action, args) where args is a tuple passed during connect.
+                gact.connect('activate', lambda a, p: callback(act, args))
+                
             import warnings
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", DeprecationWarning)
                 self.action_group.add_action_with_accel(act, accel)
+
+            self.gaction_group.add_action(gact)
             
             return act
 
