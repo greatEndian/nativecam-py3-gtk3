@@ -2626,8 +2626,45 @@ class NCam(gtk.VBox):
         self._prime_accel_for_window(w)
         self.create_menubar()
 
-        self.main_toolbar = self.uimanager.get_widget("/ToolBar")
-        self.main_toolbar.set_can_focus(False)
+        def create_gtb():
+            tb = gtk.Toolbar()
+            tb.set_style(gtk.ToolbarStyle.ICONS)
+            tb.set_can_focus(False)
+            
+            items = [
+                ('Build', 'gtk-execute'),
+                None,
+                ('Add', 'gtk-add'),
+                ('Duplicate', 'gtk-copy'),
+                ('Delete', 'gtk-remove'),
+                None,
+                ('Undo', 'gtk-undo'),
+                ('Redo', 'gtk-redo'),
+                None,
+                ('MoveUp', 'gtk-go-up'),
+                ('MoveDown', 'gtk-go-down'),
+                None,
+                ('AppendItm', 'gtk-indent'),
+                ('RemoveItm', 'gtk-unindent'),
+                None,
+                ('Collapse', 'gtk-zoom-out')
+            ]
+            
+            for item in items:
+                if item is None:
+                    tb.insert(gtk.SeparatorToolItem(), -1)
+                else:
+                    name, stock = item
+                    act = self.action_group.get_action(name)
+                    ti = gtk.ToolButton()
+                    ti.set_action_name("app." + name)
+                    ti.set_icon_name(stock)
+                    if act and act.get_tooltip():
+                        ti.set_tooltip_markup(act.get_tooltip())
+                    tb.insert(ti, -1)
+            return tb
+
+        self.main_toolbar = create_gtb()
         self.main_box.pack_start(self.main_toolbar, False, False, 0)
 
         self.get_toolbar_actions()
