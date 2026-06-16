@@ -92,7 +92,6 @@ class PrefEditor():
 
 
     def __init__(self, ncam, is_metric, catalog, path, pre_amble, post_amble, sysdir) :
-        global translate_test
 
         self.path = path
         self.default_metric = is_metric
