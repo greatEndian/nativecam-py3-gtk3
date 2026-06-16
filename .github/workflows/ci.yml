@@ -21,23 +21,16 @@ jobs:
         pip install flake8
     - name: Lint with flake8
       run: |
-        # Verbose linting of all identified Python-related files
-        # Using --exit-zero to ensure we see all output even if it fails
-        echo "Checking ncam.py..."
-        flake8 ncam.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        echo "Checking pref_edit.py..."
-        flake8 pref_edit.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        echo "Checking restore_lcnc.py..."
-        flake8 restore_lcnc.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        echo "Checking ttt..."
-        flake8 ttt --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        echo "Checking create_icons.py..."
-        flake8 graphics/source/create_icons.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
-        echo "Checking test_paned.py..."
-        flake8 test_paned.py --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        echo "Listing all files in workspace:"
+        find . -maxdepth 2 -not -path '*/.*'
         
-        # Finally, run the count and exit with error if > 0
-        flake8 ncam.py pref_edit.py restore_lcnc.py ttt graphics/source/create_icons.py test_paned.py --count --builtins="_" --select=E9,F63,F7,F82 --statistics
+        echo "Running flake8 with full diagnostics..."
+        # This will show every error and warning found in the whole project
+        python3 -m flake8 . ttt --builtins="_" --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        
+        # Final pass that actually fails the build
+        echo "Final pass (will fail if error exists):"
+        python3 -m flake8 . ttt --count --builtins="_" --select=E9,F63,F7,F82 --statistics
 
   build-deb:
     runs-on: ubuntu-latest
