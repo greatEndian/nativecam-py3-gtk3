@@ -1,0 +1,57 @@
+name: Bug Report
+description: File a report to help us improve NativeCAM.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: version
+    attributes:
+      label: NativeCAM Version
+      description: What version of NativeCAM are you using? (e.g., 2.0b-4)
+      placeholder: e.g., 2.0b-4
+    validations:
+      required: true
+  - type: input
+    id: linuxcnc_version
+    attributes:
+      label: LinuxCNC Version
+      description: What version of LinuxCNC are you using?
+      placeholder: e.g., 2.9.2
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Open NativeCAM
+        2. Select 'Lathe Polyline'
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Please paste any relevant logs or terminal output.
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have checked the existing issues and this is not a duplicate.
+          required: true
+        - label: I am using the latest version of NativeCAM.
+          required: false
