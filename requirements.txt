@@ -1,0 +1,9 @@
+# Core Dependencies
+lxml
+PyGObject
+
+# Optional Features
+qrcode
+
+# Development & Quality Assurance
+flake8

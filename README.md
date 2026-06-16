@@ -15,11 +15,23 @@ with **Debian 13 Trixie** and **LinuxCNC 2.9+**.
 
 ## Installation
 
-1. Download the latest release from the [Releases](https://github.com/cnc-proton/nativecam-py3-gtk3/releases) page.
-2. Install it using:
+### 1. From Debian Package (Recommended)
+Download the latest release from the [Releases](https://github.com/cnc-proton/nativecam-py3-gtk3/releases) page. Install it using:
 
 ```bash
 sudo apt install ./nativecam_2.0b-4_all.deb
+```
+
+### 2. From Source / Development Setup
+If you are running from source or want to contribute, you can install the dependencies manually:
+
+```bash
+# Install system dependencies (Debian/Ubuntu)
+sudo apt update
+sudo apt install python3-gi gir1.2-gtk-3.0 python3-lxml python3-tk
+
+# Or use pip (ensure you have system build dependencies for PyGObject)
+pip install -r requirements.txt
 ```
 
 ## Usage
