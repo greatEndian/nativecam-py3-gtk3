@@ -25,6 +25,7 @@ from gi.repository import GdkPixbuf
 from gi.repository import GLib
 from lxml import etree
 from gi.repository import GObject as gobject
+from gi.repository import Gdk
 import configparser as ConfigParser
 import re, os
 import getopt
@@ -43,6 +44,16 @@ import tkinter as Tkinter
 import math
 import contextlib
 import warnings
+
+# check for X11 vs Wayland for XEMBED compatibility
+try:
+    _display = Gdk.Display.get_default()
+    if _display and not _display.get_name().lower().startswith('x11') and not _display.get_name().lower().startswith('display'):
+        # Some envs use ':0' which is X11. Wayland usually says 'wayland-0'
+        if 'wayland' in _display.get_name().lower():
+            print("Warning: NativeCAM embedding (XEMBED) requires X11. Wayland detected ('%s')." % _display.get_name())
+except Exception:
+    pass
 
 # PyGObject warns on every Gtk.Action / UIManager / ImageMenuItem call until a GAction port.
 warnings.filterwarnings(
