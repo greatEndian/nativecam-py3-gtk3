@@ -18,5 +18,5 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 - [x] **EOF / O-Word Errors**: Fixed CRLF issues in all lathe cfg/ngc files. Corrected crash in ncam.py action_save_ngc. Optimized Facing and Tool Change.
 
 ## 4. Technical Debt (Priority: Low)
-- [ ] **GTK Action/UIManager Migration**: Plan a transition from deprecated `Gtk.Action` to modern `GAction` and `GMenu`.
+- [ ] **GTK Action/UIManager Migration**: Plan a transition from deprecated `Gtk.Action` to modern `GAction` and `GMenu`. (Increment 4.1 bridge and 4.2 Project/Edit menus complete).
 - [x] **Dependency Management**: Update `debian/control` and add a `requirements.txt` for non-debian users.
