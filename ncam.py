@@ -2836,17 +2836,23 @@ class NCam(gtk.VBox):
 
         def create_gmi(_action, imgfile = None):
             # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
-            mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
+            if isinstance(_action, (gtk.ToggleAction, gtk.RadioAction)):
+                mi = gtk.CheckMenuItem.new_with_mnemonic(_action.get_label() or "")
+            else:
+                mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
+            
             mi.set_action_name("app." + _action.get_name())
             
             if imgfile is None:
-                if _action.get_stock_id():
+                if hasattr(_action, 'get_stock_id') and _action.get_stock_id():
                     img = gtk.Image.new_from_icon_name(_action.get_stock_id(), menu_icon_size)
-                    mi.set_image(img)
+                    if hasattr(mi, 'set_image'):
+                        mi.set_image(img)
             else:
                 img = gtk.Image()
                 img.set_from_pixbuf(get_pixbuf(imgfile, add_menu_icon_size))
-                mi.set_image(img)
+                if hasattr(mi, 'set_image'):
+                    mi.set_image(img)
             return mi
 
         with _suppress_gtk_accel_menu_item_critical():
@@ -2906,41 +2912,41 @@ class NCam(gtk.VBox):
 
             # View menu
             v_menu = gtk.Menu()
-            self.aren_mi = create_mi(self.actionRename)
+            self.aren_mi = create_gmi(self.actionRename)
             v_menu.append(self.aren_mi)
-            self.agrp_mi = create_mi(self.actionChngGrp)
+            self.agrp_mi = create_gmi(self.actionChngGrp)
             v_menu.append(self.agrp_mi)
             self.sep3 = gtk.SeparatorMenuItem()
             v_menu.append(self.sep3)
-            v_menu.append(create_mi(self.actionHideField))
-            v_menu.append(create_mi(self.actionShowF))
+            v_menu.append(create_gmi(self.actionHideField))
+            v_menu.append(create_gmi(self.actionShowF))
             self.sep2 = gtk.SeparatorMenuItem()
             v_menu.append(self.sep2)
 
             digits_menu = gtk.Menu()
-            digits_menu.append(create_mi(self.actionDigit1))
-            digits_menu.append(create_mi(self.actionDigit2))
-            digits_menu.append(create_mi(self.actionDigit3))
-            digits_menu.append(create_mi(self.actionDigit4))
-            digits_menu.append(create_mi(self.actionDigit5))
-            digits_menu.append(create_mi(self.actionDigit6))
-            self.d_menu = create_mi(self.actionSetDigits)
+            digits_menu.append(create_gmi(self.actionDigit1))
+            digits_menu.append(create_gmi(self.actionDigit2))
+            digits_menu.append(create_gmi(self.actionDigit3))
+            digits_menu.append(create_gmi(self.actionDigit4))
+            digits_menu.append(create_gmi(self.actionDigit5))
+            digits_menu.append(create_gmi(self.actionDigit6))
+            self.d_menu = create_gmi(self.actionSetDigits)
             self.d_menu.set_submenu(digits_menu)
             v_menu.append(self.d_menu)
 
             v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_mi(self.actionSingleView))
-            v_menu.append(create_mi(self.actionDualView))
+            v_menu.append(create_gmi(self.actionSingleView))
+            v_menu.append(create_gmi(self.actionDualView))
             v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_mi(self.actionTopBottom))
-            v_menu.append(create_mi(self.actionSideSide))
+            v_menu.append(create_gmi(self.actionTopBottom))
+            v_menu.append(create_gmi(self.actionSideSide))
             v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_mi(self.actionHideCol))
-            v_menu.append(create_mi(self.actionSubHdrs))
+            v_menu.append(create_gmi(self.actionHideCol))
+            v_menu.append(create_gmi(self.actionSubHdrs))
             v_menu.append(gtk.SeparatorMenuItem())
-            v_menu.append(create_mi(self.actionSaveLayout))
+            v_menu.append(create_gmi(self.actionSaveLayout))
 
-            view_menu = create_mi(self.actionViewMenu)
+            view_menu = create_gmi(self.actionViewMenu)
             view_menu.set_submenu(v_menu)
             self.menubar.append(view_menu)
 
@@ -2948,23 +2954,23 @@ class NCam(gtk.VBox):
             menuAdd = gtk.Menu()
             self.add_catalog_items(menuAdd)
             menuAdd.append(gtk.SeparatorMenuItem())
-            menuAdd.append(create_mi(self.actionLoadCfg))
-            menuAdd.append(create_mi(self.actionImportXML))
+            menuAdd.append(create_gmi(self.actionLoadCfg))
+            menuAdd.append(create_gmi(self.actionImportXML))
 
-            add_menu = create_mi(self.actionAddMenu)
+            add_menu = create_gmi(self.actionAddMenu)
             add_menu.set_submenu(menuAdd)
             self.menubar.append(add_menu)
 
             # Utilities menu
             menu_utils = gtk.Menu()
 
-            menu_utils.append(create_mi(self.actionChUnits))
-            menu_utils.append(create_mi(self.actionAutoRefresh))
+            menu_utils.append(create_gmi(self.actionChUnits))
+            menu_utils.append(create_gmi(self.actionAutoRefresh))
             menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_mi(self.actionLoadTools))
+            menu_utils.append(create_gmi(self.actionLoadTools))
             menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_mi(self.actionSaveUser))
-            menu_utils.append(create_mi(self.actionDeleteUser))
+            menu_utils.append(create_gmi(self.actionSaveUser))
+            menu_utils.append(create_gmi(self.actionDeleteUser))
 
             menu_utils.append(gtk.SeparatorMenuItem())
 
@@ -2981,28 +2987,28 @@ class NCam(gtk.VBox):
             self.chk_val_feat.connect('toggled', self.action_toggle_val_feat)
             menu_val.append(self.chk_val_feat)
 
-            u_menu = create_mi(self.actionValidationMenu)
+            u_menu = create_gmi(self.actionValidationMenu)
             u_menu.set_submenu(menu_val)
             menu_utils.append(u_menu)
 
             menu_utils.append(gtk.SeparatorMenuItem())
-            menu_utils.append(create_mi(self.actionPreferences))
+            menu_utils.append(create_gmi(self.actionPreferences))
 
-            u_menu = create_mi(self.actionUtilMenu)
+            u_menu = create_gmi(self.actionUtilMenu)
             u_menu.set_submenu(menu_utils)
             self.menubar.append(u_menu)
 
             # Help menu
             menu_help = gtk.Menu()
-            menu_help.append(create_mi(self.actionYouTube, "youtube.png"))
-    #        menu_help.append(create_mi(self.actionYouTrans, "youtube.png"))
+            menu_help.append(create_gmi(self.actionYouTube, "youtube.png"))
+    #        menu_help.append(create_gmi(self.actionYouTrans, "youtube.png"))
             menu_help.append(gtk.SeparatorMenuItem())
-            menu_help.append(create_mi(self.actionCNCHome, "linuxcncicon.png",))
-            menu_help.append(create_mi(self.actionForum, "linuxcncicon.png",))
+            menu_help.append(create_gmi(self.actionCNCHome, "linuxcncicon.png",))
+            menu_help.append(create_gmi(self.actionForum, "linuxcncicon.png",))
             menu_help.append(gtk.SeparatorMenuItem())
-            menu_help.append(create_mi(self.actionAbout))
+            menu_help.append(create_gmi(self.actionAbout))
 
-            h_menu = create_mi(self.actionHelpMenu)
+            h_menu = create_gmi(self.actionHelpMenu)
             h_menu.set_submenu(menu_help)
             self.menubar.append(h_menu)
 
@@ -3605,8 +3611,7 @@ class NCam(gtk.VBox):
             
             if callback is not None:
                 act.connect('activate', callback, args)
-                # GAction activate signature is (action, parameter). Wrap to match legacy expectations.
-                # Gtk.Action callback expects (action, args) where args is a tuple passed during connect.
+                # GAction activate signature is (action, parameter).
                 gact.connect('activate', lambda a, p: callback(act, args))
                 
             # Sync legacy set_sensitive() to modern GAction set_enabled()
@@ -3623,6 +3628,30 @@ class NCam(gtk.VBox):
 
             self.gaction_group.add_action(gact)
             
+            return act
+
+        def cta(actionname, label, tooltip, callback):
+            act = gtk.ToggleAction(name=actionname, label=label, tooltip=tooltip)
+            gact = Gio.SimpleAction.new_stateful(actionname, None, GLib.Variant.new_boolean(False))
+            
+            if callback is not None:
+                act.connect('toggled', callback)
+                gact.connect('change-state', lambda a, v: act.set_active(v.get_boolean()))
+            
+            orig_set_active = act.set_active
+            def new_set_active(is_active):
+                orig_set_active(is_active)
+                gact.set_state(GLib.Variant.new_boolean(is_active))
+            act.set_active = new_set_active
+
+            orig_set_sensitive = act.set_sensitive
+            def new_set_sensitive(sensitive):
+                orig_set_sensitive(sensitive)
+                gact.set_enabled(sensitive)
+            act.set_sensitive = new_set_sensitive
+            
+            self.action_group.add_action(act)
+            self.gaction_group.add_action(gact)
             return act
 
         # actions related to projects_("Create a New Project")("Open A Project")_("Open a Saved Project xml file")_('Save Project')
@@ -3681,22 +3710,23 @@ class NCam(gtk.VBox):
                 ("SideSide", None, _('Side By Side Layout'), None, None, 2)
             ], 1, self.set_layout)
 
-        self.actionHideCol = gtk.ToggleAction(name="HideCol", label=_('Master Value Column Hidden'), tooltip=_('In master treeview'))
-        self.actionHideCol.connect("toggled", self.set_layout)
-        self.action_group.add_action(self.actionHideCol)
+        # Bridge radio actions to simple GActions (state handled by legacy callback for now)
+        for an in ["SingleView", "DualView", "TopBottom", "SideSide"]:
+            act = self.action_group.get_action(an)
+            gact = Gio.SimpleAction.new(an, None)
+            gact.connect('activate', lambda a, p, _act=act: _act.activate())
+            self.gaction_group.add_action(gact)
 
-        self.actionSubHdrs = gtk.ToggleAction(name="SubHdrs", label=_('Sub-Groups In Master Tree'), tooltip=_('Sub-Groups In Master Tree'))
-        self.actionSubHdrs.connect("toggled", self.set_layout)
-        self.action_group.add_action(self.actionSubHdrs)
+        self.actionHideCol = cta("HideCol", _('Master Value Column Hidden'), _('In master treeview'), self.set_layout)
+        self.actionSubHdrs = cta("SubHdrs", _('Sub-Groups In Master Tree'), _('Sub-Groups In Master Tree'), self.set_layout)
 
         # actions related to utilities
         self.actionUtilMenu = ca("UtilitiesMenu", None, _("_Utilities"), None, None, self.utilMenu_activate)
         self.actionLoadTools = ca("LoadTools", 'gtk-refresh', _("Reload Tool Table"), None, _("Reload Tool Table"), TOOL_TABLE.load_table)
         self.actionPreferences = ca("Preferences", 'gtk-preferences', _("Edit Preferences"), None, _("Edit Preferences"), self.action_preferences)
 
-        self.actionAutoRefresh = gtk.ToggleAction(name="AutoRefresh", label=_("Auto-refresh"), tooltip=_('Auto-refresh LinuxCNC'))
+        self.actionAutoRefresh = cta("AutoRefresh", _("Auto-refresh"), _('Auto-refresh LinuxCNC'), self._autorefresh_toggled)
         self.actionAutoRefresh.set_active(False)
-        self.action_group.add_action(self.actionAutoRefresh)
 
         self.actionChUnits = ca("ChUnits", None, _("Change Units"), None, _(""), self.action_chUnits)
 
