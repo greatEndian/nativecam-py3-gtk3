@@ -33,12 +33,9 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y debhelper devscripts build-essential
+        sudo apt-get install -y debhelper devscripts build-essential dh-python
     - name: Check Debian package build
       run: |
-        cd debian
-        # Just check if rules file is executable and basically sound
-        # Actual build might fail without specific LinuxCNC dev packages, 
-        # but we can verify the structure.
-        chmod +x rules
-        ./rules clean
+        # debian/rules must be run from the root directory, not from within debian/
+        chmod +x debian/rules
+        ./debian/rules clean
