@@ -2656,7 +2656,9 @@ class NCam(gtk.VBox):
         # Tiny first allocation (e.g. tab not sized yet) → GtkToolbar negative width / distribute CRITICAL.
         self.set_size_request(120, 80)
 
-        self.show_all()
+        # Defer show_all() to the parent/host GUI to prevent XEMBED realization failures.
+        # Protect addVBox from being shown automatically when the parent calls show_all().
+        self.addVBox.set_no_show_all(True)
 
         self.actionCurrent.set_visible(not self.pref.autosave)
         self.addVBox.hide()
@@ -5632,6 +5634,7 @@ if __name__ == "__main__":
     window = gtk.Dialog(title=APP_TITLE, modal=True)
     ncam = NCam(accel_toplevel=window)
     window.vbox.add(ncam)
+    ncam.show_all()
     ncam.actionCurrent.set_visible(True)
     window.connect("destroy", gtk.main_quit)
     window.set_default_size(400, 800)
