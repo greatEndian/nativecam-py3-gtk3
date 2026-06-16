@@ -45,7 +45,7 @@ def translate(fstring):
         if inx > -1 :
             inx2 = line.find('</')
             txt = line[inx + 19:inx2]
-            line = re.sub(r'%s' % txt, '%s' % _(txt), line)
+            line = re.sub(r'%s' % txt, '%s' % _(txt), line) # noqa: F821
         fstring += (line + '\n')
     return fstring
 
@@ -108,7 +108,7 @@ class PrefEditor():
         try :
             gf = open(os.path.join(sysdir, "ncam_pref.glade")).read()
         except :
-            raise IOError(_("Expected file not found : %s") % 'ncam_pref.glade')
+            raise IOError(_("Expected file not found : %s") % 'ncam_pref.glade') # noqa: F821
 
         builder = gtk.Builder()
         if translate_test :
