@@ -19,6 +19,11 @@
 - **Python 3 Substring Logic**: Replaced buggy string validation (`if filename[-4] != ".ngc" not in filename`) with explicit `filename.lower().endswith(".ngc")`.
 - **Paned Window Scaling**: Restoring saved Paned positions (via `set_position()`) unconditionally can cause UI elements to be clipped or completely hidden on low-resolution screens. Implemented `size-allocate` event hooks on `GtkHPaned` and `GtkVPaned` to dynamically clamp the position based on `allocation.width` and `allocation.height`, ensuring both children remain visible. Also lowered `width_request` properties in `ncam.glade` to allow GTK3 to compress the window naturally for smaller displays.
 
+## GitHub Infrastructure & CI/CD (June 16, 2026)
+- **CI Build Pathing**: When verifying a Debian build in GitHub Actions, `debian/rules` must be executed from the project root (e.g., `./debian/rules clean`), not from within the `debian/` directory, so that `dh` can find the `control` file.
+- **Gettext Linting**: Functions injected into the global namespace via `gettext.install()` (like `_`) will trigger `F821 undefined name` errors in static analysis tools. Use `# noqa: F821` on the affected lines to maintain CI "green" status without introducing runtime boilerplate.
+- **XEMBED vs Wayland**: Confirmed that NativeCAM's tab-embedding strategy (XEMBED) is fundamentally incompatible with Wayland. Added a diagnostic check to `ncam.py` to alert users in these environments.
+
 ## Future Architectural Requirements
 - **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.
 
