@@ -2834,61 +2834,73 @@ class NCam(gtk.VBox):
                     mi.set_image(img)
             return mi
 
+        def create_gmi(_action, imgfile = None):
+            # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
+            mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
+            mi.set_action_name("app." + _action.get_name())
+            
+            if imgfile is None:
+                if _action.get_stock_id():
+                    img = gtk.Image.new_from_icon_name(_action.get_stock_id(), menu_icon_size)
+                    mi.set_image(img)
+            else:
+                img = gtk.Image()
+                img.set_from_pixbuf(get_pixbuf(imgfile, add_menu_icon_size))
+                mi.set_image(img)
+            return mi
+
         with _suppress_gtk_accel_menu_item_critical():
             if self.menubar is not None :
                 self.menubar.destroy()
             self.menubar = gtk.MenuBar()
 
-#        a = create_mi(self.actionOpen)
-#        a.destroy
-
             # Projects menu
             file_menu = gtk.Menu()
-            file_menu.append(create_mi(self.actionNew))
-            file_menu.append(create_mi(self.actionOpen))
-            file_menu.append(create_mi(self.actionOpenExample))
+            file_menu.append(create_gmi(self.actionNew))
+            file_menu.append(create_gmi(self.actionOpen))
+            file_menu.append(create_gmi(self.actionOpenExample))
             file_menu.append(gtk.SeparatorMenuItem())
-            file_menu.append(create_mi(self.actionSave))
-            file_menu.append(create_mi(self.actionCurrent))
-            file_menu.append(create_mi(self.actionSaveTemplate))
+            file_menu.append(create_gmi(self.actionSave))
+            file_menu.append(create_gmi(self.actionCurrent))
+            file_menu.append(create_gmi(self.actionSaveTemplate))
             file_menu.append(gtk.SeparatorMenuItem())
-            file_menu.append(create_mi(self.actionSaveNGC))
+            file_menu.append(create_gmi(self.actionSaveNGC))
 
-            f_menu = create_mi(self.actionProject)
+            f_menu = create_gmi(self.actionProject)
             f_menu.set_submenu(file_menu)
             self.menubar.append(f_menu)
 
             # Edit menu
             ed_menu = gtk.Menu()
-            ed_menu.append(create_mi(self.actionUndo))
-            ed_menu.append(create_mi(self.actionRedo))
+            ed_menu.append(create_gmi(self.actionUndo))
+            ed_menu.append(create_gmi(self.actionRedo))
             ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_mi(self.actionCut))
-            ed_menu.append(create_mi(self.actionCopy))
-            ed_menu.append(create_mi(self.actionPaste))
+            ed_menu.append(create_gmi(self.actionCut))
+            ed_menu.append(create_gmi(self.actionCopy))
+            ed_menu.append(create_gmi(self.actionPaste))
             ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_mi(self.actionAdd))
-            ed_menu.append(create_mi(self.actionDuplicate))
-            ed_menu.append(create_mi(self.actionDelete))
+            ed_menu.append(create_gmi(self.actionAdd))
+            ed_menu.append(create_gmi(self.actionDuplicate))
+            ed_menu.append(create_gmi(self.actionDelete))
             ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_mi(self.actionMoveUp))
-            ed_menu.append(create_mi(self.actionMoveDown))
+            ed_menu.append(create_gmi(self.actionMoveUp))
+            ed_menu.append(create_gmi(self.actionMoveDown))
             ed_menu.append(gtk.SeparatorMenuItem())
 
-            ed_menu.append(create_mi(self.actionAppendItm))
-            ed_menu.append(create_mi(self.actionRemoveItm))
+            ed_menu.append(create_gmi(self.actionAppendItm))
+            ed_menu.append(create_gmi(self.actionRemoveItm))
 
             self.sep1 = gtk.SeparatorMenuItem()
             ed_menu.append(self.sep1)
-            self.adt_mi = create_mi(self.actionDataType)
+            self.adt_mi = create_gmi(self.actionDataType)
             ed_menu.append(self.adt_mi)
-            self.art_mi = create_mi(self.actionRevertType)
+            self.art_mi = create_gmi(self.actionRevertType)
             ed_menu.append(self.art_mi)
 
-            edit_menu = create_mi(self.actionEditMenu)
+            edit_menu = create_gmi(self.actionEditMenu)
             edit_menu.set_submenu(ed_menu)
             self.menubar.append(edit_menu)
 
@@ -3596,6 +3608,13 @@ class NCam(gtk.VBox):
                 # GAction activate signature is (action, parameter). Wrap to match legacy expectations.
                 # Gtk.Action callback expects (action, args) where args is a tuple passed during connect.
                 gact.connect('activate', lambda a, p: callback(act, args))
+                
+            # Sync legacy set_sensitive() to modern GAction set_enabled()
+            orig_set_sensitive = act.set_sensitive
+            def new_set_sensitive(sensitive):
+                orig_set_sensitive(sensitive)
+                gact.set_enabled(sensitive)
+            act.set_sensitive = new_set_sensitive
                 
             import warnings
             with warnings.catch_warnings():
