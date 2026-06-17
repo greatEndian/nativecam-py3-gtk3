@@ -31,6 +31,7 @@
 ## Future Architectural Requirements
 - **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.
 - **Plane Switching Guards (G40)**: LinuxCNC strictly enforces that cutter compensation (`G40`) must be explicitly canceled before switching planes (`G17`, `G18`, `G19`). Failing to cancel `G41`/`G42` before a plane change throws an interpreter error. All Turn-Mill generated G-code must explicitly issue `G40` before transitioning out of the default `G18` lathe plane.
+- **C-Axis Array Patterning**: Circular arrays in Turn-Mill differ fundamentally from 3-axis milling. Instead of rotating the coordinate system with `G10 L2 R...`, the array group simply wraps its children in a loop that physically indexes the C-axis (`G0 C...`), stamping the child toolpaths at incremental angles around the part.
 
 ## Competitive Analysis & Inspiration
 - **QTDragon Integration**: QTDragon is a modern Qt/Python3 GUI that includes advanced probing and basic conversational wizards (facing, holes). A frequent community request is embedding NativeCAM *inside* QTDragon for advanced conversational features. We should ensure our Python 3/GTK3 port architecture is modular enough to allow embedding in QtVCP/QTDragon environments via XEMBED or similar mechanisms.
