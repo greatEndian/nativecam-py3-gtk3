@@ -24,6 +24,7 @@
 - **CI Build Pathing**: When verifying a Debian build in GitHub Actions, `debian/rules` must be executed from the project root (e.g., `./debian/rules clean`), not from within the `debian/` directory, so that `dh` can find the `control` file.
 - **Gettext Linting**: Functions injected into the global namespace via `gettext.install()` (like `_`) will trigger `F821 undefined name` errors in static analysis tools. Use `--builtins="_"` in the `flake8` configuration to maintain CI "green" status without introducing runtime boilerplate.
 - **XEMBED vs Wayland**: Confirmed that NativeCAM's tab-embedding strategy (XEMBED) is fundamentally incompatible with Wayland. Added a diagnostic check to `ncam.py` to alert users in these environments.
+- **Arithmetic Input Support**: Confirmed that NativeCAM's built-in Virtual Keyboard/Calculator (VKB) supports basic arithmetic expressions (e.g., `20-30`, `5*10`, `(10+5)/2`). This allows users to perform small calculations directly within the parameter input fields for `int` and `float` types.
 
 ## Future Architectural Requirements
 - **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.
