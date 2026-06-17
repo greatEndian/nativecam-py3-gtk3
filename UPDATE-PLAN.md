@@ -33,6 +33,15 @@ This plan follows the `DEV-WORKFLOW.md` template to address identified open poin
 - [x] **Phase 3 (Implement):** Modify `Tools.load_table()` and port necessary milling features into the Lathe catalog with the correct coordinate mapping.
 - [x] **Phase 4 (Verify):** Use offline numeric proof and a headless LinuxCNC INI configuration to validate safe plane switching and C/Y axis commands.
 
+## Increment 6 (I6): QtVCP / QTDragon Embedding Research
+**Goal:** Investigate the feasibility and architectural requirements for embedding the GTK3 NativeCAM application inside QtVCP-based host interfaces (like QTDragon).
+- [x] **Phase 1 (Scope & Study):** Review QtVCP embedding documentation and test basic `Gtk.Plug` (XEMBED) interactions within a dummy PyQt5/PyQt6 container.
+- [x] **Phase 2 (Research):** Evaluate compatibility hurdles, specifically concerning the Qt-GTK event loop integration and Wayland protocol limitations.
+- [x] **Phase 3 (Mark):** Document findings, limitations, and proposed embedding mechanisms in a new `QTVCP-INTEGRATION.md` design document. *(Result: Proceeding with Path A - Independent Window IPC).*
+- [x] **Phase 4 (Consult):** Build a minimal headless proof-of-concept (POC) script to prove GTK3 can safely render and process events while embedded in a QtVCP widget.
+
+*(Note: Increment 6 research is complete. Implementation of Path A IPC will be scoped in a future increment.)*
+
 ---
 ### Workflow Notes (from DEV-WORKFLOW.md)
 - **Golden Rule:** Ensure standalone mode and default behavior remain bit-identical where possible.

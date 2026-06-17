@@ -23,3 +23,4 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 
 ## 5. Future Roadmap (Priority: Low)
 - [x] **Live Tooling (Turn-Mill) Architecture**: Research coordinate mapping and plane switching (G17/G18/G19) requirements for C/Y axis milling in Lathe catalog. (100% Complete - Implemented Phase 1-4).
+- [ ] **QtVCP / QTDragon Integration**: Implement "Path A" (Independent Window IPC) architecture to allow NativeCAM to act as a standalone, borderless window that docks over Qt5/Qt6 host interfaces, ensuring safety under both X11 and Wayland.

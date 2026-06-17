@@ -26,6 +26,7 @@
 		            <menuitem action="cross_polygon" name="Cross Polygon (G19)" src="lathe/cross_polygon.cfg" icon="polygon.png" tool_tip="Cross polygon milling operation on the lathe OD using live tooling."/>
 		            <separator/>
 		            <menuitem action="c_array" name="C-Axis Array" src="lathe/c_array.cfg" icon="circular-array.png" tool_tip="Create a circular array of items by indexing the Lathe C-axis."/>
+		            <menuitem action="z_array" name="Z-Axis Line Array" src="lathe/z_array.cfg" icon="linear-array.png" tool_tip="Create a linear array of items by stepping along the Z-axis."/>
 		        </group>
 		        <menuitem action='parting'  name=_("Parting Off")_ tool_tip= _("Cut your part from initial material")_ icon="parting.png" src="lathe/parting.cfg"/>
 			<menuitem action='threading'  name=_("Threading")_ tool_tip= _("External or internal threads, metric or imperial")_ icon="threading.png" src="lathe/threading.cfg"/>

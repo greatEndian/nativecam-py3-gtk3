@@ -17,6 +17,7 @@ This document serves as the master index and context initialization for the Nati
 - **[GTK-MIGRATION.md](./GTK-MIGRATION.md)**: Specific technical debt strategy for migrating legacy `Gtk.Action` to modern `GAction`.
 - **LATHE-POLYLINE.md**: Implementation details and coordinate mapping strategies for Lathe polyline support.
 - **TURN-MILL-PLANES.md**: Documentation for G17/G18/G19 plane switching required for Lathe live tooling.
+- **QTVCP-INTEGRATION.md**: Research and design documentation regarding embedding GTK3 NativeCAM into Qt5/QtVCP environments.
 
 ## 4. Knowledge Base & Discoveries
 - **LEARNINGS-LOG.md**: An append-only log of technical discoveries, hard-won lessons, and architectural decisions.
