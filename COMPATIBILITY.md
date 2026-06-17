@@ -1,35 +1,31 @@
 # LinuxCNC 2.10+ Compatibility Findings
 
-This document tracks research and potential fixes for running NativeCAM on LinuxCNC 2.10+ (Debian 13 Trixie).
+This document tracks the research and solutions implemented for running NativeCAM on LinuxCNC 2.9/2.10+ (Debian 13 Trixie).
 
-## 1. Reported Issue: Disappearing Windows
-Some users report that the NativeCAM tab or embedded window "disappears" or remains blank when running in newer LinuxCNC environments (GtkVCP/GladeVCP).
+## 1. Resolved Issue: Disappearing Windows in Embedded Mode
+The issue where the NativeCAM tab or embedded window would "disappear" or remain blank in newer LinuxCNC environments (GtkVCP/GladeVCP) has been addressed.
 
 ### Analysis
 *   **XEMBED Lifecycle**: NativeCAM uses `gladevcp -x {XID}` for embedding. This relies on the X11 XEMBED protocol via `Gtk.Plug` (created by `gladevcp`) and `Gtk.Socket` (provided by the host GUI like Axis or Gmoccapy).
 *   **GTK3 Realization**: In GTK3, widgets must be realized in a specific order for embedding to work. If a widget is shown or realized before it is properly attached to the `Plug`, the embedding may fail.
 *   **Wayland**: If the OS is running Wayland instead of X11, `Gtk.Plug` and `Gtk.Socket` will **not work**. LinuxCNC 2.10 still defaults to X11 for most GUIs, but users on newer distros might be using Wayland.
 
-### Potential Fixes / Recommendations
-1.  **Defer Realization**: Ensure `NCam` doesn't force realization of itself or its children until it's attached to the toplevel.
-2.  **Size Requests**: Some newer window managers or GTK versions may hide windows with a 0x0 size request. We have already implemented `self.set_size_request(120, 80)` in `__init__`, which is a good first step.
-3.  **Check for X11**: Add a check in `ncam.py` to warn if the environment is not X11.
-    ```python
-    from gi.repository import Gdk
-    if not Gdk.Display.get_default().get_name().startswith('X11'):
-        print("Warning: NativeCAM embedding requires X11. Wayland detected.")
-    ```
+### Implemented Solutions
+1.  **Deferred Realization**: The `NCam` class now uses `realize` and `size-allocate` signal handlers (`_on_realize`, `_setup_toplevel_integration`) to ensure it only fully initializes after being attached to its parent toplevel window. This resolved the XEMBED race condition.
+2.  **Minimum Size Request**: A `self.set_size_request(120, 80)` call was added to `NCam.__init__` to prevent window managers from hiding the widget due to an initial 0x0 size.
+3.  **Wayland Detection**: A check for non-X11 display servers was added to the top of `ncam.py`. It now prints a clear warning to the console if a Wayland environment is detected, informing the user that embedding will not work.
 
-## 2. GAction Migration (Technical Debt)
-NativeCAM currently uses `Gtk.Action` and `Gtk.UIManager`, which are deprecated in GTK3 and removed in GTK4. While they still work in the current `python3-gi` environment, they trigger many warnings and may be removed in future LinuxCNC versions.
+## 2. Completed: GAction Migration
+The technical debt related to `Gtk.Action` and `Gtk.UIManager` has been fully paid down.
 
-### Proposed Path
-*   **Step 1**: Map all existing `Gtk.Action` names in `ncam.py` to their functionality.
-*   **Step 2**: Create a `GActionGroup` and add `GSimpleAction` for each item.
-*   **Step 3**: Update `ncam.ui` to use a `Gtk.MenuBar` and `Gtk.Toolbar` connected to these actions.
+### Status: 100% Complete
+*   All `Gtk.Action` and `Gtk.RadioAction` instances have been replaced with modern `Gio.SimpleAction` objects.
+*   The deprecated `Gtk.ActionGroup` has been removed entirely.
+*   The UI now uses a standard `Gtk.MenuBar` and `Gtk.Toolbar` connected to the new `GAction`s. This has eliminated hundreds of deprecation warnings and makes the application more robust for future GTK versions.
 
-## 3. Human Verification Strategy for 2.10
-Since we cannot easily simulate a full LinuxCNC 2.10 environment, the human operator should verify:
+## 3. Human Verification Checklist for 2.10+
+To confirm compatibility, the operator should verify:
 1.  **Standalone Run**: Does `./ncam.py` open a dialog correctly?
-2.  **Embedded Run**: Does `ncam -i config.ini -c mill` work and show the tab in Axis?
+2.  **Embedded Run**: Does `ncam -i config.ini -c mill` work and show the tab correctly in Axis or Gmoccapy?
 3.  **Log Check**: Check `~/.linuxcnc.log` for any "XEMBED" or "Socket" error messages.
+4.  **Wayland Check**: If running on a Wayland-by-default system (e.g., modern Ubuntu/Fedora), confirm that a warning is printed to the console when launching LinuxCNC with an embedded NativeCAM tab.

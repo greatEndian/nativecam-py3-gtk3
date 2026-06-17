@@ -40,6 +40,17 @@ Follow these steps to verify the core workflow.
    *   **Verify**: File starts with `%` (optional but standard) and ends with `M2` or `M30`.
    *   **Verify**: All O-numbers are unique (e.g., `o100`, `o101`).
 
+### Test D: Live Tooling (Turn-Mill) & Plane Switching
+1. **Action**: Open NativeCAM, select **Lathe Catalog**.
+2. **Action**: Add a **Face Rectangle (G17)** or **Cross Mill (G19)** item from the **Live Tooling** menu.
+3. **Action**: In the parameters, select a "Live Tool" (e.g., T2 or T3 if using the test `dummy.tbl`).
+4. **Action**: Click **Save G-Code** and inspect the file.
+   *   **Expected**: The code *must* issue `G40` (cutter comp cancel) before issuing `G17` or `G19`.
+   *   **Expected**: The code must revert to `G18` at the end of the operation.
+5. **Action**: Add a **C-Axis Array** from the **Live Tooling** menu, and move the milling feature inside it.
+6. **Action**: Click **Save G-Code** and inspect the generated file.
+   *   **Expected**: The milling subroutine call is wrapped in a loop that increments the C-axis using `G0 C...`.
+
 ---
 
 ## 3. Known Issues & "Expected" Warnings
