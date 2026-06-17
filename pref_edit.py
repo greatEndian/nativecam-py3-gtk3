@@ -33,7 +33,7 @@ if __name__ == '__main__':
     try :
         lang = gettext.translation(APP_NAME, nativecam_locale, fallback = True)
         lang.install()
-    except :
+    except Exception:
         gettext.install(APP_NAME, None)
 
 def translate(fstring):
@@ -59,7 +59,7 @@ class PrefEditor():
                 return self.config_pref.getfloat(section, key)
             else :
                 return self.config_def.getfloat(section, key)
-        except :
+        except Exception:
             return default
 
     def read_boolean(self, cf, section, key, default):
@@ -68,7 +68,7 @@ class PrefEditor():
                 return self.config_pref.getboolean(section, key)
             else :
                 return self.config_def.getboolean(section, key)
-        except :
+        except Exception:
             return default
 
     def read_str(self, cf, section, key, default):
@@ -81,7 +81,7 @@ class PrefEditor():
                 return default
             else :
                 return val
-        except :
+        except Exception:
             return default
 
     def read_int(self, cf, section, key, default):
@@ -105,8 +105,9 @@ class PrefEditor():
         self.catalog = catalog
 
         try :
-            gf = open(os.path.join(sysdir, "ncam_pref.glade")).read()
-        except :
+            with open(os.path.join(sysdir, "ncam_pref.glade")) as f:
+                gf = f.read()
+        except Exception:
             raise IOError(_("Expected file not found : %s") % 'ncam_pref.glade')
 
         builder = gtk.Builder()

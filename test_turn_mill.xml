@@ -1,0 +1,21 @@
+<?xml version="1.0" ?>
+<lcnc-ncam>
+  <!-- 1. Face Milling Operation -->
+  <feature id="face_mill_001" name="Face Mill (G17)" type="face_mill" expanded="True">
+    <param call="#param_x" type="float" value="0.0"/>
+    <param call="#param_y" type="float" value="0.0"/>
+    <param call="#param_z" type="float" value="0.0"/>
+    <param call="#param_depth" type="float" value="-0.25"/>
+    <param call="#param_dia" type="float" value="0.75"/>
+    <param call="#param_feed" type="float" value="12.0"/>
+    <param call="#param_tool" type="tool" value="2"/>
+  </feature>
+  <!-- 2. Cross Milling Operation -->
+  <feature id="cross_mill_001" name="Cross Mill (G19)" type="cross_mill" expanded="True">
+    <param call="#param_x_surf" type="float" value="3.0"/>
+    <param call="#param_y" type="float" value="0.0"/>
+    <param call="#param_z" type="float" value="-1.0"/>
+    <param call="#param_depth" type="float" value="-0.125"/>
+    <param call="#param_tool" type="tool" value="3"/>
+  </feature>
+</lcnc-ncam>

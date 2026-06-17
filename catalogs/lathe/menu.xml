@@ -16,6 +16,10 @@
 		                <menuitem action='poly_arc_ij'  name=_("Arc I,K")_ tool_tip= _("Defined center by offsets or absolute position")_ icon="arc-to-ij.png" src="lathe/polyline-arc-ij.cfg"/>
 		                <menuitem action='poly_arc_coords'  name=_("Arc To Coords")_ tool_tip= _("Define end point, arc height or radius")_ icon="arc-to-coords.png" src="lathe/polyline-arc-to.cfg"/>
 		        </menu>
+		        <group name="Live Tooling">
+		            <menuitem action="face_mill" name="Face Mill (G17)" src="lathe/face_mill.cfg" icon="face.png" tool_tip="Face milling operation on the lathe face using live tooling."/>
+		            <menuitem action="cross_mill" name="Cross Mill (G19)" src="lathe/cross_mill.cfg" icon="cross_mill.png" tool_tip="Cross milling operation on the lathe OD using live tooling."/>
+		        </group>
 		        <menuitem action='parting'  name=_("Parting Off")_ tool_tip= _("Cut your part from initial material")_ icon="parting.png" src="lathe/parting.cfg"/>
 			<menuitem action='threading'  name=_("Threading")_ tool_tip= _("External or internal threads, metric or imperial")_ icon="threading.png" src="lathe/threading.cfg"/>
 			<menuitem action='boring'  name=_("Internal Boring")_ tool_tip= _("Does straight boring")_ icon="lathe-surface-id.png" src="lathe/boring.cfg"/>
