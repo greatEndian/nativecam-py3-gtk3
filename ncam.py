@@ -615,7 +615,7 @@ class VKB(object):
 
         lbl = gtk.Label(label='')
         lbl.set_line_wrap(True)
-        self.dlg.vbox.pack_start(lbl, False, False, 0)
+        self.dlg.get_content_area().pack_start(lbl, False, False, 0)
         lbl.set_markup(tooltip)
 
         self.entry = gtk.Label(label='')
@@ -632,25 +632,25 @@ class VKB(object):
         box.add(self.entry)
         frame = gtk.Frame()
         frame.add(box)
+        frame.set_hexpand(True)
+        frame.set_vexpand(True)
 
-        tbl = gtk.Table(n_rows = 6, n_columns = 5, homogeneous = True)
-        tbl.attach(frame, 0, 5, 0, 1,
-                   xoptions = gtk.AttachOptions.EXPAND | gtk.AttachOptions.FILL,
-                   yoptions = gtk.AttachOptions.EXPAND | gtk.AttachOptions.FILL)
+        tbl = gtk.Grid(column_homogeneous=True, row_homogeneous=True)
+        tbl.attach(frame, 0, 0, 5, 1)
 
-        self.dlg.vbox.pack_start(tbl, True, True, 0)
+        self.dlg.get_content_area().pack_start(tbl, True, True, 0)
 
         btn = gtk.Button(label=_('BS'))
         btn.connect("clicked", self.input, 'BS')
         btn.set_can_focus(False)
-        tbl.attach(btn, 4, 5, 2, 3)
+        tbl.attach(btn, 4, 2, 1, 1)
 
         i = 0
         for lbl in ['F2', 'Pi', '()', '=', 'C'] :
             btn = gtk.Button(label=lbl)
             btn.connect("clicked", self.input, lbl)
             btn.set_can_focus(False)
-            tbl.attach(btn, i, i + 1, 1, 2)
+            tbl.attach(btn, i, 1, 1, 1)
             i = i + 1
 
         i = 2
@@ -658,7 +658,7 @@ class VKB(object):
             btn = gtk.Button(label=lbl)
             btn.connect("clicked", self.input, lbl)
             btn.set_can_focus(False)
-            tbl.attach(btn, 3, 4, i, i + 1)
+            tbl.attach(btn, 3, i, 1, 1)
             i = i + 1
 
         k = 10
@@ -669,13 +669,13 @@ class VKB(object):
                 btn = gtk.Button(label=lbl)
                 btn.connect("clicked", self.input, lbl)
                 btn.set_can_focus(False)
-                tbl.attach(btn, j, j + 1, i, i + 1)
+                tbl.attach(btn, j, i, 1, 1)
 
         if (self.min_value < 0.0) :
             btn = gtk.Button(label='+/-')
             btn.connect("clicked", self.input, '+/-')
             btn.set_can_focus(False)
-            tbl.attach(btn, 2, 3, 5, 6)
+            tbl.attach(btn, 2, 5, 1, 1)
             last_col = 2
         else :
             last_col = 3
@@ -684,20 +684,20 @@ class VKB(object):
             btn = gtk.Button(label=decimal_point)
             btn.connect("clicked", self.input, decimal_point)
             btn.set_can_focus(False)
-            tbl.attach(btn, last_col - 1, last_col, 5, 6)
+            tbl.attach(btn, last_col - 1, 5, 1, 1)
             last_col = last_col - 1
 
         btn = gtk.Button(label='0')
         btn.connect("clicked", self.input, '0')
         btn.set_can_focus(False)
-        tbl.attach(btn, 0, last_col, 5, 6)
+        tbl.attach(btn, 0, 5, last_col, 1)
 
         btn = gtk.Button()
         img = gtk.Image()
         btn = gtk.Button(label="Esc")
         btn.connect("clicked", self.cancel)
         btn.set_can_focus(False)
-        tbl.attach(btn, 4, 5, 3, 4)
+        tbl.attach(btn, 4, 3, 1, 1)
         
         if self.convertible_units :
             btn = gtk.Button()
@@ -706,15 +706,15 @@ class VKB(object):
             btn.set_image(img)
             btn.connect("clicked", self.input, 'CV')
             btn.set_can_focus(False)
-            tbl.attach(btn, 4, 5, 4, 5)
+            tbl.attach(btn, 4, 4, 1, 1)
 
         self.OKbtn = gtk.Button(label="OK")
         self.OKbtn.connect("clicked", self.ok)
         self.OKbtn.set_can_focus(False)
         if self.convertible_units :
-            tbl.attach(self.OKbtn, 4, 5, 5, 6)
+            tbl.attach(self.OKbtn, 4, 5, 1, 1)
         else :
-            tbl.attach(self.OKbtn, 4, 5, 4, 6)
+            tbl.attach(self.OKbtn, 4, 4, 1, 2)
 
         self.dlg.connect('key-press-event', self.key_press_event)
         self.focus_id = self.dlg.connect('focus-out-event', self.focus_out)
@@ -1157,7 +1157,7 @@ class CellRendererMx(gtk.CellRendererText):
         self.stringedit_window.set_property("skip-taskbar-hint", True)
 
         self.stringedit_entry = gtk.Entry()
-        self.stringedit_window.vbox.add(self.stringedit_entry)
+        self.stringedit_window.get_content_area().add(self.stringedit_entry)
         self.stringedit_entry.set_editable(True)
 
         self.stringedit_entry.connect('key-press-event', self.string_edit_keyhandler)
@@ -1311,7 +1311,7 @@ class CellRendererMx(gtk.CellRendererText):
             scrolled_window.set_policy(gtk.PolicyType.AUTOMATIC, gtk.PolicyType.AUTOMATIC)
 
             scrolled_window.add(self.textedit)
-            self.textedit_window.vbox.add(scrolled_window)
+            self.textedit_window.get_content_area().add(scrolled_window)
             self.textedit_window.realize()
 
             status, tree_x, tree_y = treeview.get_bin_window().get_origin()
@@ -2299,7 +2299,7 @@ class Preferences(object):
 
         self.default += _('\n(sub definitions)\n')
 
-class NCam(gtk.VBox):
+class NCam(gtk.Box):
     __gtype_name__ = "NCam"
     __gproperties__ = {}
     __gproperties = __gproperties__
@@ -2490,7 +2490,7 @@ class NCam(gtk.VBox):
         GLOBAL_PREF = self.pref
 
         # main_window
-        gtk.VBox.__init__(self, *a, **kw)
+        gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL, *a, **kw)
         self.builder = gtk.Builder()
         try :
             with io.open(os.path.join(SYS_DIR, "ncam.glade")) as f:
@@ -3707,24 +3707,26 @@ class NCam(gtk.VBox):
         self.actionCollapse = ca("Collapse", 'gtk-zoom-out', _("Collapse All Other Nodes"), '<control>K', _("Collapse All Other Nodes"), self.action_collapse)
         self.actionSaveLayout = ca("SaveLayout", 'gtk-save', _('Save As Default Layout'), '', _('Save As Default Layout'), self.action_saveLayout)
 
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.action_group.add_radio_actions([
-                ("SingleView", None, _('Single View'), None, None, 1),
-                ("DualView", None,  _('Dual Views'), None, None, 2)
-            ], 1, self.set_layout)
-            self.action_group.add_radio_actions([
-                ("TopBottom", None, _('Top / Bottom Layout'), None, None, 1),
-                ("SideSide", None, _('Side By Side Layout'), None, None, 2)
-            ], 1, self.set_layout)
+        def on_view_changed(action):
+            if not action.get_active():
+                action.set_state(GLib.Variant.new_boolean(True))
+                return
+                
+            name = action._name
+            if name == "SingleView":
+                self.actionDualView.set_state(GLib.Variant.new_boolean(False))
+            elif name == "DualView":
+                self.actionSingleView.set_state(GLib.Variant.new_boolean(False))
+            elif name == "TopBottom":
+                self.actionSideSide.set_state(GLib.Variant.new_boolean(False))
+            elif name == "SideSide":
+                self.actionTopBottom.set_state(GLib.Variant.new_boolean(False))
+            self.set_layout()
 
-        # Bridge radio actions to simple GActions (state handled by legacy callback for now)
-        for an in ["SingleView", "DualView", "TopBottom", "SideSide"]:
-            act = self.action_group.get_action(an)
-            gact = Gio.SimpleAction.new(an, None)
-            gact.connect('activate', lambda a, p, _act=act: _act.activate())
-            self.gaction_group.add_action(gact)
+        self.actionSingleView = cta("SingleView", _('Single View'), None, on_view_changed)
+        self.actionDualView = cta("DualView",  _('Dual Views'), None, on_view_changed)
+        self.actionTopBottom = cta("TopBottom", _('Top / Bottom Layout'), None, on_view_changed)
+        self.actionSideSide = cta("SideSide", _('Side By Side Layout'), None, on_view_changed)
 
         self.actionHideCol = cta("HideCol", _('Master Value Column Hidden'), _('In master treeview'), self.set_layout)
         self.actionSubHdrs = cta("SubHdrs", _('Sub-Groups In Master Tree'), _('Sub-Groups In Master Tree'), self.set_layout)
@@ -4558,7 +4560,7 @@ class NCam(gtk.VBox):
         edit_entry.set_editable(True)
         edit_entry.set_text(old_name)
         edit_entry.connect('key-press-event', self.action_rename_keyhandler)
-        self.newnamedlg.vbox.add(edit_entry)
+        self.newnamedlg.get_content_area().add(edit_entry)
         self.newnamedlg.set_keep_above(True)
 
         (status, tree_x, tree_y) = self.treeview.get_bin_window().get_origin()
@@ -5711,7 +5713,7 @@ if __name__ == "__main__":
 
     window = gtk.Dialog(title=APP_TITLE, modal=True)
     ncam = NCam(accel_toplevel=window)
-    window.vbox.add(ncam)
+    window.get_content_area().add(ncam)
     ncam.show_all()
     ncam.actionCurrent.set_visible(True)
     window.connect("destroy", gtk.main_quit)

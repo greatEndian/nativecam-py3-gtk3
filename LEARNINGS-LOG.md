@@ -26,6 +26,7 @@
 - **XEMBED vs Wayland**: Confirmed that NativeCAM's tab-embedding strategy (XEMBED) is fundamentally incompatible with Wayland. Added a diagnostic check to `ncam.py` to alert users in these environments.
 - **Arithmetic Input Support**: Confirmed that NativeCAM's built-in Virtual Keyboard/Calculator (VKB) supports basic arithmetic expressions (e.g., `20-30`, `5*10`, `(10+5)/2`). This allows users to perform small calculations directly within the parameter input fields for `int` and `float` types.
 - **Python 2 Legacy Tech Debt**: Replaced dozens of bare `except:` blocks with `except Exception:` and `except ValueError:` across the application to prevent NativeCAM from swallowing `KeyboardInterrupt` / `SystemExit` signals. Also replaced inline `open().read()` calls with `with open() as f:` context managers to close file handlers and avoid `ResourceWarning` leaks.
+- **GTK3 Object Deprecations**: Replaced legacy `Gtk.Table` in the Virtual Keyboard with modern `Gtk.Grid`. Replaced all direct `dialog.vbox` attribute accesses with `dialog.get_content_area()`. Converted the main `NCam` widget inheritance from the deprecated `Gtk.VBox` to a standard `Gtk.Box(orientation=VERTICAL)`.
 
 ## Future Architectural Requirements
 - **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.

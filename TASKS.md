@@ -22,4 +22,4 @@ This file tracks unresolved issues and planned improvements for the NativeCAM Py
 - [x] **Dependency Management**: Update `debian/control` and add a `requirements.txt` for non-debian users.
 
 ## 5. Future Roadmap (Priority: Low)
-- [x] **Live Tooling (Turn-Mill) Architecture**: Research coordinate mapping and plane switching (G17/G18/G19) requirements for C/Y axis milling in Lathe catalog. (Research Complete).
+- [x] **Live Tooling (Turn-Mill) Architecture**: Research coordinate mapping and plane switching (G17/G18/G19) requirements for C/Y axis milling in Lathe catalog. (100% Complete - Implemented Phase 1-4).

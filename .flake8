@@ -1,9 +1,5 @@
 [flake8]
-# E9, F63, F7, F82 are the critical errors we want to catch
 select = E9,F63,F7,F82
-# Treat '_' as a builtin (gettext)
 builtins = _
-# Max line length for consistency
 max-line-length = 127
-# Exclude non-code directories
 exclude = .git,__pycache__,docs,build,dist
