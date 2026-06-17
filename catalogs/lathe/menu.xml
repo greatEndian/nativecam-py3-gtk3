@@ -19,6 +19,13 @@
 		        <group name="Live Tooling">
 		            <menuitem action="face_mill" name="Face Mill (G17)" src="lathe/face_mill.cfg" icon="face.png" tool_tip="Face milling operation on the lathe face using live tooling."/>
 		            <menuitem action="cross_mill" name="Cross Mill (G19)" src="lathe/cross_mill.cfg" icon="cross_mill.png" tool_tip="Cross milling operation on the lathe OD using live tooling."/>
+		            <menuitem action="face_slot" name="Face Slot (G17)" src="lathe/face_slot.cfg" icon="slot.png" tool_tip="Face slotting operation on the lathe face using live tooling."/>
+		            <menuitem action="face_rect" name="Face Rectangle (G17)" src="lathe/face_rect.cfg" icon="rect.png" tool_tip="Face rectangle milling operation on the lathe face using live tooling."/>
+		            <menuitem action="cross_rect" name="Cross Rectangle (G19)" src="lathe/cross_rect.cfg" icon="rect.png" tool_tip="Cross rectangle milling operation on the lathe OD using live tooling."/>
+		            <menuitem action="face_polygon" name="Face Polygon (G17)" src="lathe/face_polygon.cfg" icon="polygon.png" tool_tip="Face polygon milling operation on the lathe face using live tooling."/>
+		            <menuitem action="cross_polygon" name="Cross Polygon (G19)" src="lathe/cross_polygon.cfg" icon="polygon.png" tool_tip="Cross polygon milling operation on the lathe OD using live tooling."/>
+		            <separator/>
+		            <menuitem action="c_array" name="C-Axis Array" src="lathe/c_array.cfg" icon="circular-array.png" tool_tip="Create a circular array of items by indexing the Lathe C-axis."/>
 		        </group>
 		        <menuitem action='parting'  name=_("Parting Off")_ tool_tip= _("Cut your part from initial material")_ icon="parting.png" src="lathe/parting.cfg"/>
 			<menuitem action='threading'  name=_("Threading")_ tool_tip= _("External or internal threads, metric or imperial")_ icon="threading.png" src="lathe/threading.cfg"/>
