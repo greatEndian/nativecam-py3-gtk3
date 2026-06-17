@@ -102,7 +102,7 @@ try :
     lang = gettext.translation(APP_NAME, nativecam_locale, fallback = True)
     lang.install()
     _ = lang.gettext
-except :
+except Exception:
     gettext.install(APP_NAME, None)
 
 APP_TITLE = _("NativeCAM for LinuxCNC")
@@ -181,16 +181,16 @@ def get_int(s10) :
         s10 = s10[:index]
     try :
         return int(s10)
-    except :
+    except ValueError:
         return 0
 
 def get_float(s10) :
     try :
         return float(s10)
-    except :
+    except ValueError:
         try :
             return locale.atof(s10)
-        except :
+        except ValueError:
             return 0.0
 
 def get_string(float_val, digits, localized = True):
@@ -270,8 +270,11 @@ def translate(fstring):
         fstring += (line + '\n')
     return fstring
 
-def mess_dlg(mess, title = "NativeCAM"):
-    dlg = gtk.MessageDialog(parent = None,
+def mess_dlg(mess, title = "NativeCAM", parent=None):
+    if parent is None:
+        active = [w for w in gtk.Window.list_toplevels() if w.get_visible()]
+        parent = active[0] if active else None
+    dlg = gtk.MessageDialog(transient_for = parent,
         modal = True,
         destroy_with_parent = True,
         message_type = gtk.MessageType.WARNING,
@@ -282,12 +285,15 @@ def mess_dlg(mess, title = "NativeCAM"):
     dlg.run()
     dlg.destroy()
 
-def mess_yesno(mess, title = ""):
-    return mess_with_buttons(mess, ('gtk-yes', gtk.ResponseType.YES, \
-                             'gtk-no', gtk.ResponseType.NO), title) == gtk.ResponseType.YES
+def mess_yesno(mess, title = "", parent=None):
+    return mess_with_buttons(mess, ('gtk-yes', gtk.ResponseType.YES,
+                             'gtk-no', gtk.ResponseType.NO), title, parent=parent) == gtk.ResponseType.YES
 
-def mess_with_buttons(mess, buttons, title = ""):
-    mwb = gtk.Dialog(parent = None,
+def mess_with_buttons(mess, buttons, title = "", parent=None):
+    if parent is None:
+        active = [w for w in gtk.Window.list_toplevels() if w.get_visible()]
+        parent = active[0] if active else None
+    mwb = gtk.Dialog(transient_for = parent,
                      buttons = buttons,
                      flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT,
           )
@@ -330,8 +336,10 @@ def copy_dir_recursive(fromdir, todir,
             update_ct += 1
             continue
         else :  # local file exists and not overwrite
-            if (hashlib.md5(open(frompath, 'rb').read()).digest()
-                 == hashlib.md5(open(topath, 'rb').read()).digest()) :
+            with open(frompath, 'rb') as f1, open(topath, 'rb') as f2:
+                from_digest = hashlib.md5(f1.read()).digest()
+                to_digest = hashlib.md5(f2.read()).digest()
+            if from_digest == to_digest :
                 # files are same
                 if verbose :
                     print("NOT copying %s to %s" % (p, todir))
@@ -499,7 +507,9 @@ def create_M_file() :
         f.write("msg = '%s'\n" % _('Stop LinuxCNC program,&#10;toggle the shown button,&#10;then restart'))
         f.write("msg1 = '%s'\n" % _('Skip block not active'))
         f.write("icon_fname = '%s'\n\n" % os.path.join(NCAM_DIR, GRAPHICS_DIR, 'skip_block.png'))
-        f.write("dlg = gtk.MessageDialog(parent = None, flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT, type = gtk.MessageType.WARNING, buttons = gtk.ButtonsType.NONE, message_format = msg1)\n\n")
+        f.write("active = [w for w in gtk.Window.list_toplevels() if w.get_visible()]\n")
+        f.write("parent_win = active[0] if active else None\n")
+        f.write("dlg = gtk.MessageDialog(transient_for = parent_win, flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT, type = gtk.MessageType.WARNING, buttons = gtk.ButtonsType.NONE, message_format = msg1)\n\n")
         f.write("dlg.set_title('NativeCAM')\ndlg.format_secondary_markup(msg)\n\n")
         f.write("img = gtk.Image()\n")
         f.write("img.set_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(icon_fname, 80, 80))\n")
@@ -531,12 +541,14 @@ class Tools(object):
         self.table = None
         self.table = []
         if self.table_fname is not None :
-            tbl = open(self.table_fname).read().split("\n")
+            with open(self.table_fname) as f:
+                tbl = f.read().split("\n")
             for s in tbl :
                 s = s.strip()
                 if ";" in s:
                     tnumber = '0'
                     torient = '0'
+                    tdia = '0'
                     s = s.split(";")
                     tdesc = s[1][0:]
                     s = s[0][0:]
@@ -547,11 +559,16 @@ class Tools(object):
                                 tnumber = s2[1:]
                             elif (s2[0] == 'Q') :
                                 torient = s2[1:]
+                            elif (s2[0] == 'D') :
+                                tdia = s2[1:]
                     if tnumber != '0' :
                         if tdesc == '' :
                             tdesc = _('no description')
-                        self.table.append([int(tnumber), tnumber, tdesc, torient])
-        self.table.append ([0, '0', _('None')])
+                        
+                        is_live = ('live' in tdesc.lower() or 'mill' in tdesc.lower())
+                        
+                        self.table.append([int(tnumber), tnumber, tdesc, torient, tdia, is_live])
+        self.table.append ([0, '0', _('None'), '0', '0', False])
         self.table.sort()
 
         self.list = ''
@@ -572,6 +589,18 @@ class Tools(object):
             for tool in self.table :
                 if tool[0] == tn :
                     self.orientation = get_int(tool[3])
+
+    def is_live_tool(self, tn):
+        for tool in self.table:
+            if tool[0] == tn or tool[1] == str(tn):
+                return tool[5]
+        return False
+
+    def get_tool_diameter(self, tn):
+        for tool in self.table:
+            if tool[0] == tn or tool[1] == str(tn):
+                return get_float(tool[4])
+        return 0.0
 
     def get_tool_orient(self):
         return self.orientation
@@ -922,12 +951,12 @@ class VKB(object):
             try:
                 i = str(locale.atof(i))
                 qualified = qualified + str(float(i))
-            except:
+                except ValueError:
                 qualified = qualified + i
 
         try :
             return True, eval(qualified)
-        except :
+            except Exception:
             return False, 0.0
 
     def __exit__(self, type, value, traceback):
@@ -1614,7 +1643,8 @@ class Feature(object):
 
     def from_src(self, src) :
         src_config = ConfigParser.ConfigParser()
-        uf = io.open(src).read()
+        with io.open(src) as a_f:
+            uf = a_f.read()
         f = str(uf)
 
         # remove _(" and ")
@@ -1724,7 +1754,8 @@ class Feature(object):
     def include(self, srce) :
         src = search_path(search_warning.dialog, srce, LIB_DIR)
         if src is not None:
-            return io.open(src).read()
+            with io.open(src) as f:
+                return f.read()
         return ''
 
     def include_once(self, src) :
@@ -1764,7 +1795,7 @@ class Feature(object):
         def eval_callback(m) :
             try :
                 return str(eval(m.group(2), globals(), {"self":self}))
-            except :
+            except Exception:
                 return ''
 
         def exec_callback(m) :
@@ -1820,7 +1851,8 @@ class Feature(object):
             fname = m.group(2)
             fname = search_path(search_warning.dialog, fname, PROJECTS_DIR)
             if fname is not None :
-                return str(open(fname).read())
+                with open(fname) as f:
+                    return str(f.read())
 
         s = self.replace_params(s)
 
@@ -1884,7 +1916,9 @@ class Feature(object):
             return
 
         # create dialog with image and checkbox
-        dlg = gtk.MessageDialog(parent = None,
+        active = [w for w in gtk.Window.list_toplevels() if w.get_visible()]
+        parent_win = active[0] if active else None
+        dlg = gtk.MessageDialog(transient_for = parent_win,
             flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT,
             type = gtk.MessageType.WARNING,
             buttons = gtk.ButtonsType.NONE,
@@ -1908,7 +1942,7 @@ class Feature(object):
     def check_hash(self, s, default = 0):
         try :
             return (0 + eval(s.strip('[]')))
-        except :
+        except Exception:
             print(_('%(feature_name)s : can not evaluate %(value)s') % \
                   {'feature_name':self.get_name(), 'value':s})
             return default
@@ -1943,13 +1977,13 @@ class Preferences(object):
         def read_float(cf, section, key, default):
             try :
                 return cf.getfloat(section, key)
-            except :
+            except Exception:
                 return default
 
         def read_boolean(cf, section, key, default):
             try :
                 return cf.getboolean(section, key)
-            except :
+            except Exception:
                 return default
 
         def read_sbool(cf, section, key, default):
@@ -1965,7 +1999,7 @@ class Preferences(object):
                     return default
                 else :
                     return val
-            except :
+            except Exception:
                 return default
 
         def read_int(cf, section, key, default):
@@ -2324,6 +2358,13 @@ class NCam(gtk.VBox):
         self.selected_feature_ts_itr = None
         self.selected_param = None
         self.selected_type = 'xxx'
+        self.mi_chunits = None
+        self.mi_rename_list = []
+        self.mi_chnggrp_list = []
+        self.mi_setdigits_list = []
+        self.mi_datatype_list = []
+        self.mi_reverttype_list = []
+        self.mi_current_list = []
         self.selection = None
         self.timeout = None
         self._ncam_shutting_down = False
@@ -2439,7 +2480,8 @@ class NCam(gtk.VBox):
         if cat_dir_name is None :
             sys.exit(1)
 
-        mnu_xml = open(cat_dir_name).read()
+        with open(cat_dir_name) as f:
+            mnu_xml = f.read()
         mnu_xml = re.sub(r"_\(", "", mnu_xml)
         mnu_xml = re.sub(r"\)_", "", mnu_xml)
         self.catalog = etree.fromstring(mnu_xml)
@@ -2451,7 +2493,8 @@ class NCam(gtk.VBox):
         gtk.VBox.__init__(self, *a, **kw)
         self.builder = gtk.Builder()
         try :
-            gf = io.open(os.path.join(SYS_DIR, "ncam.glade")).read()
+            with io.open(os.path.join(SYS_DIR, "ncam.glade")) as f:
+                gf = f.read()
         except IOError as reason :
             err_exit(reason)
 
@@ -2526,12 +2569,13 @@ class NCam(gtk.VBox):
                     tb.insert(gtk.SeparatorToolItem(), -1)
                 else:
                     name, stock = item
-                    act = self.action_group.get_action(name)
+                    act = self._actions.get(name) or self.action_group.get_action(name)
                     ti = gtk.ToolButton()
                     ti.set_action_name("app." + name)
                     ti.set_icon_name(stock)
-                    if act and act.get_tooltip():
-                        ti.set_tooltip_markup(act.get_tooltip())
+                    tooltip = getattr(act, '_tooltip', None) or (hasattr(act, 'get_tooltip') and act.get_tooltip())
+                    if tooltip:
+                        ti.set_tooltip_markup(tooltip)
                     tb.insert(ti, -1)
             return tb
 
@@ -2570,7 +2614,7 @@ class NCam(gtk.VBox):
         # Protect addVBox from being shown automatically when the parent calls show_all().
         self.addVBox.set_no_show_all(True)
 
-        self.actionCurrent.set_visible(not self.pref.autosave)
+        for mi in self.mi_current_list: mi.set_visible(not self.pref.autosave)
         self.addVBox.hide()
         self.set_layout(None)
 
@@ -2705,21 +2749,23 @@ class NCam(gtk.VBox):
 
     def _create_menu_item(self, _action, imgfile = None):
         # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
-        if isinstance(_action, (gtk.ToggleAction, gtk.RadioAction)):
-            mi = gtk.CheckMenuItem.new_with_mnemonic(_action.get_label() or "")
+        is_toggle = getattr(_action, '_is_toggle', False)
+        if is_toggle or isinstance(_action, (gtk.ToggleAction, gtk.RadioAction)):
+            mi = gtk.CheckMenuItem.new_with_mnemonic(getattr(_action, '_label', None) or (hasattr(_action, 'get_label') and _action.get_label()) or "")
         else :
-            mi = gtk.ImageMenuItem.new_with_mnemonic(_action.get_label() or "")
+            mi = gtk.ImageMenuItem.new_with_mnemonic(getattr(_action, '_label', None) or (hasattr(_action, 'get_label') and _action.get_label()) or "")
 
-        mi.set_action_name("app." + _action.get_name())
+        action_name = getattr(_action, '_name', None) or (hasattr(_action, 'get_name') and _action.get_name())
+        mi.set_action_name("app." + action_name)
 
-        aname = _action.get_name()
-        if aname in self.accels:
-            key, mods = self.accels[aname]
+        if action_name in self.accels:
+            key, mods = self.accels[action_name]
             mi.add_accelerator("activate", self.accel_group, key, mods, gtk.AccelFlags.VISIBLE)
 
         if imgfile is None :
-            if hasattr(_action, 'get_stock_id') and _action.get_stock_id() :
-                img = gtk.Image.new_from_icon_name(_action.get_stock_id(), menu_icon_size)
+            stock_id = getattr(_action, '_stock_id', None) or (hasattr(_action, 'get_stock_id') and _action.get_stock_id())
+            if stock_id:
+                img = gtk.Image.new_from_icon_name(stock_id, menu_icon_size)
                 if hasattr(mi, 'set_image') :
                     mi.set_image(img)
         else :
@@ -2732,7 +2778,9 @@ class NCam(gtk.VBox):
     def create_popups(self):
         # PopupMenu
         self.pop_up = gtk.Menu()
-        self.pop_up.append(self._create_menu_item(self.actionRename))
+        mi = self._create_menu_item(self.actionRename)
+        self.mi_rename_list.append(mi)
+        self.pop_up.append(mi)
         
         digits_menu = gtk.Menu()
         digits_menu.append(self._create_menu_item(self.actionDigit1))
@@ -2743,17 +2791,26 @@ class NCam(gtk.VBox):
         digits_menu.append(self._create_menu_item(self.actionDigit6))
         d_menu = self._create_menu_item(self.actionSetDigits)
         d_menu.set_submenu(digits_menu)
+        self.mi_setdigits_list.append(d_menu)
         self.pop_up.append(d_menu)
         
-        self.pop_up.append(self._create_menu_item(self.actionDataType))
-        self.pop_up.append(self._create_menu_item(self.actionRevertType))
+        mi = self._create_menu_item(self.actionDataType)
+        self.mi_datatype_list.append(mi)
+        self.pop_up.append(mi)
+        mi = self._create_menu_item(self.actionRevertType)
+        self.mi_reverttype_list.append(mi)
+        self.pop_up.append(mi)
         self.pop_up.append(gtk.SeparatorMenuItem())
         self.pop_up.append(self._create_menu_item(self.actionUndo))
         self.pop_up.append(self._create_menu_item(self.actionRedo))
         self.pop_up.append(gtk.SeparatorMenuItem())
-        self.pop_up.append(self._create_menu_item(self.actionHideField))
-        self.pop_up.append(self._create_menu_item(self.actionShowF))
-        self.pop_up.append(self._create_menu_item(self.actionChngGrp))
+        mi = self._create_menu_item(self.actionHideField)
+        self.pop_up.append(mi)
+        mi = self._create_menu_item(self.actionShowF)
+        self.pop_up.append(mi)
+        mi = self._create_menu_item(self.actionChngGrp)
+        self.mi_chnggrp_list.append(mi)
+        self.pop_up.append(mi)
         self.pop_up.append(gtk.SeparatorMenuItem())
         self.pop_up.append(self._create_menu_item(self.actionAdd))
         self.pop_up.append(self._create_menu_item(self.actionDuplicate))
@@ -2784,17 +2841,26 @@ class NCam(gtk.VBox):
         digits_menu2.append(self._create_menu_item(self.actionDigit6))
         d_menu2 = self._create_menu_item(self.actionSetDigits)
         d_menu2.set_submenu(digits_menu2)
+        self.mi_setdigits_list.append(d_menu2)
         self.pop_up2.append(d_menu2)
 
-        self.pop_up2.append(self._create_menu_item(self.actionDataType))
-        self.pop_up2.append(self._create_menu_item(self.actionRevertType))
+        mi = self._create_menu_item(self.actionDataType)
+        self.mi_datatype_list.append(mi)
+        self.pop_up2.append(mi)
+        mi = self._create_menu_item(self.actionRevertType)
+        self.mi_reverttype_list.append(mi)
+        self.pop_up2.append(mi)
         self.pop_up2.append(gtk.SeparatorMenuItem())
         self.pop_up2.append(self._create_menu_item(self.actionUndo))
         self.pop_up2.append(self._create_menu_item(self.actionRedo))
         self.pop_up2.append(gtk.SeparatorMenuItem())
-        self.pop_up2.append(self._create_menu_item(self.actionHideField))
-        self.pop_up2.append(self._create_menu_item(self.actionShowF))
-        self.pop_up2.append(self._create_menu_item(self.actionChngGrp))
+        mi = self._create_menu_item(self.actionHideField)
+        self.pop_up2.append(mi)
+        mi = self._create_menu_item(self.actionShowF)
+        self.pop_up2.append(mi)
+        mi = self._create_menu_item(self.actionChngGrp)
+        self.mi_chnggrp_list.append(mi)
+        self.pop_up2.append(mi)
         self.pop_up2.append(gtk.SeparatorMenuItem())
         self.pop_up2.append(self._create_menu_item(self.actionSaveUser))
         self.pop_up2.append(self._create_menu_item(self.actionDeleteUser))
@@ -2812,7 +2878,9 @@ class NCam(gtk.VBox):
         file_menu.append(self._create_menu_item(self.actionOpenExample))
         file_menu.append(gtk.SeparatorMenuItem())
         file_menu.append(self._create_menu_item(self.actionSave))
-        file_menu.append(self._create_menu_item(self.actionCurrent))
+        self.mi_current = self._create_menu_item(self.actionCurrent)
+        self.mi_current_list.append(self.mi_current)
+        file_menu.append(self.mi_current)
         file_menu.append(self._create_menu_item(self.actionSaveTemplate))
         file_menu.append(gtk.SeparatorMenuItem())
         file_menu.append(self._create_menu_item(self.actionSaveNGC))
@@ -2847,8 +2915,10 @@ class NCam(gtk.VBox):
         self.sep1 = gtk.SeparatorMenuItem()
         ed_menu.append(self.sep1)
         self.adt_mi = self._create_menu_item(self.actionDataType)
+        self.mi_datatype_list.append(self.adt_mi)
         ed_menu.append(self.adt_mi)
         self.art_mi = self._create_menu_item(self.actionRevertType)
+        self.mi_reverttype_list.append(self.art_mi)
         ed_menu.append(self.art_mi)
 
         edit_menu = self._create_menu_item(self.actionEditMenu)
@@ -2858,8 +2928,10 @@ class NCam(gtk.VBox):
         # View menu
         v_menu = gtk.Menu()
         self.aren_mi = self._create_menu_item(self.actionRename)
+        self.mi_rename_list.append(self.aren_mi)
         v_menu.append(self.aren_mi)
         self.agrp_mi = self._create_menu_item(self.actionChngGrp)
+        self.mi_chnggrp_list.append(self.agrp_mi)
         v_menu.append(self.agrp_mi)
         self.sep3 = gtk.SeparatorMenuItem()
         v_menu.append(self.sep3)
@@ -2877,6 +2949,7 @@ class NCam(gtk.VBox):
         digits_menu.append(self._create_menu_item(self.actionDigit6))
         self.d_menu = self._create_menu_item(self.actionSetDigits)
         self.d_menu.set_submenu(digits_menu)
+        self.mi_setdigits_list.append(self.d_menu)
         v_menu.append(self.d_menu)
 
         v_menu.append(gtk.SeparatorMenuItem())
@@ -2909,7 +2982,8 @@ class NCam(gtk.VBox):
         # Utilities menu
         menu_utils = gtk.Menu()
 
-        menu_utils.append(self._create_menu_item(self.actionChUnits))
+        self.mi_chunits = self._create_menu_item(self.actionChUnits)
+        menu_utils.append(self.mi_chunits)
         menu_utils.append(self._create_menu_item(self.actionAutoRefresh))
         menu_utils.append(gtk.SeparatorMenuItem())
         menu_utils.append(self._create_menu_item(self.actionLoadTools))
@@ -2974,7 +3048,7 @@ class NCam(gtk.VBox):
         xml = etree.Element(XML_TAG)
         self.treestore_to_xml_recursion(self.selected_feature_ts_itr, xml, False)
         self.clipboard.set_text(etree.tostring(xml).decode('utf-8'), len = -1)
-        self.actionPaste.set_sensitive(True)
+        self.actionPaste.set_enabled(True)
 
     def action_paste(self, *arg):
         txt = self.clipboard.wait_for_text()
@@ -2984,9 +3058,9 @@ class NCam(gtk.VBox):
     def edit_menu_activate(self, *arg):
         txt = self.clipboard.wait_for_text()
         if txt:
-            self.actionPaste.set_sensitive(XML_TAG in txt)
+            self.actionPaste.set_enabled(XML_TAG in txt)
         else:
-            self.actionPaste.set_sensitive(False)
+            self.actionPaste.set_enabled(False)
 
         self.adt_mi.set_visible(self.selected_type in ['float', 'int'])
         self.art_mi.set_visible(self.selected_type == 'gcode')
@@ -2994,9 +3068,9 @@ class NCam(gtk.VBox):
 
     def utilMenu_activate(self, *arg):
         if default_metric :
-            self.actionChUnits.set_label(_("Change Units to Imperial"))
+            self.mi_chunits.set_label(_("Change Units to Imperial"))
         else :
-            self.actionChUnits.set_label(_("Change Units to Metric"))
+            self.mi_chunits.set_label(_("Change Units to Metric"))
 
     def validation_menu_activate(self, *arg):
         # Update global messages checkmark
@@ -3286,7 +3360,7 @@ class NCam(gtk.VBox):
 
                     elif p.tag.lower() == "separator":
                         grp_menu.append(gtk.SeparatorMenuItem())
-                except:
+                except Exception:
                     pass
 
         if self.catalog.tag != 'ncam_ui' :
@@ -3369,7 +3443,7 @@ class NCam(gtk.VBox):
             parser.write(configfile)
 
         self.pref.read_user_values()
-        self.actionDeleteUser.set_sensitive(self.selected_feature.get_type() in USER_SUBROUTINES)
+        self.actionDeleteUser.set_enabled(self.selected_feature.get_type() in USER_SUBROUTINES)
 
     def action_deleteUser(self, *arg):
         fname = os.path.join(NCAM_DIR, CATALOGS_DIR, self.catalog_dir,
@@ -3383,7 +3457,7 @@ class NCam(gtk.VBox):
             with open(fname, 'w') as configfile:
                 parser.write(configfile)
             self.pref.read_user_values()
-            self.actionDeleteUser.set_sensitive(self.selected_feature.get_type() in USER_SUBROUTINES)
+            self.actionDeleteUser.set_enabled(self.selected_feature.get_type() in USER_SUBROUTINES)
 
     def action_saveCurrent(self, *arg):
         fname = os.path.join(NCAM_DIR, CATALOGS_DIR, self.catalog_dir, PROJECTS_DIR, CURRENT_WORK)
@@ -3515,7 +3589,7 @@ class NCam(gtk.VBox):
                             MENU_LISTING[actionname] = [name, tooltip, src, icon]
                     if p.tag.lower() == "menu" :
                         add_actions(p)
-                except :
+                except Exception:
                     return
 
         def add_toolbar_def(path):
@@ -3527,7 +3601,7 @@ class NCam(gtk.VBox):
                         TB_CATALOG[toolbar_rank] = "separator"
                     elif p.tag.lower() == 'toolitem':
                         TB_CATALOG[toolbar_rank] = MENU_LISTING[p.get("action")]
-                except :
+                except Exception:
                     return
                 toolbar_rank += 1
 
@@ -3540,21 +3614,17 @@ class NCam(gtk.VBox):
                 add_toolbar_def(_p)
 
     def create_actions(self):
+        self._actions = {}
         def ca(actionname, stock_id, label, accel, tooltip, callback, *args):
-            act = gtk.Action(name=actionname, label=label, tooltip=tooltip, stock_id=stock_id)
             gact = Gio.SimpleAction.new(actionname, None)
+            gact._name = actionname
+            gact._label = label
+            gact._tooltip = tooltip
+            gact._stock_id = stock_id
+            gact._is_toggle = False
             
             if callback is not None:
-                act.connect('activate', callback, args)
-                # GAction activate signature is (action, parameter).
-                gact.connect('activate', lambda a, p: callback(act, args))
-                
-            # Sync legacy set_sensitive() to modern GAction set_enabled()
-            orig_set_sensitive = act.set_sensitive
-            def new_set_sensitive(sensitive):
-                orig_set_sensitive(sensitive)
-                gact.set_enabled(sensitive)
-            act.set_sensitive = new_set_sensitive
+                gact.connect('activate', lambda a, p: callback(gact, args))
             
             if accel:
                 key, mods = gtk.accelerator_parse(accel)
@@ -3562,38 +3632,36 @@ class NCam(gtk.VBox):
                     self.accel_group.connect(key, mods, gtk.AccelFlags.VISIBLE, lambda *a: gact.activate(None))
                     self.accels[actionname] = (key, mods)
                 
-            import warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                self.action_group.add_action(act)
-
             self.gaction_group.add_action(gact)
+            self._actions[actionname] = gact
             
-            return act
+            return gact
 
         def cta(actionname, label, tooltip, callback):
-            act = gtk.ToggleAction(name=actionname, label=label, tooltip=tooltip)
             gact = Gio.SimpleAction.new_stateful(actionname, None, GLib.Variant.new_boolean(False))
+            gact._name = actionname
+            gact._label = label
+            gact._tooltip = tooltip
+            gact._stock_id = None
+            gact._is_toggle = True
+            
+            def get_active():
+                return gact.get_state().get_boolean()
+            gact.get_active = get_active
+            
+            def set_active(is_active):
+                gact.change_state(GLib.Variant.new_boolean(is_active))
+            gact.set_active = set_active
             
             if callback is not None:
-                act.connect('toggled', callback)
-                gact.connect('change-state', lambda a, v: act.set_active(v.get_boolean()))
+                def on_change_state(action, value):
+                    action.set_state(value)
+                    callback(action)
+                gact.connect('change-state', on_change_state)
             
-            orig_set_active = act.set_active
-            def new_set_active(is_active):
-                orig_set_active(is_active)
-                gact.set_state(GLib.Variant.new_boolean(is_active))
-            act.set_active = new_set_active
-
-            orig_set_sensitive = act.set_sensitive
-            def new_set_sensitive(sensitive):
-                orig_set_sensitive(sensitive)
-                gact.set_enabled(sensitive)
-            act.set_sensitive = new_set_sensitive
-            
-            self.action_group.add_action(act)
             self.gaction_group.add_action(gact)
-            return act
+            self._actions[actionname] = gact
+            return gact
 
         # actions related to projects_("Create a New Project")("Open A Project")_("Open a Saved Project xml file")_('Save Project')
         # "<control>X"
@@ -3746,7 +3814,7 @@ class NCam(gtk.VBox):
         self.actionDualView.set_active(self.pref.use_dual_views)
         self.actionAutoRefresh.set_active(self.pref.autorefresh)
 
-        self.actionCurrent.set_visible(not self.pref.autosave)
+        for mi in self.mi_current_list: mi.set_visible(not self.pref.autosave)
         self.name_cell.set_property('ellipsize', self.pref.name_ellipsis)
         self.treeview.set_show_expanders(self.pref.tv_expandable)
         if self.pref.tv_expandable :
@@ -4477,7 +4545,7 @@ class NCam(gtk.VBox):
             self.focused_widget.grab_focus()
 
     def action_renameF(self, *arg):
-        self.newnamedlg = gtk.MessageDialog(parent = None,
+        self.newnamedlg = gtk.MessageDialog(transient_for = self.get_toplevel(),
             flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT,
             type = gtk.MessageType.QUESTION,
             buttons = gtk.ButtonsType.OK_CANCEL
@@ -4714,8 +4782,8 @@ class NCam(gtk.VBox):
         self.update_do_btns(True)
 
     def set_do_buttons_state(self):
-        self.actionUndo.set_sensitive(self.undo_pointer > 0)
-        self.actionRedo.set_sensitive(self.undo_pointer < (len(self.undo_list) - 1))
+        self.actionUndo.set_enabled(self.undo_pointer > 0)
+        self.actionRedo.set_enabled(self.undo_pointer < (len(self.undo_list) - 1))
 
     def clear_undo(self, *arg) :
         self.undo_list = []
@@ -4824,8 +4892,9 @@ class NCam(gtk.VBox):
             response = dlg.run()
             if response == gtk.ResponseType.HELP :
                 try :
-                    data = open('/usr/share/doc/nativecam/copyright', 'r').read()
-                except :
+                    with open('/usr/share/doc/nativecam/copyright', 'r') as f:
+                        data = f.read()
+                except Exception:
                     data = APP_LICENCE
                 lic = gtk.MessageDialog(transient_for=dlg, modal=True,
                     message_type=gtk.MessageType.INFO,
@@ -5356,7 +5425,8 @@ class NCam(gtk.VBox):
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 filename = filechooserdialog.get_filename()
-                src_data = open(filename).read()
+                with open(filename) as f:
+                    src_data = f.read()
                 if src_data.find(XML_TAG) != 1 :
                     subprocess.call(["xdg-open '%s'" % filename], shell = True)
                 else :
@@ -5394,36 +5464,43 @@ class NCam(gtk.VBox):
             filechooserdialog.destroy()
 
     def set_actions_sensitives(self):
-        self.actionCollapse.set_sensitive(self.selected_feature is not None)
+        self.actionCollapse.set_enabled(self.selected_feature is not None)
 
-        self.actionSave.set_sensitive(self.selected_feature is not None)
-        self.actionSaveTemplate.set_sensitive(self.selected_feature is not None)
-        self.actionSaveNGC.set_sensitive(self.selected_feature is not None)
+        self.actionSave.set_enabled(self.selected_feature is not None)
+        self.actionSaveTemplate.set_enabled(self.selected_feature is not None)
+        self.actionSaveNGC.set_enabled(self.selected_feature is not None)
 
-        self.actionSaveUser.set_sensitive(self.selected_feature is not None)
-        self.actionDeleteUser.set_sensitive((self.selected_feature is not None) and \
+        self.actionSaveUser.set_enabled(self.selected_feature is not None)
+        self.actionDeleteUser.set_enabled((self.selected_feature is not None) and \
                     (self.selected_feature.get_type() in USER_SUBROUTINES))
 
-        self.actionDelete.set_sensitive(self.can_delete_duplicate)
-        self.actionDuplicate.set_sensitive(self.can_delete_duplicate)
-        self.actionMoveUp.set_sensitive(self.can_move_up)
-        self.actionMoveDown.set_sensitive(self.can_move_down)
-        self.actionAppendItm.set_sensitive(self.can_add_to_group)
-        self.actionRemoveItm.set_sensitive(self.can_remove_from_group)
-        self.actionCut.set_sensitive(self.can_delete_duplicate)
-        self.actionCopy.set_sensitive(self.can_delete_duplicate)
+        self.actionDelete.set_enabled(self.can_delete_duplicate)
+        self.actionDuplicate.set_enabled(self.can_delete_duplicate)
+        self.actionMoveUp.set_enabled(self.can_move_up)
+        self.actionMoveDown.set_enabled(self.can_move_down)
+        self.actionAppendItm.set_enabled(self.can_add_to_group)
+        self.actionRemoveItm.set_enabled(self.can_remove_from_group)
+        self.actionCut.set_enabled(self.can_delete_duplicate)
+        self.actionCopy.set_enabled(self.can_delete_duplicate)
 
-        self.actionChngGrp.set_visible(self.selected_type in ["sub-header", "header"] and \
-                            self.actionDualView.get_active())
-        self.actionSetDigits.set_visible(self.selected_type == 'float')
-        self.actionDataType.set_visible(self.selected_type in ['float', 'int'])
-        self.actionRevertType.set_visible(self.selected_type == 'gcode')
+        v = self.selected_type in ["sub-header", "header"] and self.actionDualView.get_active()
+        for mi in self.mi_chnggrp_list: mi.set_visible(v)
+        
+        v = self.selected_type == 'float'
+        for mi in self.mi_setdigits_list: mi.set_visible(v)
+        
+        v = self.selected_type in ['float', 'int']
+        for mi in self.mi_datatype_list: mi.set_visible(v)
+        
+        v = self.selected_type == 'gcode'
+        for mi in self.mi_reverttype_list: mi.set_visible(v)
+        
+        v = self.iter_selected_type == tv_select.feature
+        for mi in self.mi_rename_list: mi.set_visible(v)
 
-        self.actionRename.set_visible(self.iter_selected_type == tv_select.feature)
-
-        self.actionHideField.set_sensitive((self.selected_type in SUPPORTED_DATA_TYPES) and \
+        self.actionHideField.set_enabled((self.selected_type in SUPPORTED_DATA_TYPES) and \
                                       (self.selected_type != 'items'))
-        self.actionShowF.set_sensitive(self.selected_feature is not None and \
+        self.actionShowF.set_enabled(self.selected_feature is not None and \
                                        self.selected_feature.has_hidden_fields())
 
 

@@ -26,6 +26,13 @@ This plan follows the `DEV-WORKFLOW.md` template to address identified open poin
 - **Phase 1 (Study):** Map current `Gtk.Action` entries in `ncam.py` to `GAction`.
 - **Phase 2 (Mark):** Draft a migration path that doesn't break the existing menu/toolbar structure.
 
+## Increment 5 (I5): Live Tooling (Turn-Mill) Implementation
+**Goal:** Enable C and Y axis milling operations within the Lathe catalog by implementing plane switching and live tool identification.
+- **Phase 1 (Scope & Study):** Review the `Tools` class in `ncam.py` to identify how live tools vs. static turning tools can be parsed from the LinuxCNC tool table.
+- **Phase 2 (Mark):** Document the required G-code transitions (switching between G18 XZ and G17/G19 planes) for safe Turn-Mill operations.
+- **Phase 3 (Implement):** Modify `Tools.load_table()` and port necessary milling features into the Lathe catalog with the correct coordinate mapping.
+- **Phase 4 (Verify):** Use offline numeric proof and a headless LinuxCNC INI configuration to validate safe plane switching and C/Y axis commands.
+
 ---
 ### Workflow Notes (from DEV-WORKFLOW.md)
 - **Golden Rule:** Ensure standalone mode and default behavior remain bit-identical where possible.

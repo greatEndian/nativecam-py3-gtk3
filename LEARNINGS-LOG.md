@@ -25,11 +25,12 @@
 - **Gettext Linting**: Functions injected into the global namespace via `gettext.install()` (like `_`) will trigger `F821 undefined name` errors in static analysis tools. Use `--builtins="_"` in the `flake8` configuration to maintain CI "green" status without introducing runtime boilerplate.
 - **XEMBED vs Wayland**: Confirmed that NativeCAM's tab-embedding strategy (XEMBED) is fundamentally incompatible with Wayland. Added a diagnostic check to `ncam.py` to alert users in these environments.
 - **Arithmetic Input Support**: Confirmed that NativeCAM's built-in Virtual Keyboard/Calculator (VKB) supports basic arithmetic expressions (e.g., `20-30`, `5*10`, `(10+5)/2`). This allows users to perform small calculations directly within the parameter input fields for `int` and `float` types.
+- **Python 2 Legacy Tech Debt**: Replaced dozens of bare `except:` blocks with `except Exception:` and `except ValueError:` across the application to prevent NativeCAM from swallowing `KeyboardInterrupt` / `SystemExit` signals. Also replaced inline `open().read()` calls with `with open() as f:` context managers to close file handlers and avoid `ResourceWarning` leaks.
 
 ## Future Architectural Requirements
 - **Live Tooling (Turn-Mill)**: Architecture needs to support **C and Y axis milling** in Lathe mode. This requires coordinate mapping flexibility to switch between G18 and G17/G19 planes, and ensuring the `ncam.py` tool table integration correctly identifies live tools.
+- **Plane Switching Guards (G40)**: LinuxCNC strictly enforces that cutter compensation (`G40`) must be explicitly canceled before switching planes (`G17`, `G18`, `G19`). Failing to cancel `G41`/`G42` before a plane change throws an interpreter error. All Turn-Mill generated G-code must explicitly issue `G40` before transitioning out of the default `G18` lathe plane.
 
 ## Competitive Analysis & Inspiration
 - **QTDragon Integration**: QTDragon is a modern Qt/Python3 GUI that includes advanced probing and basic conversational wizards (facing, holes). A frequent community request is embedding NativeCAM *inside* QTDragon for advanced conversational features. We should ensure our Python 3/GTK3 port architecture is modular enough to allow embedding in QtVCP/QTDragon environments via XEMBED or similar mechanisms.
 - **Features vs NativeCAM**: NativeCAM is the direct successor to the legacy 'Features' system. Key advantages to maintain and emphasize include instant live preview, 'grouping' capabilities for repeated toolpaths, and direct tool-table synchronization.
-

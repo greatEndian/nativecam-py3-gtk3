@@ -43,8 +43,8 @@ Follow these steps to verify the core workflow.
 ---
 
 ## 3. Known Issues & "Expected" Warnings
-*   **Warning**: `Gtk-Message: GtkDialog mapped without a transient parent.`
-    *   *Status*: Minor. We have fixed most, but some legacy items might still trigger this. It is NOT a crash.
+*   **Warning**: `Gtk-Message: GtkDialog mapped without a transient parent.` (RESOLVED)
+    *   *Status*: Fixed. All standalone dialogs and popups now dynamically fetch the active toplevel to set their transient parent.
 *   **Warning**: `Pango-WARNING: failed to create font...`
     *   *Status*: System-dependent. Can be ignored if text is visible.
 *   **Error**: `XEMBED / Socket error`
