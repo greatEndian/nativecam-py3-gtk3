@@ -951,12 +951,12 @@ class VKB(object):
             try:
                 i = str(locale.atof(i))
                 qualified = qualified + str(float(i))
-                except ValueError:
+            except ValueError:
                 qualified = qualified + i
 
         try :
             return True, eval(qualified)
-            except Exception:
+        except Exception:
             return False, 0.0
 
     def __exit__(self, type, value, traceback):
