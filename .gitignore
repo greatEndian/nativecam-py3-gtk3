@@ -208,4 +208,6 @@ __marimo__/
 
 # Local Markdown documents (not tracked by Git)
 md_files/
+.agents/
+
 
