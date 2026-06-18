@@ -6,12 +6,12 @@
 
 APP_COPYRIGHT = '''Copyright © 2017 Fernand Veilleux : fernveilleux@gmail.com
 Copyright © 2012 Nick Drobchenko aka Nick from cnc-club.ru
-Copyright © 2026 CNC Proton (Python 3 / GTK3 Port)'''
+Copyright © 2026 greatEndian (Python 3 / GTK3 Port)'''
 APP_AUTHORS = ['Fernand Veilleux (original author)',
                'Nick Drobchenko (initiator)',
                'Meison Kim', 'Alexander Wigen', 'Konstantin Navrockiy', 'Mit Zot',
                'Dewey Garrett', 'Karl Jacobs', 'Philip Mullen',
-               'CNC Proton (Python 3 / GTK3 port, Side Drill)']
+               'greatEndian (Python 3 / GTK3 port, Side Drill)']
 
 APP_VERSION = "2.0b"
 
@@ -151,8 +151,8 @@ GROUP_HEADER_TYPES = ['items', 'sub-header', 'header']
 
 XML_TAG = "lcnc-ncam"
 
-HOME_PAGE = 'https://github.com/cnc-proton/nativecam-py3-gtk3'
-DONATE_URL = 'https://github.com/sponsors/cnc-proton'
+HOME_PAGE = 'https://github.com/greatEndian/nativecam-py3-gtk3'
+DONATE_URL = 'https://github.com/sponsors/greatEndian'
 
 class tv_select :  # 'enum' items
     none, feature, items, header, param = list(range(5))
@@ -4803,7 +4803,7 @@ class NCam(gtk.VBox):
         lbl_gh.set_markup('<b>GitHub:</b>')
         lbl_gh.set_halign(gtk.Align.START)
         vbox_links.pack_start(lbl_gh, False, False, 0)
-        btn_github = gtk.LinkButton.new_with_label(HOME_PAGE, 'cnc-proton/nativecam-py3-gtk3')
+        btn_github = gtk.LinkButton.new_with_label(HOME_PAGE, 'greatEndian/nativecam-py3-gtk3')
         btn_github.set_halign(gtk.Align.START)
         vbox_links.pack_start(btn_github, False, False, 0)
 

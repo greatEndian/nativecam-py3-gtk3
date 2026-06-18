@@ -16,7 +16,7 @@ with **Debian 13 Trixie** and **LinuxCNC 2.9+**.
 ## Installation
 
 ### 1. From Debian Package (Recommended)
-Download the latest release from the [Releases](https://github.com/cnc-proton/nativecam-py3-gtk3/releases) page. Install it using:
+Download the latest release from the [Releases](https://github.com/greatEndian/nativecam-py3-gtk3/releases) page. Install it using:
 
 ```bash
 sudo apt install ./nativecam_2.0b-4_all.deb
@@ -72,4 +72,4 @@ linuxcnc inifilename
 ## Credits
 
 Original NativeCAM developed by [Fernand Veilleux (FernV)](https://github.com/FernV/NativeCAM).  
-Python 3 / GTK3 migration and Side Drill feature maintained by CNC Proton.
+Python 3 / GTK3 migration and Side Drill feature maintained by greatEndian.
