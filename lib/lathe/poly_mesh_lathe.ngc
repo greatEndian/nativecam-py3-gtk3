@@ -1,0 +1,114 @@
+(densified copy of a lathe record array, for the level-crossing scans only)
+()
+(lathe_level_pass and lathe_level_next_start decide where a roughing pass stops)
+(by walking the record array and reading ONLY each record's endpoint - fields)
+(+0 and +1. An arc record therefore reaches them as the straight chord joining)
+(its two endpoints, and the offset-crossing test runs against that chord. For a)
+(convex arc the chord lies inside the material, so the level crosses it later)
+(than it crosses the real radius and the pass keeps cutting past the profile:)
+(the error is the arc's sagitta, R*[1 - COS[sweep/2]], minus the roughing)
+(allowance, so it stays hidden on small radii and gouges once the radius grows.)
+()
+(This sub rewrites every arc as short straight sub-records whose endpoints lie)
+(ON the true arc, subdivided until the residual sagitta is below max_sag. The)
+(scans then stop at the radius itself, with a bounded and knowable error, and)
+(their own logic - segment offsetting, corner connectors, the multi-crossing)
+(walk - is left completely untouched.)
+()
+(Only the scans use this copy. The contour passes keep reading the original)
+(array, so lathe_poly_pass/trace_lathe still emit true G2/G3 arcs and the)
+(dynamic cutter compensation they depend on is unaffected.)
+o<poly_mesh_lathe> sub
+(CALL src[1] dst[2] max_sag[3])
+
+	#<src>     = #1
+	#<dst>     = #2
+	#<max_sag> = #3
+
+	#[#<dst>] = 0
+	#<rec_n>  = #[#<src>]
+
+	(first record is the profile start point - no segment leads into it)
+	#<sp> = [#<src> + 1]
+	o<add_mill_data> CALL [#<dst>] [#[#<sp>]] [#[#<sp> + 1]] [#[#<sp> + 2]] [#[#<sp> + 3]] [#[#<sp> + 4]] [#[#<sp> + 5]] [#[#<sp> + 6]] [#[#<sp> + 7]]
+
+	#<pz> = #[#<sp>]
+	#<pr> = #[#<sp> + 1]
+	#<rp> = [#<src> + 9]
+	#<i>  = 1
+
+	o<mesh_00> while [#<i> LT #<rec_n>]
+		#<i>   = [#<i> + 1]
+		#<cz>  = #[#<rp>]
+		#<cr>  = #[#<rp> + 1]
+		#<dir> = #[#<rp> + 2]
+		#<ccz> = #[#<rp> + 3]
+		#<ccr> = #[#<rp> + 4]
+
+		(arc records carry the G-code word itself in dir: 2 = G2, 3 = G3.)
+		(anything else - rapid or straight - is copied through unchanged)
+		#<is_arc> = 0
+		o<arc_chk> if [[#<dir> EQ 2] OR [#<dir> EQ 3]]
+			#<rad> = SQRT[[#<pz> - #<ccz>] * [#<pz> - #<ccz>] + [#<pr> - #<ccr>] * [#<pr> - #<ccr>]]
+			o<rad_ok> if [[#<rad> GT #<max_sag>] AND [#<rad> GT 0.0001]]
+				#<is_arc> = 1
+			o<rad_ok> endif
+		o<arc_chk> endif
+
+		o<seg> if [#<is_arc> EQ 0]
+			o<add_mill_data> CALL [#<dst>] [#<cz>] [#<cr>] [#<dir>] [#<ccz>] [#<ccr>] [#[#<rp> + 5]] [#[#<rp> + 6]] [#[#<rp> + 7]]
+		o<seg> else
+			(angles of the two endpoints about the centre, in the [Z, radius])
+			(plane. dir 3 - G3 - sweeps toward increasing angle here, dir 2 the)
+			(other way; verified against the canon rotation flag of a real arc)
+			#<a1> = ATAN[#<pr> - #<ccr>]/[#<pz> - #<ccz>]
+			#<a2> = ATAN[#<cr> - #<ccr>]/[#<cz> - #<ccz>]
+			o<sw_dir> if [#<dir> EQ 3]
+				o<sw_up> while [#<a2> LE #<a1>]
+					#<a2> = [#<a2> + 360]
+				o<sw_up> endwhile
+			o<sw_dir> else
+				o<sw_dn> while [#<a2> GE #<a1>]
+					#<a2> = [#<a2> - 360]
+				o<sw_dn> endwhile
+			o<sw_dir> endif
+			#<sweep> = [#<a2> - #<a1>]
+
+			(step angle that keeps each sub-chord's own sagitta under max_sag:)
+			(sag = rad * [1 - COS[step/2]]  ->  step = 2 * ACOS[1 - sag/rad])
+			#<step> = [2 * ACOS[1 - [#<max_sag> / #<rad>]]]
+			o<step_ok> if [#<step> LT 0.05]
+				#<step> = 0.05
+			o<step_ok> endif
+			#<steps> = FUP[ABS[#<sweep>] / #<step>]
+			o<steps_ok> if [#<steps> LT 1]
+				#<steps> = 1
+			o<steps_ok> endif
+			(hard cap per arc. The mesh array is laid out past the reversed)
+			(one and the polyline's own item records live from 4982 down, so)
+			(an arc-heavy profile subdividing without limit could eventually)
+			(run into them. 64 sub-records holds a full semicircle to well)
+			(under 0.01 mm; beyond that the residual grows but stays far)
+			(below the chord error this whole sub exists to remove)
+			o<steps_cap> if [#<steps> GT 64]
+				#<steps> = 64
+			o<steps_cap> endif
+
+			#<k> = 1
+			o<mesh_arc> while [#<k> LT #<steps>]
+				#<ang> = [#<a1> + #<sweep> * #<k> / #<steps>]
+				o<add_mill_data> CALL [#<dst>] [[#<ccz> + #<rad> * COS[#<ang>]]] [[#<ccr> + #<rad> * SIN[#<ang>]]] [1] [0] [0] [0] [0] [0]
+				#<k> = [#<k> + 1]
+			o<mesh_arc> endwhile
+
+			(land the last sub-record on the record's own endpoint exactly,)
+			(so the mesh cannot drift away from the profile it came from)
+			o<add_mill_data> CALL [#<dst>] [#<cz>] [#<cr>] [1] [0] [0] [0] [0] [0]
+		o<seg> endif
+
+		#<pz> = #<cz>
+		#<pr> = #<cr>
+		#<rp> = [#<rp> + 8]
+	o<mesh_00> endwhile
+
+o<poly_mesh_lathe> endsub

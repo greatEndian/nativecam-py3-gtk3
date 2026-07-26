@@ -177,6 +177,21 @@ o<poly_lathe_mill> sub
                 #<_pl_ret_mode> = 0
         o<mx_ret> endif
 
+        (densified copy for the level-crossing scans only. They read a record's)
+        (endpoints and nothing else, so an arc reaches them as its chord - which)
+        (for a convex arc lies inside the material and lets every level cut past)
+        (the profile by the sagitta less the roughing allowance. The mesh puts)
+        (sub-record endpoints on the real radius instead. Built after r_pds is)
+        (chosen so it matches the roughing direction, and placed past the end of)
+        (the reversed array. The contour passes below keep using r_pds itself,)
+        (so they still trace true G2/G3 arcs under dynamic compensation)
+        o<mesh_base> if [#<_mill_data_rev> GT 0]
+                #<m_pds> = [#<_mill_data_rev> + #[#<_mill_data_rev>] * 8 + 1]
+        o<mesh_base> else
+                #<m_pds> = [#<pds> + #[#<pds>] * 8 + 1]
+        o<mesh_base> endif
+        o<poly_mesh_lathe> CALL [#<r_pds>] [#<m_pds>] [0.005]
+
         #<stock_r> = [#<_wp_dia_od> / #<_diameter_mode>]
         #<e_z> = #[#<r_pds> + 1]
         #<l_z> = #[#<r_pds> + [#[#<r_pds>] - 1] * 8 + 1]
@@ -319,7 +334,7 @@ o<poly_lathe_mill> sub
                                 (interval also ending at a block point found by the scan)
                                 #<l_fr> = #<w_from>
                                 o<wh_lvl> while [1]
-                                        o<lathe_level_pass> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
+                                        o<lathe_level_pass> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
 
                                         o<ph1_chk> if [[#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]
                                                 (phase 1: no resume-and-continue attempt at all - the)
@@ -345,7 +360,7 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl_p1> else
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mc_p1> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
                                                                 o<p1_more> if [#<_pl_resume_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<p1_more> else
@@ -380,7 +395,7 @@ o<poly_lathe_mill> sub
                                         o<ph1_chk> else
                                                 o<blk_lvl> if [#<_level_blocked>]
                                                         o<mx_chk> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>]
                                                                 o<more_blk> if [#<_pl_resume_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<more_blk> else
@@ -395,7 +410,7 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl> else
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mx_chk2> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
                                                                 o<more> if [#<_pl_resume_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<more> else
