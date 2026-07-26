@@ -578,11 +578,21 @@ class Tools(object):
                             tdesc = _('no description')
 
                         is_live = ('live' in tdesc.lower() or 'mill' in tdesc.lower())
-                        # front/back angle (I/J) and X/Z offsets appended after is_live
-                        # so existing tool[3]=orient tool[4]=dia tool[5]=is_live indices stay valid
+                        # Grooving/parting insert width. The LinuxCNC tool table has no
+                        # column for it, so it is read from the description the same way
+                        # is_live is - a W token followed by a number, e.g. ";groove W3.0".
+                        # The token must stand alone: preceded by start-of-string or
+                        # whitespace and followed by whitespace or end-of-string, so an
+                        # ISO holder code such as "SCLCR W1234-A" is rejected rather than
+                        # read as a 1234 mm insert.
+                        m_w = re.search(r'(?:^|\s)[Ww]([0-9]+(?:\.[0-9]+)?)(?=\s|$)', tdesc)
+                        twidth = m_w.group(1) if m_w else '0'
+                        # front/back angle (I/J), X/Z offsets and width appended after
+                        # is_live so existing tool[3]=orient tool[4]=dia tool[5]=is_live
+                        # indices stay valid
                         self.table.append([int(tnumber), tnumber, tdesc, torient, tdia, is_live,
-                                           tfront, tback, txoff, tzoff])
-        self.table.append ([0, '0', _('None'), '0', '0', False, '0', '0', '0', '0'])
+                                           tfront, tback, txoff, tzoff, twidth])
+        self.table.append ([0, '0', _('None'), '0', '0', False, '0', '0', '0', '0', '0'])
         self.table.sort()
 
         self.list = ''
@@ -629,6 +639,15 @@ class Tools(object):
         for tool in self.table:
             if tool[0] == tn or tool[1] == str(tn):
                 return get_float(tool[7])
+        return 0.0
+
+    def get_tool_width(self, tn):
+        # Grooving/parting insert width, from the W token in the tool description.
+        # 0 means the token is absent - callers must treat that as "unknown" and
+        # refuse to generate a groove rather than assuming a width.
+        for tool in self.table:
+            if tool[0] == tn or tool[1] == str(tn):
+                return get_float(tool[10])
         return 0.0
 
     def get_tool_orient(self):
