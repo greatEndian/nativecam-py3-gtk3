@@ -14,7 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -209,5 +208,21 @@ __marimo__/
 # Local Markdown documents (not tracked by Git)
 md_files/
 .agents/
+
+# Local machine state inside the demo sim configs. Only README and the *.ini
+# files are deliverables here; the rest is written by LinuxCNC or by NativeCAM
+# on first run and differs per machine.
+configs/sim/*/ncam_demo/*.var
+configs/sim/*/ncam_demo/*.tbl
+configs/sim/*/ncam_demo/*.pref
+configs/sim/*/ncam_demo/ncam/
+configs/sim/axis/ncam_demo/lathe-mm.old/
+*.bak
+
+# Knowledge-graph output (regenerate with `graphify update .`)
+graphify-out/
+
+# Bug-report screenshots dropped in during development
+photo/
 
 
