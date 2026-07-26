@@ -74,6 +74,7 @@ def resolve_points(polyline_feature):
     prev_z = _to_float(b_z_param.get_ngc_value())
     prev_x = _to_float(b_x_param.get_ngc_value())
     points = []
+    merges = []
 
     for child in getattr(polyline_feature, 'child_features', []):
         if child.get_attr('type') != 'poly-line-to':
@@ -105,7 +106,114 @@ def resolve_points(polyline_feature):
         points.append((new_z, new_x))
         prev_z, prev_x = new_z, new_x
 
-    return points
+        style_param = child.get_param('param_m_style')
+        r_param = child.get_param('param_m_r')
+        style = int(_to_float(style_param.get_ngc_value())) if style_param is not None else 0
+        radius = _to_float(r_param.get_ngc_value()) if r_param is not None else 0.0
+        merges.append(radius if style == MERGE_STYLE_RADIUS and radius > 0 else 0.0)
+
+    return apply_merge_radii(points, merges)
+
+
+# A Line-To child's "Merge with previous" = Radius. The radius rounds the
+# vertex at the PREVIOUS item, blending that item's incoming segment into
+# this one - see cfg/lathe/polyline-to.cfg's own tooltip.
+MERGE_STYLE_RADIUS = 1
+
+
+def apply_merge_radii(points, merges):
+    """Replace every filleted vertex with the geometry the profile actually
+    has: the two tangent points, plus the arc's own extreme X when the arc
+    sweeps past it.
+
+    Without this the analysis sees the sharp corner the user typed rather
+    than the rounded one that gets cut, and both things this module produces
+    come out wrong wherever a radius is used. The ceiling (see ceiling())
+    reads the corner's full height, so the unsectioned full-length phase
+    stops higher than it needs to; and detect_sections() sees a wall running
+    all the way to that corner, so it puts a section boundary across levels
+    the real profile never obstructs. The visible result is one roughing
+    level cut as two passes with two retracts, split at a wall that - once
+    rounded - only reaches a fraction of that height.
+
+    points/merges are parallel, in the diameter units resolve_points works
+    in; merges[i] is the radius rounding the vertex at points[i - 1], in
+    radius units, 0 for none. The fillet itself is computed in true
+    (Z, radius) space - a fillet is not scale-invariant, so doing it on
+    diameters would be wrong by exactly the factor of two.
+
+    A vertex is left sharp when the fillet cannot be built: no preceding
+    point (the origin is deliberately not in points - see resolve_points),
+    degenerate or straight corner, or tangent points that would run past
+    either neighbour. Leaving it sharp is the conservative direction - it
+    can only over-estimate the corner, never invent material.
+    """
+    if not points:
+        return points
+    out = []
+    n = len(points)
+    for j in range(n):
+        # vertex j is rounded by the radius carried on item j + 1, and needs
+        # a neighbour on both sides to have a corner at all
+        radius = merges[j + 1] if j + 1 < len(merges) else 0.0
+        filleted = None
+        if radius > 0 and 1 <= j <= n - 2:
+            filleted = _fillet_vertex(points[j - 1], points[j], points[j + 1], radius)
+        if filleted is None:
+            out.append(points[j])
+        else:
+            out.extend(filleted)
+    return _dedupe(out)
+
+
+def _fillet_vertex(a, v, c, radius):
+    """The two tangent points that replace vertex v, or None when no fillet
+    can be built there.
+
+    Deliberately only the tangent points - not the arc's own extreme-X
+    point. Adding that apex makes detect_sections see a direction reversal
+    at the top of a smooth arc and open a section boundary there, which
+    puts back the very split this is meant to remove. The apex is at most
+    radius*(1 - cos(sweep/2)) above the higher tangent point, so leaving it
+    out only understates the ceiling by a fraction of one roughing step."""
+    az, ax = a[0], a[1] / 2.0
+    vz, vx = v[0], v[1] / 2.0
+    cz, cx = c[0], c[1] / 2.0
+
+    d1z, d1x = az - vz, ax - vx
+    d2z, d2x = cz - vz, cx - vx
+    l1 = math.hypot(d1z, d1x)
+    l2 = math.hypot(d2z, d2x)
+    if l1 < EPS or l2 < EPS:
+        return None
+    u1z, u1x = d1z / l1, d1x / l1
+    u2z, u2x = d2z / l2, d2x / l2
+
+    cos_t = max(-1.0, min(1.0, u1z * u2z + u1x * u2x))
+    theta = math.acos(cos_t)
+    if theta < EPS or abs(theta - math.pi) < EPS:
+        return None
+    half = theta / 2.0
+    tan_half = math.tan(half)
+    sin_half = math.sin(half)
+    if abs(tan_half) < EPS or abs(sin_half) < EPS:
+        return None
+    tangent = radius / tan_half
+    if tangent > l1 - EPS or tangent > l2 - EPS:
+        return None
+
+    t1 = (vz + tangent * u1z, vx + tangent * u1x)
+    t2 = (vz + tangent * u2z, vx + tangent * u2x)
+
+    return [(t1[0], t1[1] * 2.0), (t2[0], t2[1] * 2.0)]
+
+
+def _dedupe(points):
+    out = []
+    for p in points:
+        if not out or abs(p[0] - out[-1][0]) > EPS or abs(p[1] - out[-1][1]) > EPS:
+            out.append(p)
+    return out
 
 
 def detect_sections(points):
