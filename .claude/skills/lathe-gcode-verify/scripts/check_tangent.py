@@ -113,8 +113,15 @@ def main():
         print(f'[VERDICT: FAIL - rs274 invocation failed: {e}]')
         sys.exit(1)
 
-    if 'error' in canon_text.lower() and 'error_code' not in canon_text.lower():
-        error_lines = [l for l in canon_text.splitlines() if 'error' in l.lower()]
+    # COMMENT(...) lines are the program's own text echoed back, so a subroutine
+    # that merely explains what it fixes - "...the chord error this removes" -
+    # would otherwise fail every verification that traces it. Only non-comment
+    # lines can carry a real interpreter error.
+    error_lines = [l for l in canon_text.splitlines()
+                   if 'error' in l.lower()
+                   and 'error_code' not in l.lower()
+                   and 'COMMENT(' not in l]
+    if error_lines:
         print('Interpreter errors found in canon output:')
         for l in error_lines[:10]:
             print(' ', l)
@@ -123,6 +130,16 @@ def main():
 
     moves = parse_canon(canon_text)
     print(f'Parsed {len(moves)} canon events from {raw_out_path}')
+
+    # No motion at all means rs274 gave up before producing any - an unclosed
+    # comment, a missing subroutine, a truncated var file. It reports those on
+    # its own streams rather than into the canon, so the canon is simply empty
+    # and every check below then passes vacuously. Verifying nothing is not a
+    # pass; say so instead of printing a green verdict over an empty file.
+    if not [m for m in moves if m.get('kind') in ('feed', 'arc', 'rapid')]:
+        print('[VERDICT: FAIL - no motion in the canon output; rs274 produced '
+              f'nothing to verify, see {raw_out_path}]')
+        sys.exit(1)
 
     min_dot, violations = check_tangent_continuity(moves, args.min_dot)
     print(f'Tangent continuity: min |dot| = {min_dot:.5f} (threshold {args.min_dot})')

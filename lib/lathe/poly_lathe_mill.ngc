@@ -249,6 +249,11 @@ o<poly_lathe_mill> sub
                 #<w_idx> = -1
         o<w_idx_init> endif
         #<_pl_ph1_front_cut> = 0
+        (how far phase 1 actually got at the radius where it stopped. Its own)
+        (window is the whole profile, so its last pass can cut well past the)
+        (first section boundary - phase 2 needs to know that to avoid redoing)
+        (that radius in the sections that pass already covered)
+        #<_pl_ph1_z_end> = #<e_z>
         o<wh_w> while [1]
                 o<sec_pick> if [#<_pl_sectioning> LE 0]
                         (Sectioning off: today's plain windowing, unchanged -)
@@ -291,13 +296,16 @@ o<poly_lathe_mill> sub
                                 (fresh at the full start_radius)
                                 #<lvl_start> = #<start_radius>
                         o<mode_chk> else
-                                o<p2_front> if [[ABS[#<w_from> - #<e_z>] LT 0.001] AND [#<_pl_ph1_front_cut> GT 0]]
-                                        (this is the one section phase 1 already)
-                                        (partially cut at the ceiling radius, from)
-                                        (the profile's own start up to the)
-                                        (obstruction that created this section)
-                                        (boundary - start one level deeper here or)
-                                        (this radius gets cut twice for this section)
+                                o<p2_front> if [[#<_pl_ph1_front_cut> GT 0] AND [[#<z_dirw> * [#<w_from> - #<_pl_ph1_z_end>]] GE -0.001]]
+                                        (a section phase 1 already cut at the ceiling)
+                                        (radius - start one level deeper here or that)
+                                        (radius gets cut twice. Phase 1 sweeps the whole)
+                                        (profile, not just the first section, so this is)
+                                        (every section starting at or before where its)
+                                        (pass actually stopped - testing only the section)
+                                        (at the profile start left the others redoing the)
+                                        (radius, which showed up as a second lead-out)
+                                        (stacked on the first inside a merge radius)
                                         #<lvl_start> = [#<sect_top_r> + #<cut_step>]
                                 o<p2_front> else
                                         (every other section - phase 1 never)
@@ -386,6 +394,7 @@ o<poly_lathe_mill> sub
                                                                         (does properly)
                                                                         #<sect_top_r> = #<current_radius>
                                                                         #<_pl_ph1_front_cut> = 1
+                                                                        #<_pl_ph1_z_end> = #<_pl_level_z_end>
                                                                         o<wh_00> break
                                                                 o<p1_more> endif
                                                         o<mc_p1> else
