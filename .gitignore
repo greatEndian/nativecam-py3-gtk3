@@ -225,4 +225,10 @@ graphify-out/
 # Bug-report screenshots dropped in during development
 photo/
 
+# Reference material captured from other CAM packages, used to specify features
+# by observed behaviour. Another vendor's screenshots and help text do not belong
+# in a public repo - we implement the behaviour and write our own wording. See
+# .claude/skills/ref-intake/SKILL.md
+ref/
+
 
