@@ -1,0 +1,32 @@
+<lcnc-ncam>
+  <feature src="proj_desc.cfg" after="" help="&lt;b&gt;Shows project name and you can add a comment&lt;/b&gt;" name="Project Description" old-selected="True" expanded="False" id="comment_001" ordr="pn n" hidden_count="0" version="1.12" call="&#10;#param_n" definitions="" new-selected="False" path="0" icon="prj-desc.png" type="comment" order="[]" short_id="21" before="">
+    <param type="prjname" call="#param_pn" name="Project name" path="0:0" value="Basic Lathe Turning"/>
+    <param name="Note" value="This is a basic lathe facing and turning demonstration project. It defines a 2-inch OD workpiece, selects an OD turning tool, faces the end to Z0, and turns the diameter down to 0.8 inches over a 1-inch length." call="#param_n" path="0:1" type="text" icon="comment.png"/>
+  </feature>
+  <feature src="lathe/material.cfg" after="" help="&lt;b&gt;Workpiece or raw material used&lt;/b&gt;" name="Workpiece" old-selected="False" expanded="False" order="['PARAM_SH', 'PARAM_H1', 'PARAM_OD', 'PARAM_ID', 'PARAM_L', 'PARAM_Z', 'PARAM_H2', 'PARAM_WMODE', 'PARAM_X_RAP', 'PARAM_Z_RAP']" hidden_count="0" version="1.14" call="" definitions="" new-selected="False" path="1" icon="l-stock.png" type="workpiece" id="workpiece_001" short_id="22" before="">
+    <param name="Show limits" value="1" call="#param_sh" path="1:0" type="bool" icon="glasses.png"/>
+    <param type="sub-header" call="#param_h1" name="Size and coord" path="1:1"/>
+    <param name="Ext. diameter" value="2.0" header="h1" call="#param_od" path="1:1:0" type="float" icon="e-diam.png"/>
+    <param name="Int. diameter" value="0.0" header="h1" call="#param_id" path="1:1:1" type="float" icon="i-diam.png"/>
+    <param name="Length" value="3.0" header="h1" call="#param_l" path="1:1:2" type="float" icon="width.png"/>
+    <param name="Begin position" value="0.0" header="h1" call="#param_z" path="1:1:3" type="float" icon="z.png"/>
+    <param type="sub-header" call="#param_h2" name="Params" path="1:2"/>
+    <param name="Work mode" value="7" header="h2" call="#param_wmode" path="1:2:0" type="combo" options="Diameter=7:Radius=8" icon="circle-rad-dia.png"/>
+    <param name="Safe X rapid" value="2.2" header="h2" call="#param_x_rap" path="1:2:1" type="float" icon="lathe-rappid-x.png"/>
+    <param name="Safe Z rapid" value="0.1" header="h2" call="#param_z_rap" path="1:2:2" type="float" icon="lathe-rappid-z.png"/>
+  </feature>
+  <feature src="lathe/turning.cfg" after="" help="&lt;b&gt;External straight turning with optional radiuses&lt;/b&gt;" name="Turning OD" old-selected="False" expanded="False" order="['PARAM_ACT', 'PARAM_HX', 'PARAM_B_X', 'PARAM_E_X', 'PARAM_HZ', 'PARAM_B_Z', 'PARAM_E_Z', 'PARAM_H2', 'PARAM_ROPT', 'PARAM_R', 'PARAM_HF', 'PARAM_FIN']" hidden_count="0" version="1.14" call="" definitions="" new-selected="False" path="2" icon="lathe-surface.png" type="turning" id="turning_001" short_id="23" before="">
+    <param name="Active" value="1" call="#param_act" path="2:0" type="bool" icon="enable.png"/>
+    <param type="sub-header" call="#param_hx" name="X axis" path="2:1"/>
+    <param name="Begin diameter" value="2.0" header="hx" call="#param_b_x" path="2:1:0" type="float" icon="x.png"/>
+    <param name="End diameter" value="1.5" header="hx" call="#param_e_x" path="2:1:1" type="float" icon="x-end.png"/>
+    <param type="sub-header" call="#param_hz" name="Z axis" path="2:2"/>
+    <param name="Begin" value="0.0" header="hz" call="#param_b_z" path="2:2:0" type="float" icon="z.png"/>
+    <param name="End" value="-1.5" header="hz" call="#param_e_z" path="2:2:1" type="float" icon="z-end.png"/>
+    <param type="sub-header" call="#param_h2" name="Options" path="2:3"/>
+    <param name="Option" value="1" header="h2" call="#param_ropt" path="2:3:0" type="combo" options="None w/ compensation=0:None w/o compensation=1:Full radius=2:Stop at Begin diameter=3" icon="circle-rad-dia.png"/>
+    <param name="Corner radius" value="0.0" header="h2" call="#param_r" path="2:3:1" type="float" icon="corner-radius.png"/>
+    <param type="sub-header" call="#param_hf" name="Finishing" path="2:4"/>
+    <param name="Number of passes" value="1" header="hf" call="#param_fin" path="2:4:0" type="int" icon="finish.png"/>
+  </feature>
+</lcnc-ncam>

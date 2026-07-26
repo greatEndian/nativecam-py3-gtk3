@@ -1,0 +1,122 @@
+(scans a lathe polyline's offset profile for the first above-to-below)
+(transition - the profile dropping back below a roughing level, i.e.)
+(re-entering safe-to-cut territory - that occurs strictly past search_from.)
+(Used by poly_lathe_mill's disjoint-interval roughing to find a further)
+(interval to cut at the SAME level, after lathe_level_pass stopped earlier)
+(in the window - successfully, or blocked - because the profile rose back)
+(above the level - a re-entrant profile can do that more than once.)
+(Deliberately NOT a copy of lathe_level_pass's scan with the inequality)
+(flipped: that scan's gate stops testing the moment ANY crossing is found,)
+(which is correct there since the first-in-array-order match IS the answer.)
+(Here the first match in array order can be BEFORE search_from - e.g. the)
+(very joint search_from itself came from - and must be rejected while the)
+(scan keeps going, so the loop's continue-condition is keyed on a genuinely)
+(qualifying match, not on "any match at all".)
+(CALL pds[1] level[2] floor_off[3] search_from[4] w_to[5])
+(outputs: #<_pl_resume_found> - 0 or 1 - and #<_pl_resume_z>)
+o<lathe_level_next_start> sub
+
+	#<pds>         = #1
+	#<level>       = #2
+	#<cross_t>     = #3
+	#<search_from> = #4
+	#<w_to>        = #5
+
+	#<rec_count> = #[#<pds>]
+	o<zdir> if [#<search_from> GE #<w_to>]
+		#<z_dir> = 1
+	o<zdir> else
+		#<z_dir> = -1
+	o<zdir> endif
+
+	(margin a candidate must clear past search_from to count as a genuinely)
+	(new interval, not a re-detection of the same joint search_from came from -)
+	(deliberately larger than l_eff's own 0.001 grazing epsilon, a different)
+	(purpose: that one tolerates the level exactly grazing the floor, this one)
+	(has to tell "a new interval" apart from "the same point we started at")
+	#<resume_margin> = 0.01
+
+	#<d_off> = #<cross_t>
+	#<l_eff> = [#<level> + 0.001]
+	#<_pl_resume_found> = 0
+	#<_pl_resume_z> = 0
+	#<have_prev> = 0
+	#<pz> = #[#<pds> + 1]
+	#<px> = #[#<pds> + 2]
+	#<scan_ptr> = [#<pds> + 9]
+	#<scan_i>   = 1
+	o<scan01> while [[#<scan_i> LT #<rec_count>] AND [#<_pl_resume_found> EQ 0]]
+		#<scan_i> = [#<scan_i> + 1]
+		#<cz> = #[#<scan_ptr>]
+		#<cx> = #[#<scan_ptr> + 1]
+		#<s_len> = SQRT[[#<cz> - #<pz>] * [#<cz> - #<pz>] + [#<cx> - #<px>] * [#<cx> - #<px>]]
+		o<c_seg> if [#<s_len> GT 0.0001]
+			(outward normal of the segment, pointing away from the material)
+			#<n_z> = [#<z_dir> * [#<cx> - #<px>] / #<s_len>]
+			#<n_x> = [-#<z_dir> * [#<cz> - #<pz>] / #<s_len>]
+			#<q1z> = [#<pz> + #<d_off> * #<n_z>]
+			#<q1x> = [#<px> + #<d_off> * #<n_x>]
+			#<q2z> = [#<cz> + #<d_off> * #<n_z>]
+			#<q2x> = [#<cx> + #<d_off> * #<n_x>]
+
+			(candidate this segment/joint offers, before the past-search_from test)
+			#<cand_found> = 0
+
+			(fold-back guard: this segment's own offset start can land BEHIND)
+			(where the previous segment's offset already reached - e.g. two)
+			(fillet chords in quick succession at a tight corner - bridging)
+			(that with a straight gap connector would read as a spurious)
+			(momentary re-entry that the real, smooth profile never has. Only)
+			(the GAP test is skipped when that happens; this segment's own)
+			(in-segment crossing, checked just below, is still evaluated normally,)
+			(since a single segment's own two ends are always forward-ordered)
+			o<gap> if [#<have_prev>]
+				#<q1_prog>  = [-#<z_dir> * #<q1z>]
+				#<pq2_prog> = [-#<z_dir> * #<pq2z>]
+				o<foldchk> if [#<q1_prog> GE [#<pq2_prog> - 0.0001]]
+					o<gap_hit> if [[#<pq2x> GE #<l_eff>] AND [#<q1x> LT #<l_eff>]]
+						#<cand_z> = [#<pq2z> + [#<q1z> - #<pq2z>] * [#<l_eff> - #<pq2x>] / [#<q1x> - #<pq2x>]]
+						#<cand_found> = 1
+					o<gap_hit> endif
+				o<foldchk> endif
+			o<gap> endif
+
+			o<c_ent> if [#<cand_found>]
+				(matched by the corner connector above)
+			o<c_ent> elseif [[#<q1x> GE #<l_eff>] AND [#<q2x> LT #<l_eff>]]
+				#<cand_z> = [#<q1z> + [#<q2z> - #<q1z>] * [#<l_eff> - #<q1x>] / [#<q2x> - #<q1x>]]
+				#<cand_found> = 1
+			o<c_ent> endif
+
+			(only a candidate genuinely past search_from qualifies - this is what)
+			(lets the scan keep going instead of latching on the wrong one.)
+			(z_dir's sign convention matches the block-check in lathe_level_pass:)
+			(z_dir times point-minus-reference is NEGATIVE for a point meaningfully)
+			(further along the cut direction from the reference, not positive)
+			o<qualify> if [#<cand_found>]
+				o<past> if [[#<z_dir> * [#<cand_z> - #<search_from>]] LT [-#<resume_margin>]]
+					#<_pl_resume_found> = 1
+					#<_pl_resume_z> = #<cand_z>
+				o<past> endif
+			o<qualify> endif
+
+			#<pq2z> = #<q2z>
+			#<pq2x> = #<q2x>
+			#<have_prev> = 1
+		o<c_seg> endif
+		#<pz> = #<cz>
+		#<px> = #<cx>
+		#<scan_ptr> = [#<scan_ptr> + 8]
+	o<scan01> endwhile
+
+	(a qualifying candidate past the window end isn't usable - nothing more)
+	(to cut in THIS window, even though the profile does eventually drop again.)
+	(same sign convention as the past-search_from test above: z_dir times)
+	(resume_z-minus-w_to is NEGATIVE when resume_z has gone further than w_to)
+	o<wclip> if [#<_pl_resume_found>]
+		o<inwin> if [[#<z_dir> * [#<_pl_resume_z> - #<w_to>]] LT 0]
+			#<_pl_resume_found> = 0
+		o<inwin> endif
+	o<wclip> endif
+
+o<lathe_level_next_start> endsub

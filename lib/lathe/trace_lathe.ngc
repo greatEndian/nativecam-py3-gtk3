@@ -6,16 +6,22 @@ o<trace_lathe> sub
 (#4 is dir passed to lead_out)
 (#5 is opt passed to lead_out)
 (#6 if exit with arc)
+(#7 is an optional 1-based start record, skipping ones already reached)
 (for data offsets, view add_mill_data.ngc)
 
-	#<pointer>   = [#1 + 1] (sequence pointer)
+	#<start_rec> = #7
+	o<sr_def> if [#<start_rec> LE 0]
+		#<start_rec> = 1
+	o<sr_def> endif
+
+	#<pointer>   = [#1 + 1 + [#<start_rec> - 1] * 8] (sequence pointer)
 	#<rec_count> = #[#1] (record count)
 
 	o<exit00> if [[#<_depth_reached> EQ -1] AND [#<_cut_current_z> LE #2]]
 		#<_depth_reached> = 0
 	o<exit00> endif
 
-	#<counter> = 0 (counter and debug)
+	#<counter> = [#<start_rec> - 1] (counter and debug)
 	o<loop01> while [#<counter> LT #<rec_count>]
 		#<counter> = [#<counter> + 1]
 		o<g123_lathe> CALL [#[#<pointer>]] [#[#<pointer> + 1]] [#[#<pointer> + 2]] [#[#<pointer> + 3] - #<_cut_current_x>] [#[#<pointer> + 4] - #<_cut_current_y>] [0] [0] [0] ;[#<counter>]
@@ -29,8 +35,13 @@ o<trace_lathe> sub
 				#<_depth_reached> = #<counter>
 				#3 = 0
 			o<if04> endif
-			
+
 		o<exit01> endif
+
+		(roughing: stop once the profile has climbed onto the stock envelope for good)
+		o<stop01> if [[#<_trace_stop_rec> GT 0] AND [#<counter> GE #<_trace_stop_rec>]]
+			o<trace_lathe> return
+		o<stop01> endif
 
 		#<pointer> = [#<pointer> + 8]
 	o<loop01> endwhile

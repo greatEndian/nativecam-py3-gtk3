@@ -1,0 +1,48 @@
+(tangent blend between a lead-in/lead-out line and the toolpath's own)
+(direction at the point where the pass actually starts or ends cutting -)
+(replaces a sharp direction change with a smooth radius, to avoid a)
+(velocity-direction shock at that corner)
+(the toolpath-side point V is NOT displaced - trace_lathe always targets)
+(it directly, so the arc must land exactly on it, tangent to fwd there;)
+(only the lead line's own tangent point T1 is free to move)
+(CALL vz[1] vx[2] fwd_cz[3] fwd_cx[4] lead_cz[5] lead_cx[6] radius[7] z_dir[8])
+(fwd_cz/cx: unit vector, toolpath direction of travel at V, away from the arc)
+(lead_cz/cx: unit vector, lead line direction, pointing from V's side toward)
+(  the far rapid point, i.e. away from the cut - matching the existing)
+(  li_ang/lo_ang convention already used to place that far point)
+o<fillet_lead> sub
+
+	#<_flt_ok> = 0
+	o<flt_r0> if [#7 LE 0]
+		o<fillet_lead> return
+	o<flt_r0> endif
+
+	(outward normal to the toolpath direction at V, same 90-degree rotation)
+	(convention used for profile offsetting elsewhere in this codebase)
+	#<_flt_nz> = [#8 * #4]
+	#<_flt_nx> = [-#8 * #3]
+	#<_flt_cz> = [#1 + #7 * #<_flt_nz>]
+	#<_flt_cx> = [#2 + #7 * #<_flt_nx>]
+
+	(tangent point on the lead line: same rotation applied to the lead)
+	(direction, added from the center)
+	#<_flt_t1z> = [#<_flt_cz> + #7 * #8 * #6]
+	#<_flt_t1x> = [#<_flt_cx> - #7 * #8 * #5]
+
+	(sweep sense from T1 to V: cross of r1,r2 GE 0 means the short way around)
+	(is G3 CCW in this Z-X plane - verified numerically against rs274's own)
+	(arc-endpoint radius check plus a rendered plot of the actual sweep)
+	#<_flt_r1z> = [#<_flt_t1z> - #<_flt_cz>]
+	#<_flt_r1x> = [#<_flt_t1x> - #<_flt_cx>]
+	#<_flt_r2z> = [#1 - #<_flt_cz>]
+	#<_flt_r2x> = [#2 - #<_flt_cx>]
+	#<_flt_cross> = [#<_flt_r1z> * #<_flt_r2x> - #<_flt_r1x> * #<_flt_r2z>]
+	o<flt_cw> if [#<_flt_cross> GE 0]
+		#<_flt_cw> = 0
+	o<flt_cw> else
+		#<_flt_cw> = 1
+	o<flt_cw> endif
+
+	#<_flt_ok> = 1
+
+o<fillet_lead> endsub

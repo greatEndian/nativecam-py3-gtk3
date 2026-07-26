@@ -1,78 +1,486 @@
 (Lathe Polyline Milling)
-(CALL data ptr[1], start_radius[2], final_radius[3], compensation[4], show final cut[5], dz[6], dx[7], rot[8], tool eng pct[9], cz[10], cx[11])
+(CALL data ptr[1], start_radius[2], final_radius[3], compensation[4], show final cut[5], dz[6], dx[7], rot[8], tool eng pct[9], cz[10], cx[11],)
+(rough_dir[12], fin_offset[13], fin_passes[14], fin_dir[15], op[16], li_len[17], li_ang[18], li_feed[19], lo_len[20], lo_ang[21], lo_feed[22], li_rad[23], lo_rad[24], prefin_off[25], x_wall_dir[26], sec_len[27], nose_comp[28])
+(rough_dir / fin_dir : 0 = front to back, 1 = back to front, 2 = both/alternate)
+(fin_offset is per-side/radius material left by roughing, removed by fin_passes finish passes)
+(op : 0 = roughing + finishing, 1 = roughing only - offset stays on the part, 2 = finishing only)
+(prefin_off : pre-finish pass allowance per side - level roughing stops this far above)
+(the semi-final shape and one contour pass removes it; 0 = no pre-finish pass)
+(x_wall_dir : X wall cut direction in contour passes - 0 with pass, 2 outside to inside)
+(sec_len : Z sectioning length for roughing thin parts - 0 disables)
+(nose_comp : 1 = add the loaded tool's nose diameter to the contour pass compensation)
+(lead in/out : length, angle degrees from the surface, feed - 0 length disables, 0 feed = pass feed)
 (Author: Fernand Veilleux / Adapted for Lathe)
 o<poly_lathe_mill> sub
-        #<pds>          = #1
+        #<pds>           = #1
         #<start_radius>  = #2
         #<final_radius>  = #3
-        #<comp>         = #4
-        #<show_final>   = #5
-        #<dz>           = #6
-        #<dx>           = #7
-        #<rot>          = #8
-        #<tool_eng>     = #9
-        #<cz>           = #10
-        #<cx>           = #11
+        #<comp>          = #4
+        #<show_final>    = #5
+        #<dz>            = #6
+        #<dx>            = #7
+        #<rot>           = #8
+        #<tool_eng>      = #9
+        #<cz>            = #10
+        #<cx>            = #11
+        #<rough_dir>     = #12
+        #<fin_off>       = #13
+        #<fin_passes>    = #14
+        #<fin_dir>       = #15
+        #<op>            = #16
+        #<li_len>        = #17
+        #<li_ang>        = #18
+        #<li_feed>       = #19
+        #<lo_len>        = #20
+        #<lo_ang>        = #21
+        #<lo_feed>       = #22
+        #<li_rad>        = #23
+        #<lo_rad>        = #24
+        #<prefin_off>    = #25
+        #<xw_dir>        = #26
+        #<sec_len>       = #27
+        #<nose_comp>     = #28
 
         (Lathe always G18)
         G18
 
+        (reversed record array is built by the polyline cfg; without it force front-to-back)
+        o<rev_chk> if [#<_mill_data_rev> LE 0]
+                #<rough_dir> = 0
+                #<fin_dir>   = 0
+        o<rev_chk> endif
+
         (get and save current coords system offsets)
         #<old_coord_system> = [#<_coord_system> / 10]
-        o<get_offsets> CALL
-        #<offset_x> = #<_offsets_x>
-        #<offset_z> = #<_offsets_z>
-        #<offset_r> = #<_offsets_r>
 
-        (change coords system)
-        G#<_off_rot_coord_system>
+        (this feature's record-array/rotation math is shared with the mill)
+        (polyline engine, which genuinely needs a rotated/shifted internal)
+        (frame to place a 2D profile anywhere on a plane. A plain lathe)
+        (polyline never rotates or shifts - dz, dx, rot, cz, cx all stay 0,)
+        (so detouring through G57 for it would just copy the active WCS's)
+        (own numbers under a different G-word for no reason - skip the)
+        (whole detour and stay in the user's own active work coordinate)
+        (system throughout when there is truly nothing to rotate or shift)
+        #<need_shift> = 0
+        o<shift_chk> if [[#<dz> NE 0] OR [#<dx> NE 0] OR [#<rot> NE 0] OR [#<cz> NE 0] OR [#<cx> NE 0]]
+                #<need_shift> = 1
+        o<shift_chk> endif
 
-        (rotate and apply offsets: Z is mill-X, X is mill-Y)
-        o<rotate_xy> CALL [#<_offsets_z>] [#<_offsets_x>] [#<_offsets_z> + #<cz>] [#<_offsets_x> + #<cx>] [#<_offsets_r> + #<rot>]
-        
-        o1001 if [#<final_radius> EQ #<start_radius>]
+        o<useg57> if [#<need_shift> GT 0]
+                o<get_offsets> CALL
+                #<offset_x> = #<_offsets_x>
+                #<offset_z> = #<_offsets_z>
+                #<offset_r> = #<_offsets_r>
+
+                (change coords system)
+                G#<_off_rot_coord_system>
+
+                (rotate and apply offsets: Z is mill-X, X is mill-Y)
+                o<rotate_xy> CALL [#<_offsets_z>] [#<_offsets_x>] [#<_offsets_z> + #<cz>] [#<_offsets_x> + #<cx>] [#<_offsets_r> + #<rot>]
+                #<gx_base>   = [#<_rotated_y> + #<dx>]
+                #<gz_base>   = [#<_rotated_x> + #<dz>]
+                #<rot_total> = [#<_offsets_r> + #<rot>]
+                (contour and level passes run unshifted in the working system;)
+                (pass offsets are produced by dynamic cutter compensation instead)
+                G10 L2 P#5220 X#<gx_base> Z#<gz_base> R#<rot_total>
+        o<useg57> endif
+
+        (approach/lift clearance for this polyline: the property's own)
+        (value, direct - not layered on the Tool Change's retract)
+        (distance/tool-radius clearance, which is a separate concern)
+        (already solved in the remapped M6 command)
+        #<_pl_z_clear> = #<_pl_zc_ovr>
+
+        o<park_in> if [#<_pl_park_on> GT 0]
+                (user start point: begin the operation from here)
+                G0 X#<_pl_park_x>
+                G0 Z#<_pl_park_z>
+        o<park_in> endif
+
+        o<sgn> if [#<start_radius> GE #<final_radius>]
+                #<dirsign> = 1
+        o<sgn> else
+                #<dirsign> = -1
+        o<sgn> endif
+
+        (the finish offset is the reserved allowance: it stays even when no)
+        (finish passes run here, so roughing always floors above the final shape)
+        o<fin_chk> if [#<fin_off> LE 0]
+                #<fin_off> = 0
+        o<fin_chk> endif
+        o<fp_chk> if [#<fin_passes> LT 1]
+                #<fin_passes> = 0
+        o<fp_chk> endif
+        o<op_chk> if [#<op> EQ 1]
+                (roughing only: no finish passes, the offset stays on the part)
+                #<fin_passes> = 0
+        o<op_chk> elseif [[#<op> EQ 2] AND [#<fin_passes> LT 1]]
+                (finishing only: at least one pass tracing the final profile)
+                #<fin_passes> = 1
+        o<op_chk> endif
+        (roughing stops short of the profile by the finish offset)
+        #<rough_target> = [#<final_radius> + #<dirsign> * #<fin_off>]
+        (level roughing floor: the pre-finish offset above the semi-final shape)
+        #<step_target> = [#<rough_target> + #<dirsign> * #<prefin_off>]
+
+        (reference radius for keeping a roughing level's lead-out arc tangent)
+        (to the NEXT pass's floor - pre-finish if one runs, else finish. The)
+        (gap between roughing's own floor and that next floor is exactly the)
+        (radius at which the arc's circle - always centered on the level's)
+        (own floor line - bottoms out tangent to that next pass's contour. A)
+        (bigger user radius is NOT clipped to this; instead lathe_level_pass)
+        (pulls the cut end back by the excess so the full-radius circle stays)
+        (tangent - see its lead-out section. Depends only on the offset)
+        (amounts, so it holds regardless of the corner's shape)
+        o<lo_rad_cap> if [#<prefin_off> GT 0]
+                #<_lo_rad_cap> = #<prefin_off>
+        o<lo_rad_cap> else
+                #<_lo_rad_cap> = #<fin_off>
+        o<lo_rad_cap> endif
+
+        o1001 if [#<step_target> EQ #<start_radius>]
                 #<cut_step> = 0
                 #<rough_passes> = 1
         o1001 else
-                #<rough_passes> = FUP[ABS[#<final_radius> - #<start_radius>] / #<_rough_cut>]
-                #<cut_step> = [[#<final_radius> - #<start_radius>] / #<rough_passes>]
+                #<rough_passes> = FUP[ABS[#<step_target> - #<start_radius>] / #<_rough_cut>]
+                #<cut_step> = [[#<step_target> - #<start_radius>] / #<rough_passes>]
         o1001 endif
 
         o<set_feed_rate_and_speed> CALL [#<tool_eng>]
 
+        #<_x_wall_dir> = #<xw_dir>
+
         (Initial setup for tracing)
         #<_cut_loop_final_z> = 0
         #<_ramp_down_ratio> = 0
-        
-        #<current_radius> = #<start_radius>
-        o<wh_00> while [1]
-                #<x_shift> = [[#<current_radius> - #<final_radius>] * #<_diameter_mode>]
-                
-                (Apply shifted coordinate system)
-                G10 L2 P#5220 X[#<_rotated_y> + #<dx> + #<x_shift>] Z[#<_rotated_x> + #<dz>] R[#<_offsets_r> + #<rot>]
-                
-                (Note: we need to handle lead-in properly if we want to use compensation)
-                (For now, we just trace)
-                o<trace_lathe> CALL [#<pds>] [0] [1]
-                
-                o<if_next> if [#<current_radius> EQ #<final_radius>]
-                        o<wh_00> break
-                o<if_next> endif
-                
-                #<current_radius> = [#<current_radius> + #<cut_step>]
-                (check if we passed final_radius)
-                o<if_done> if [[#<start_radius> GT #<final_radius>] AND [#<current_radius> LT #<final_radius>]]
-                        #<current_radius> = #<final_radius>
-                o<if_done> elseif [[#<start_radius> LT #<final_radius>] AND [#<current_radius> GT #<final_radius>]]
-                        #<current_radius> = #<final_radius>
-                o<if_done> endif
-        o<wh_00> endwhile
+        #<_depth_reached> = 0 (0 disables mill depth-step logic inside trace_lathe)
+        #<_cut_current_z> = 0
+
+        (roughing: straight level passes stopped at the offset profile,)
+        (optionally repeated per Z section window for thin-part rigidity)
+        o<rough_00> if [#<op> NE 2]
+        o<rpick> if [#<rough_dir> EQ 1]
+                #<r_pds> = #<_mill_data_rev>
+        o<rpick> else
+                #<r_pds> = #<pds>
+        o<rpick> endif
+
+        (a re-entrant profile can split one level into several disjoint)
+        (safe-to-cut intervals - minimal retract's single reference radius)
+        (only ever means "the previous level," which goes stale the moment)
+        (an interval-splitting boss is found and stays permanently short of)
+        (that boss on every smaller level after. Force full retract instead)
+        (for the whole polyline once multi-crossing handling is active -)
+        (full retract's target is an absolute upper bound, unconditionally)
+        (safe, trading some cycle time for closing that gap)
+        o<mx_ret> if [#<_pl_multi_cross> GT 0]
+                #<_pl_ret_mode> = 0
+        o<mx_ret> endif
+
+        #<stock_r> = [#<_wp_dia_od> / #<_diameter_mode>]
+        #<e_z> = #[#<r_pds> + 1]
+        #<l_z> = #[#<r_pds> + [#[#<r_pds>] - 1] * 8 + 1]
+        o<wzd> if [#<e_z> GE #<l_z>]
+                #<z_dirw> = 1
+        o<wzd> else
+                #<z_dirw> = -1
+        o<wzd> endif
+        o<wsec> if [#<sec_len> GT 0]
+                #<w_len> = #<sec_len>
+        o<wsec> else
+                #<w_len> = [ABS[#<e_z> - #<l_z>] + 1]
+        o<wsec> endif
+
+        (Sectioning: one unsectioned pass across the full length first, for)
+        (levels above the highest edge - "violet" - the largest radius)
+        (reached anywhere in the whole profile, above which nothing along)
+        (the whole Z length has reached target size yet so a plain)
+        (full-length sweep is still safe. Only once a level would drop)
+        (below that does roughing switch to full-depth-per-section,)
+        (weakest/smallest-diameter first - "blue, green, ..." - for the)
+        (remaining depth. Wall-detection/ranking is computed in Python at)
+        (generation time by lathe_sections.py, via cfg/lathe/polyline.cfg's)
+        (AFTER content - _pl_sect_count stays 0 when Sectioning is off or)
+        (the profile couldn't be safely analyzed there, which is what)
+        (makes the single pass below cover the entire depth exactly as before)
+        o<sec_on> if [[#<_pl_sectioning> GT 0] AND [#<_pl_sect_count> GT 0]]
+                #<w_total> = #<_pl_sect_count>
+                (raw ceiling is in whatever units X was entered in - convert)
+                (to a true radius the same way start/final radius already)
+                (are, then clamp defensively: a Final Diameter set deeper)
+                (than every point the profile actually draws, or a profile)
+                (point beyond the stated Start Diameter, must never leave)
+                (phase 1 targeting past step_target or past start_radius)
+                #<sect_top_r> = [#<_pl_sect_top_dia> / #<_diameter_mode>]
+                o<clamp_top1> if [[#<dirsign> * [#<sect_top_r> - #<step_target>]] LT 0]
+                        #<sect_top_r> = #<step_target>
+                o<clamp_top1> endif
+                o<clamp_top2> if [[#<dirsign> * [#<sect_top_r> - #<start_radius>]] GT 0]
+                        #<sect_top_r> = #<start_radius>
+                o<clamp_top2> endif
+        o<sec_on> else
+                #<w_total> = -1
+                #<sect_top_r> = #<step_target>
+        o<sec_on> endif
+
+        #<w_from> = #<e_z>
+        (Artificial - _pl_sect_mode 1 - has no violet/ceiling phase at all -)
+        (every window gets the full roughing depth, sequentially, so w_idx)
+        (starts straight at the first window instead of at -1. Natural -)
+        (mode 0 - is unchanged: -1 still means "violet phase pending")
+        o<w_idx_init> if [[#<_pl_sectioning> GT 0] AND [#<_pl_sect_mode> EQ 1]]
+                #<w_idx> = 0
+        o<w_idx_init> else
+                #<w_idx> = -1
+        o<w_idx_init> endif
+        #<_pl_ph1_front_cut> = 0
+        o<wh_w> while [1]
+                o<sec_pick> if [#<_pl_sectioning> LE 0]
+                        (Sectioning off: today's plain windowing, unchanged -)
+                        (one full-length window, or fixed-length sec_len)
+                        (windows if set, every window spanning the full)
+                        (start_radius to step_target depth)
+                        o<w_brk> if [[#<z_dirw> * [#<w_from> - #<l_z>]] LE 0.0001]
+                                o<wh_w> break
+                        o<w_brk> endif
+                        #<w_to> = [#<w_from> - #<z_dirw> * #<w_len>]
+                        o<wclip> if [[#<z_dirw> * [#<w_to> - #<l_z>]] LT 0]
+                                #<w_to> = #<l_z>
+                        o<wclip> endif
+                        #<lvl_start> = #<start_radius>
+                        #<lvl_floor> = #<step_target>
+                o<sec_pick> elseif [#<w_idx> LT 0]
+                        (Sectioning on, phase 1 "violet": one full-length)
+                        (pass, unsectioned, down to the highest edge)
+                        #<w_from> = #<e_z>
+                        #<w_to>   = #<l_z>
+                        #<lvl_start> = #<start_radius>
+                        #<lvl_floor> = #<sect_top_r>
+                o<sec_pick> elseif [#<w_idx> LT #<w_total>]
+                        (Sectioning on: one window at a time, either)
+                        (Natural phase 2 "blue, green, ..." - remaining)
+                        (depth below the highest edge, weakest/smallest-)
+                        (diameter section first - or Artificial - every)
+                        (window at the full roughing depth, sequentially,)
+                        (front-to-back or reversed as Python already laid)
+                        (the array out - never weakest-first: see)
+                        (build_sections_gcode's own docstring for why a)
+                        (length-sliced monotonic taper must NOT be)
+                        (processed back-to-front the way Natural would)
+                        #<sb> = [3400 + #<w_idx> * 2]
+                        #<w_from> = #[#<sb> + 1]
+                        #<w_to>   = #[#<sb> + 2]
+                        o<mode_chk> if [#<_pl_sect_mode> EQ 1]
+                                (Artificial: no violet/ceiling phase ever ran,)
+                                (so every window always starts completely)
+                                (fresh at the full start_radius)
+                                #<lvl_start> = #<start_radius>
+                        o<mode_chk> else
+                                o<p2_front> if [[ABS[#<w_from> - #<e_z>] LT 0.001] AND [#<_pl_ph1_front_cut> GT 0]]
+                                        (this is the one section phase 1 already)
+                                        (partially cut at the ceiling radius, from)
+                                        (the profile's own start up to the)
+                                        (obstruction that created this section)
+                                        (boundary - start one level deeper here or)
+                                        (this radius gets cut twice for this section)
+                                        #<lvl_start> = [#<sect_top_r> + #<cut_step>]
+                                o<p2_front> else
+                                        (every other section - phase 1 never)
+                                        (touched this radius here at all, so it)
+                                        (must start fresh; phase 2's own)
+                                        (multi-crossing handling below covers any)
+                                        (further disjoint intervals within this)
+                                        (section's own window the normal way)
+                                        #<lvl_start> = #<sect_top_r>
+                                o<p2_front> endif
+                        o<mode_chk> endif
+                        #<lvl_floor> = #<step_target>
+                o<sec_pick> else
+                        o<wh_w> break
+                o<sec_pick> endif
+
+                #<current_radius> = #<lvl_start>
+                #<_pl_prev_lvl> = #<stock_r>
+                o<wh_00> while [1]
+                        o<lvl_ok> if [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]
+                                #<_level_blocked> = 0
+                                (constant floor allowance: the level stops at the offset profile)
+                                #<lvl_d> = [#<dirsign> * [#<step_target> - #<final_radius>]]
+
+                                (repeat this level while a re-entrant profile still has more)
+                                (disjoint safe intervals to cut - a plain level, or with)
+                                (multi-crossing off, always takes exactly one iteration.)
+                                (every interval - first or a later one found past a boss -)
+                                (passes the user's configured lead-in/out exactly the same)
+                                (way: lathe_level_pass already runs the identical lead-out)
+                                (mechanism unconditionally on a first interval that itself)
+                                (ends mid-window at a block point rather than at w_to, so)
+                                (there is nothing structurally different about a later)
+                                (interval also ending at a block point found by the scan)
+                                #<l_fr> = #<w_from>
+                                o<wh_lvl> while [1]
+                                        o<lathe_level_pass> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
+
+                                        o<ph1_chk> if [[#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]
+                                                (phase 1: no resume-and-continue attempt at all - the)
+                                                (moment there is a genuine second interval reachable)
+                                                (past where this pass stopped, that is a real)
+                                                (obstruction - a boss or other feature - blocking a)
+                                                (continuous sweep - the true phase1/phase2 boundary, discovered)
+                                                (live from the same signal lathe_level_next_start)
+                                                (already produces, instead of estimated in advance)
+                                                (from the raw profile, which can sit slightly off the)
+                                                (true transition once the finish-offset reservation)
+                                                (near a sloped peak is accounted for. A pass that just)
+                                                (reaches its own window's natural end - itself always)
+                                                (offset short by that same reservation, even with)
+                                                (nothing blocking it - must not be mistaken for this)
+                                                o<blk_lvl_p1> if [#<_level_blocked>]
+                                                        (nothing reachable from w_from itself - stop here,)
+                                                        (nothing was cut at all so phase 2 must still do)
+                                                        (this exact radius fresh)
+                                                        #<sect_top_r> = #<current_radius>
+                                                        #<_pl_ph1_front_cut> = 0
+                                                        o<wh_00> break
+                                                o<blk_lvl_p1> else
+                                                        #<_pl_prev_lvl> = #<current_radius>
+                                                        o<mc_p1> if [#<_pl_multi_cross> GT 0]
+                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<p1_more> if [#<_pl_resume_found> EQ 0]
+                                                                        o<wh_lvl> break
+                                                                o<p1_more> else
+                                                                        (a genuine obstruction - a boss or other)
+                                                                        (feature - blocks a continuous sweep. This)
+                                                                        (is the true phase1/phase2 boundary,)
+                                                                        (discovered live from the same signal)
+                                                                        (lathe_level_next_start already produces,)
+                                                                        (instead of estimated in advance from the)
+                                                                        (raw profile. This level only actually cut)
+                                                                        (the interval from w_from up to the block)
+                                                                        (point - mark that, so the one phase-2)
+                                                                        (section whose own span starts at that same)
+                                                                        (w_from can skip this already-cut radius)
+                                                                        (instead of redoing it; every other section)
+                                                                        (still starts fresh here, since phase 1)
+                                                                        (never touched them at this radius - it)
+                                                                        (stops the instant the first obstruction is)
+                                                                        (found rather than sweeping the rest of the)
+                                                                        (part at this radius, which would just be)
+                                                                        (an ordinary, redundant multi-crossing sweep)
+                                                                        (phase 2's own per-section handling already)
+                                                                        (does properly)
+                                                                        #<sect_top_r> = #<current_radius>
+                                                                        #<_pl_ph1_front_cut> = 1
+                                                                        o<wh_00> break
+                                                                o<p1_more> endif
+                                                        o<mc_p1> else
+                                                                o<wh_lvl> break
+                                                        o<mc_p1> endif
+                                                o<blk_lvl_p1> endif
+                                        o<ph1_chk> else
+                                                o<blk_lvl> if [#<_level_blocked>]
+                                                        o<mx_chk> if [#<_pl_multi_cross> GT 0]
+                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>]
+                                                                o<more_blk> if [#<_pl_resume_found> EQ 0]
+                                                                        o<wh_lvl> break
+                                                                o<more_blk> else
+                                                                        #<l_fr> = #<_pl_resume_z>
+                                                                o<more_blk> endif
+                                                        o<mx_chk> else
+                                                                (multi-crossing off: exact existing behavior -)
+                                                                (nothing reachable from the window's start means)
+                                                                (every smaller level is done too)
+                                                                o<wh_00> break
+                                                        o<mx_chk> endif
+                                                o<blk_lvl> else
+                                                        #<_pl_prev_lvl> = #<current_radius>
+                                                        o<mx_chk2> if [#<_pl_multi_cross> GT 0]
+                                                                o<lathe_level_next_start> CALL [#<r_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<more> if [#<_pl_resume_found> EQ 0]
+                                                                        o<wh_lvl> break
+                                                                o<more> else
+                                                                        #<l_fr> = #<_pl_resume_z>
+                                                                o<more> endif
+                                                        o<mx_chk2> else
+                                                                o<wh_lvl> break
+                                                        o<mx_chk2> endif
+                                                o<blk_lvl> endif
+                                        o<ph1_chk> endif
+                                o<wh_lvl> endwhile
+                        o<lvl_ok> endif
+
+                        o<if_next> if [#<current_radius> EQ #<lvl_floor>]
+                                o<wh_00> break
+                        o<if_next> endif
+
+                        #<current_radius> = [#<current_radius> + #<cut_step>]
+                        (check if we passed this phase's own floor)
+                        o<if_done> if [[#<start_radius> GT #<lvl_floor>] AND [#<current_radius> LT #<lvl_floor>]]
+                                #<current_radius> = #<lvl_floor>
+                        o<if_done> elseif [[#<start_radius> LT #<lvl_floor>] AND [#<current_radius> GT #<lvl_floor>]]
+                                #<current_radius> = #<lvl_floor>
+                        o<if_done> endif
+                o<wh_00> endwhile
+
+                #<w_from> = #<w_to>
+                #<w_idx> = [#<w_idx> + 1]
+        o<wh_w> endwhile
+
+        (pre-finish contour pass at the roughing target: one connected trace)
+        (that also cuts the steep walls and radii the level passes stopped short of)
+        o<prefin> if [#<prefin_off> GT 0]
+                o<lathe_poly_pass> CALL [#<r_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+        o<prefin> endif
+        o<rough_00> endif
+
+        (pause for measurement/compensation between roughing and the finish)
+        (pass - only meaningful if roughing actually ran and a finish pass)
+        (is actually about to follow it)
+        o<pause_chk> if [[#<_pl_pause_on> GT 0] AND [#<op> NE 2] AND [#<fin_passes> GE 1]]
+                M0 (measure the workpiece and dial in tool offset compensation - then resume for the finish pass)
+        o<pause_chk> endif
+
+        (finishing passes: step the finish offset down to the final profile)
+        o<fin_00> if [#<fin_passes> GE 1]
+                F#<_finish_feed>
+                #<fin_i> = 0
+                o<wh_fin> while [#<fin_i> LT #<fin_passes>]
+                        #<fin_i> = [#<fin_i> + 1]
+                        #<fin_shift> = [#<dirsign> * #<fin_off> * [#<fin_passes> - #<fin_i>] / #<fin_passes>]
+
+                        o<fpick> if [#<fin_dir> EQ 1]
+                                #<pass_pds> = #<_mill_data_rev>
+                        o<fpick> elseif [#<fin_dir> EQ 2]
+                                o<fpick2> if [[#<fin_i> MOD 2] EQ 1]
+                                        #<pass_pds> = #<pds>
+                                o<fpick2> else
+                                        #<pass_pds> = #<_mill_data_rev>
+                                o<fpick2> endif
+                        o<fpick> else
+                                #<pass_pds> = #<pds>
+                        o<fpick> endif
+
+                        o<lathe_poly_pass> CALL [#<pass_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+                o<wh_fin> endwhile
+                F#<_rough_feed>
+        o<fin_00> endif
+
+        #<_x_clamp_r> = 999999.0 (disable clamping outside the roughing loop)
+        #<_trace_stop_rec> = 0
+        #<_x_wall_dir> = 0
 
         G0 X[#<_wp_dia_od> + #<_X_rapid>]
         G40
+        o<park_out> if [#<_pl_park_on> GT 0]
+                (return to the user start point)
+                G0 X#<_pl_park_x>
+                G0 Z#<_pl_park_z>
+        o<park_out> endif
 
-        (restore coordinate system)
-        G#<old_coord_system>
-        G10 L2 P#5220 X#<offset_x> Z#<offset_z> R#<offset_r>
+        (restore coordinate system - only if the polyline ever left it)
+        o<restoreg57> if [#<need_shift> GT 0]
+                G#<old_coord_system>
+                G10 L2 P#5220 X#<offset_x> Z#<offset_z> R#<offset_r>
+        o<restoreg57> endif
 
 o<poly_lathe_mill> endsub

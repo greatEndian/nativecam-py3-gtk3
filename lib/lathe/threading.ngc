@@ -1,6 +1,6 @@
 o<threading> sub
 (author : Fernand Veilleux)
-(CALL begin_z, end_z, units, major diameter, minor diameter, pitch, degression, init_depth, peak, taper, finish_passes, taper_angle, helix count)
+(CALL [begin_z] [end_z] [units] [major diameter] [minor diameter] [pitch] [degression] [init_depth] [peak] [taper] [finish_passes] [taper_angle] [helix count])
 
 	#<begin_z>       =  #1
 	#<end_z>         =  #2

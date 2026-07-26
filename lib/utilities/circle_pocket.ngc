@@ -1,0 +1,30 @@
+o<circle_pocket> sub
+(author : NativeCAM Turn-Mill)
+(desc : Simple circular pocket for shared Mill/Turn-Mill operations)
+(Call: [#1=X] [#2=Y] [#3=Z_Surface] [#4=Depth] [#5=Diameter] [#6=Feed])
+
+#<cx>       = #1
+#<cy>       = #2
+#<z_surf>   = #3
+#<depth>    = #4
+#<dia>      = #5
+#<feed>     = #6
+
+#<tool_dia>   = #5410
+#<cut_radius> = [[#<dia> - #<tool_dia>] / 2.0]
+
+(Move to center and safe Z)
+G0 X#<cx> Y#<cy>
+G0 Z[#<z_surf> + 0.1]
+
+(Plunge)
+G1 Z[#<z_surf> + #<depth>] F[#<feed> / 2.0]
+
+o<cp_cut> if [#<cut_radius> GT 0]
+    G1 X[#<cx> + #<cut_radius>] F#<feed>
+    G3 X[#<cx> + #<cut_radius>] Y#<cy> I[-#<cut_radius>] J0
+    G1 X#<cx>
+o<cp_cut> endif
+
+G0 Z[#<z_surf> + 0.1]
+o<circle_pocket> endsub

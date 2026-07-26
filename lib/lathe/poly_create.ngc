@@ -1,6 +1,6 @@
 o<poly_create> sub
 (author : Fernand Veilleux)
-(CALL data_start)
+(CALL)
 
 (polydata = x, y[+1], dir[+2], cx[+3], cy[+4], length[+5], phi[+6], corner style[+7], corner radius[+8], complementary[+9], tool engagement[+10])
 

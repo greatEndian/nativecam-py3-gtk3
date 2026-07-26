@@ -12,6 +12,14 @@ o<g123_lathe> sub
         #<speed> = #8
         #<debug> = #9
 
+        #<from_z> = #<_cut_current_x>
+        #<from_x> = #<_cut_current_y>
+        #<clamp>  = #<_x_clamp_r> (stock line in commanded radius; 999999 = off)
+
+        (physical end of this move - differs from the profile endpoint when clamped)
+        #<_cut_phys_z> = #<to_z>
+        #<_cut_phys_x> = #<to_x>
+
         o<cut_if_0> if [#<dir> EQ 0]
                 (Rapid move if dir is 0 - though usually handled by lead_in)
                 G0 X[#<to_x> * #<_diameter_mode>] Z#<to_z>
@@ -19,14 +27,57 @@ o<g123_lathe> sub
         o<cut_if_0> else
                 (Roughing/Plunge logic from mill, adapted for X-offset if needed)
                 (In this simple version, we just output the move)
-                
+
                 o<if002> if [#<feed> GT 0]
                         F[#<_feed_normal> * [#<feed> MOD 1]]
                 o<if002> endif
 
                 o<cut_10> if [#<dir> EQ 1]
-                        G#<dir> X[#<to_x> * #<_diameter_mode>] Z#<to_z>
+                        (contour X wall in a finish/pre-finish trace with a forced cut direction:)
+                        (2 = outside to inside cuts an ascending wall top-down in a detached move)
+                        o<xw_00> if [[#<clamp> GT 999998] AND [#<_x_wall_dir> EQ 2] AND [ABS[#<to_z> - #<from_z>] LT 0.0005] AND [#<to_x> GT [#<from_x> + 0.0005]]]
+                                #<lift> = #<_pl_z_clear>
+                                (lift diagonally back over the finished surface, over the wall top)
+                                G0 X[[#<from_x> + #<lift>] * #<_diameter_mode>] Z[#<from_z> + #<_pass_z_dir> * #<lift>]
+                                G0 X[[#<to_x> + #<lift>] * #<_diameter_mode>]
+                                G0 Z#<to_z>
+                                (cut the wall face from outside down to the corner)
+                                G1 X[#<from_x> * #<_diameter_mode>]
+                                (back up along the freshly cut face to the record endpoint)
+                                G0 X[#<to_x> * #<_diameter_mode>]
+
+                        (clamp straight moves at the stock line during roughing)
+                        o<xw_00> elseif [[#<from_x> GT #<clamp>] AND [#<to_x> GT #<clamp>]]
+                                (whole segment above stock: skim along the stock line)
+                                G1 X[#<clamp> * #<_diameter_mode>] Z#<to_z>
+                                #<_cut_phys_x> = #<clamp>
+                        o<xw_00> elseif [#<from_x> GT #<clamp>]
+                                (profile descends through the stock line: skim to the intersection, then follow it)
+                                #<zi> = [#<from_z> + [#<to_z> - #<from_z>] * [#<from_x> - #<clamp>] / [#<from_x> - #<to_x>]]
+                                G1 X[#<clamp> * #<_diameter_mode>] Z#<zi>
+                                G1 X[#<to_x> * #<_diameter_mode>] Z#<to_z>
+                        o<xw_00> elseif [#<to_x> GT #<clamp>]
+                                o<cl_01> if [ABS[#<to_z> - #<from_z>] LT 0.0005]
+                                        (perpendicular wall: stop at its base, do not climb it)
+                                        (the wall face is cleaned by the pre-finish contour pass)
+                                        #<_cut_phys_z> = #<from_z>
+                                        #<_cut_phys_x> = #<from_x>
+                                o<cl_01> else
+                                        (profile climbs through the stock line: cut only to the intersection)
+                                        (any later skim along the envelope is emitted by the following records)
+                                        #<zi> = [#<from_z> + [#<to_z> - #<from_z>] * [#<clamp> - #<from_x>] / [#<to_x> - #<from_x>]]
+                                        G1 X[#<clamp> * #<_diameter_mode>] Z#<zi>
+                                        #<_cut_phys_z> = #<zi>
+                                        #<_cut_phys_x> = #<clamp>
+                                o<cl_01> endif
+                        o<xw_00> else
+                                G1 X[#<to_x> * #<_diameter_mode>] Z#<to_z>
+                        o<xw_00> endif
                 o<cut_10> else
+                        (arc: if parked at the stock line, first move up to the true start point - air above stock)
+                        o<cl_10> if [#<from_x> GT #<clamp>]
+                                G1 X[#<from_x> * #<_diameter_mode>]
+                        o<cl_10> endif
                         G#<dir> X[#<to_x> * #<_diameter_mode>] Z#<to_z> I#<i_off> K#<k_off>
                 o<cut_10> endif
         o<cut_if_0> endif

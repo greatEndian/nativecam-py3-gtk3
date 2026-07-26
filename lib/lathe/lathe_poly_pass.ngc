@@ -1,0 +1,231 @@
+(one connected contour pass - pre-finish or finishing - over a lathe polyline)
+(the pass offset is produced by dynamic cutter compensation G41.1/G42.1 so)
+(walls, tapers and radii all get a true normal-direction allowance: internal)
+(fillets shrink and external radii grow by exactly the offset)
+(optionally adds the loaded tool's nose diameter to the compensation)
+o<lathe_poly_pass> sub
+(CALL pds[1] shift_r[2] gx_base[3] gz_base[4] rot_total[5] pass_feed[6] li_len[7] li_ang[8] li_feed[9] lo_len[10] lo_ang[11] lo_feed[12] finish_mode[13] li_rad[14] lo_rad[15] nose_comp[16])
+
+	#<pds>       = #1
+	#<shift_r>   = #2
+	#<pass_feed> = #6
+	#<li_len>    = #7
+	#<li_ang>    = #8
+	#<li_feed>   = #9
+	#<lo_len>    = #10
+	#<lo_ang>    = #11
+	#<lo_feed>   = #12
+	#<li_rad>    = #14
+	#<lo_rad>    = #15
+	#<nose_on>   = #16
+	o<lif_def> if [#<li_feed> LE 0]
+		#<li_feed> = #<pass_feed>
+	o<lif_def> endif
+	o<lof_def> if [#<lo_feed> LE 0]
+		#<lo_feed> = #<pass_feed>
+	o<lof_def> endif
+
+	(contour passes trace the full profile - no stock clamping, no early stop)
+	#<_x_clamp_r> = 999999.0
+	#<_trace_stop_rec> = 0
+
+	#<rec_count> = #[#<pds>]
+	#<entry_z>   = #[#<pds> + 1] (first record: lathe Z)
+	#<entry_x>   = #[#<pds> + 2] (first record: lathe X radius)
+
+	(pass travel direction: +1 = entered from the front, -1 = from the back)
+	#<last_z> = #[#<pds> + [#<rec_count> - 1] * 8 + 1]
+	o<zdir> if [#<entry_z> GE #<last_z>]
+		#<z_dir> = 1
+	o<zdir> else
+		#<z_dir> = -1
+	o<zdir> endif
+
+	(normal offset via dynamic cutter comp: diameter and orientation come from)
+	(the shared o<tip_comp_dia> so every lathe op derives nose comp identically)
+	(- see lib/lathe/tip_comp_dia.ngc. comp_r is read back here, before comp is)
+	(turned on, to place the raw lead-in on the already-compensated entry point)
+	o<tip_comp_dia> CALL [#<shift_r>] [#<nose_on>]
+	#<comp_d> = #<_tip_comp_d>
+	#<comp_l> = #<_tip_comp_l>
+	#<comp_r> = [#<comp_d> / 2]
+
+	(entry direction, needed to place the already-compensated entry point below:)
+	(the lead-in runs raw, before compensation turns on, so it must already land)
+	(exactly where the comp'd contour actually starts - otherwise compensation)
+	(establishes from an unshifted position and the first segment comes out at)
+	(the wrong offset, and a tight blend radius trips the concave-corner check)
+	o<ent_dir> if [#<rec_count> GE 2]
+		#<_2z> = #[#<pds> + 9]  (second record: lathe Z)
+		#<_2x> = #[#<pds> + 10] (second record: lathe X radius)
+		o<line> CALL [#<entry_z>] [#<entry_x>] [#<_2z>] [#<_2x>]
+	o<ent_dir> else
+		#<_line_cos> = [-#<z_dir>]
+		#<_line_sin> = 0
+	o<ent_dir> endif
+	#<_ent_nz> = [#<z_dir> * #<_line_sin>]
+	#<_ent_nx> = [-#<z_dir> * #<_line_cos>]
+	#<comp_ez> = [#<entry_z> + #<comp_r> * #<_ent_nz>]
+	#<comp_ex> = [#<entry_x> + #<comp_r> * #<_ent_nx>]
+
+	(safe approach: retract above stock, rapid back in Z)
+	G0 X[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]
+
+	o<lead_in> if [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
+		(lead-in line direction: unit vector pointing from the entry toward)
+		(the far rapid point - deliberately measured from the fixed Z axis)
+		(here, NOT the local entry-segment direction _line_cos/_line_sin,)
+		(unlike lead-out below. _line_cos/_line_sin at the entry points INTO)
+		(the material about to be cut - the direction of the second record -)
+		(continuing further in that same sense, as lead-out's fix correctly)
+		(does for its own opposite-meaning, already-cut exit direction,)
+		(pushes the far point and tangent point behind the entry - already)
+		(inside the part - instead of safely in front of it. Verified)
+		(numerically: for a front-face entry continuing into -Z, using the)
+		(local direction placed the tangent point at Z<0, past the face,)
+		(into the stock, with a 135 degree sweep; the Z-axis baseline used)
+		(here places it at Z>0, safely in front, with the correct 45 degree)
+		(sweep matching li_ang. 0 degrees continues along Z, 90 breaks radial)
+		#<li_bz> = [#<z_dir> * COS[#<li_ang>]]
+		#<li_bx> = SIN[#<li_ang>]
+
+		#<_flt_ok> = 0
+		o<li_geom> if [#<li_rad> GT 0]
+			o<fillet_lead> CALL [#<comp_ez>] [#<comp_ex>] [#<_line_cos>] [#<_line_sin>] [#<li_bz>] [#<li_bx>] [#<li_rad>] [#<z_dir>]
+		o<li_geom> endif
+
+		o<li_base> if [#<_flt_ok>]
+			#<li_baz> = #<_flt_t1z>
+			#<li_bax> = #<_flt_t1x>
+		o<li_base> else
+			#<li_baz> = #<comp_ez>
+			#<li_bax> = #<comp_ex>
+		o<li_base> endif
+
+		G0 Z[#<li_baz> + #<li_len> * #<li_bz>]
+		G0 X[[#<li_bax> + #<li_len> * #<li_bx>] * #<_diameter_mode>]
+		F#<li_feed>
+		o<li_str> if [#<li_len> GT 0]
+			G1 X[#<li_bax> * #<_diameter_mode>] Z#<li_baz>
+		o<li_str> endif
+		o<li_arc> if [#<_flt_ok>]
+			(tangent blend from the lead-in line into the toolpath's own)
+			(initial direction, instead of a sharp corner - run raw, before)
+			(compensation turns on, so a tight blend never trips cutter comp's)
+			(concave-corner gouge check, landing exactly on the already-)
+			(compensated entry point)
+			o<li_arc_d> if [#<_flt_cw>]
+				G2 X[#<comp_ex> * #<_diameter_mode>] Z#<comp_ez> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+			o<li_arc_d> else
+				G3 X[#<comp_ex> * #<_diameter_mode>] Z#<comp_ez> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+			o<li_arc_d> endif
+		o<li_arc> endif
+		F#<pass_feed>
+		#<_cut_current_x> = #<entry_z>
+	o<lead_in> else
+		(plunge approach, landing on the already-compensated entry point)
+		G0 Z[#<comp_ez> + #<z_dir> * #<_pl_z_clear>]
+		G0 X[#<comp_ex> * #<_diameter_mode>]
+		#<_cut_current_x> = [#<entry_z> + #<z_dir> * #<_pl_z_clear>]
+	o<lead_in> endif
+	#<_cut_current_y> = #<entry_x>
+	#<_cut_phys_z> = #<entry_z>
+	#<_cut_phys_x> = #<entry_x>
+
+	(offset side is above the contour: right of travel - 42 - entering from the)
+	(front, left - 41 - entering from the back. The shared o<tip_comp_on> guards)
+	(on a real diameter, so a nose-comp-off pass emits nothing)
+	#<c_side> = 41
+	o<c_sd> if [#<z_dir> GT 0]
+		#<c_side> = 42
+	o<c_sd> endif
+	o<tip_comp_on> CALL [#<c_side>]
+
+	(compensation now turns on right at the entry point instead of before the)
+	(lead-in, so trace_lathe's own re-visit of record 1 - a zero-length move -)
+	(would become the compensation entry move and fail the length check; start)
+	(at record 2 instead, making the long record1-to-record2 cut the entry move)
+	#<_pass_z_dir> = #<z_dir>
+	o<trace_lathe> CALL [#<pds>] [0] [1] [0] [0] [0] [2]
+
+	o<tip_comp_off> CALL
+
+	o<lead_out> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
+		F#<lo_feed>
+
+		(g123_lathe only tracks the RAW programmed endpoint in _cut_phys_x/z,)
+		(not where compensation actually left the tool - invisible when shift_r)
+		(is zero on the finish pass, but wrong whenever the pass carries an)
+		(offset: a facing-direction exit segment gets its offset applied in Z,)
+		(not X, so the raw endpoint can be off by the full offset amount)
+		o<ext_dir> if [#<rec_count> GE 2]
+			#<_2z> = #[#<pds> + [#<rec_count> - 2] * 8 + 1]  (second-to-last record: lathe Z)
+			#<_2x> = #[#<pds> + [#<rec_count> - 2] * 8 + 2]  (second-to-last record: lathe X radius)
+			o<line> CALL [#<_2z>] [#<_2x>] [#<_cut_phys_z>] [#<_cut_phys_x>]
+		o<ext_dir> else
+			#<_line_cos> = [#<z_dir>]
+			#<_line_sin> = 0
+		o<ext_dir> endif
+		#<_ext_nz> = [#<z_dir> * #<_line_sin>]
+		#<_ext_nx> = [-#<z_dir> * #<_line_cos>]
+		#<end_z>  = [#<_cut_phys_z> + #<comp_r> * #<_ext_nz>]
+		#<phys_x> = [#<_cut_phys_x> + #<comp_r> * #<_ext_nx>]
+
+		(the move right after exiting cutter comp must be straight, not an arc -)
+		(a same-point no-op line satisfies that before a lead-out fillet blend)
+		G1 X[#<phys_x> * #<_diameter_mode>] Z#<end_z>
+
+		(lead-out line direction: identical to the roughing lead-out in)
+		(lathe_level_pass.ngc - retreat toward the pass start, +Z for a)
+		(front-to-back pass, lifting +X, at the user angle - so every)
+		(lead-out arc, roughing or finishing/pre-finishing, has the same)
+		(geometric direction and dimensions. Measured from the Z axis, not)
+		(the local exit segment: a roughing level always travels pure Z and)
+		(retreats this way, and the user wants the finishing passes to match)
+		(it exactly. 0 degrees continues along Z, 90 breaks fully radial)
+		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
+		#<lo_bx> = SIN[#<lo_ang>]
+
+		#<_flt_ok> = 0
+		o<lo_geom> if [#<lo_rad> GT 0]
+			(arrival direction: same as the one used to correct the exit point -)
+			(the lead direction is negated because fillet_lead's T1 formula)
+			(assumes travel INTO T1 along -lead; lead-out actually travels)
+			(OUT of T1 along +lead, so the sense fed in must be reversed to)
+			(place T1 where it is actually tangent to the real lo_str line)
+			(cap the radius so the arc's own reach along the lead-out line)
+			(never exceeds lo_len beyond the cut end - otherwise a large)
+			(lo_rad keeps pushing the whole retreat further out with no)
+			(bound; half-angle comes from the arrival vs lead-out directions)
+			#<_lo_reff> = #<lo_rad>
+			o<lo_cap> if [#<lo_len> GT 0]
+				#<_lo_cos> = [-1 * [[#<_line_cos> * #<lo_bz>] + [#<_line_sin> * #<lo_bx>]]]
+				#<_lo_sin> = ABS[[#<_line_sin> * #<lo_bz>] - [#<_line_cos> * #<lo_bx>]]
+				#<_lo_rmax> = [#<lo_len> * #<_lo_sin> / [1 + #<_lo_cos>]]
+				o<lo_cap2> if [#<_lo_reff> GT #<_lo_rmax>]
+					#<_lo_reff> = #<_lo_rmax>
+				o<lo_cap2> endif
+			o<lo_cap> endif
+			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [#<_line_cos>] [#<_line_sin>] [-#<lo_bz>] [-#<lo_bx>] [#<_lo_reff>] [#<z_dir>]
+		o<lo_geom> endif
+
+		o<lo_arc> if [#<_flt_ok>]
+			(traversed V-to-T1, the reverse of how the utility defines the)
+			(sweep, so the direction is flipped - verified numerically by)
+			(checking actual tangent direction continuity at both ends, not)
+			(just that the arc is a valid circle)
+			o<lo_arc_d> if [#<_flt_cw>]
+				G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - #<phys_x>] K[#<_flt_cz> - #<end_z>]
+			o<lo_arc_d> else
+				G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - #<phys_x>] K[#<_flt_cz> - #<end_z>]
+			o<lo_arc_d> endif
+			#<phys_x> = #<_flt_t1x>
+			#<end_z>  = #<_flt_t1z>
+		o<lo_arc> endif
+		o<lo_str> if [#<lo_len> GT 0]
+			G1 X[[#<phys_x> + #<lo_len> * #<lo_bx>] * #<_diameter_mode>] Z[#<end_z> + #<lo_len> * #<lo_bz>]
+		o<lo_str> endif
+		F#<pass_feed>
+	o<lead_out> endif
+
+o<lathe_poly_pass> endsub

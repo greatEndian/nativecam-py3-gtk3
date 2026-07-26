@@ -1,0 +1,36 @@
+(build a reversed open-profile record array from a forward one)
+(mill's poly_reverse assumes a closed polyline and adds a wrap-around edge;)
+(lathe profiles are open so the reversed trace must simply end at the first point)
+o<poly_reverse_lathe> sub
+(CALL src[1] dst[2])
+
+	#<src>   = #1
+	#<dst>   = #2
+	#<count> = #[#<src>]
+	#[#<dst>] = 0
+
+	o<empty> if [#<count> LT 1]
+		o<poly_reverse_lathe> return
+	o<empty> endif
+
+	(first reversed record = last forward endpoint, plain line: the pass entry point)
+	#<p_last> = [#<src> + [#<count> - 1] * 8 + 1]
+	o<add_mill_data> CALL [#<dst>] [#[#<p_last>]] [#[#<p_last> + 1]] [1] [0] [0] [0] [0] [0]
+
+	(walk backward: move arriving at endpoint k uses record k+1 geometry, arcs flipped)
+	#<k> = [#<count> - 1]
+	o<loop01> while [#<k> GE 1]
+		#<p_end> = [#<src> + [#<k> - 1] * 8 + 1] (endpoint of record k)
+		#<p_geo> = [#<src> + #<k> * 8 + 1]       (geometry of record k+1)
+
+		o<flip> if [#[#<p_geo> + 2] GE 2]
+			#<rdir> = [6 / #[#<p_geo> + 2]] (2 <-> 3)
+		o<flip> else
+			#<rdir> = #[#<p_geo> + 2]
+		o<flip> endif
+
+		o<add_mill_data> CALL [#<dst>] [#[#<p_end>]] [#[#<p_end> + 1]] [#<rdir>] [#[#<p_geo> + 3]] [#[#<p_geo> + 4]] [0] [0] [0]
+		#<k> = [#<k> - 1]
+	o<loop01> endwhile
+
+o<poly_reverse_lathe> endsub

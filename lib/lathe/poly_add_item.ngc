@@ -1,6 +1,6 @@
 o<poly_add_item> sub
 (author : Fernand Veilleux)
-(CALL type[1], x[2], y[3], dir[4], corner style[5], corner radius[6], complementary[7], tool engagement[8], radius or angle[9], flipped or offsets[10] for type 4 to 7)
+(CALL type[1], x[2], y[3], dir[4], corner style[5], corner radius[6], complementary[7], tool engagement[8], radius or angle[9], radius_opt[10], flipped[11])
 ;types :
 ; -1 = init and set origin
 ; -3 = mirror all previous items backward -4 = create arc connector to mirror line
@@ -241,6 +241,74 @@ o<poly_add_item> sub
 ;		(AXIS,notify,polyline: begin and end positions are the same - EXITING)
 		o<poly_add_item> return
 	o<validity_1> endif
+
+	(chamfer merge with the previous straight segment)
+	(corner style 2 = equal legs, 21 = two legs - second in arg 9, 22 = leg + angle deg in arg 9; arg 7 flips)
+	o<chamf> if [[#1 GE 0] AND [#4 EQ 1] AND [#6 GT 0] AND [#5000 GE 1] AND [#<prev_d> EQ 1] AND [[#5 EQ 2] OR [#5 EQ 21] OR [#5 EQ 22]]]
+		o<ch_p0> if [#5000 EQ 1]
+			#<p0_x> = #4993
+			#<p0_y> = #4994
+		o<ch_p0> else
+			#<p0_x> = #[#<ptr> + 22]
+			#<p0_y> = #[#<ptr> + 23]
+		o<ch_p0> endif
+
+		(o<line> phi runs from its first point toward its second)
+		o<line> CALL [#<prev_x>] [#<prev_y>] [#<p0_x>] [#<p0_y>]
+		#<phi_back> = #<_line_phi>
+		#<len_prev> = #<_line_len>
+		o<line> CALL [#<prev_x>] [#<prev_y>] [#60] [#61]
+		#<phi_fwd> = #<_line_phi>
+		#<len_next> = #<_line_len>
+
+		#<gamma> = [ABS[#<phi_back> - #<phi_fwd>] MOD 360]
+		o<ch_gam> if [#<gamma> GT 180]
+			#<gamma> = [360 - #<gamma>]
+		o<ch_gam> endif
+
+		#<ch_ok> = 1
+		o<ch_mode> if [#5 EQ 2]
+			#<leg_p> = #6
+			#<leg_n> = #6
+		o<ch_mode> elseif [#5 EQ 21]
+			o<ch_fl1> if [#7]
+				#<leg_p> = #9
+				#<leg_n> = #6
+			o<ch_fl1> else
+				#<leg_p> = #6
+				#<leg_n> = #9
+			o<ch_fl1> endif
+		o<ch_mode> else (leg + angle)
+			o<ch_a_ok> if [[#9 LE 0.5] OR [[#<gamma> + #9] GE 179] OR [#<gamma> LT 1]]
+				#<ch_ok> = 0
+			o<ch_a_ok> else
+				o<ch_fl2> if [#7]
+					#<leg_n> = #6
+					#<leg_p> = [#<leg_n> * SIN[#9] / SIN[#<gamma> + #9]]
+				o<ch_fl2> else
+					#<leg_p> = #6
+					#<leg_n> = [#<leg_p> * SIN[#9] / SIN[#<gamma> + #9]]
+				o<ch_fl2> endif
+			o<ch_a_ok> endif
+		o<ch_mode> endif
+
+		o<ch_val> if [[#<ch_ok> EQ 0] OR [#<leg_p> LE 0] OR [#<leg_n> LE 0] OR [#<leg_p> GE #<len_prev>] OR [#<leg_n> GE #<len_next>] OR [#<gamma> LT 1] OR [#<gamma> GT 179]]
+			(invalid chamfer: keep a sharp corner)
+			#5 = 0
+			#6 = 0
+		o<ch_val> else
+			(shorten the previous segment to the chamfer start)
+			#[#<ptr> + 11] = [#<prev_x> + #<leg_p> * COS[#<phi_back>]]
+			#[#<ptr> + 12] = [#<prev_y> + #<leg_p> * SIN[#<phi_back>]]
+			(save the target: #60/#61 are globals and the recursive call overwrites them)
+			#<tgt_x> = #60
+			#<tgt_y> = #61
+			(add the chamfer edge, then the original target with the corner consumed)
+			o<poly_add_item> CALL [1] [#<prev_x> + #<leg_n> * COS[#<phi_fwd>]] [#<prev_y> + #<leg_n> * SIN[#<phi_fwd>]] [1] [0] [0] [0] [#8]
+			o<poly_add_item> CALL [1] [#<tgt_x>] [#<tgt_y>] [#4] [0] [0] [0] [#8]
+			o<poly_add_item> return
+		o<ch_val> endif
+	o<chamf> endif
 
 	o<if04> if [[#5 EQ 0] OR [#6 EQ 0]] (make sure no style)
 		#5 = 0
