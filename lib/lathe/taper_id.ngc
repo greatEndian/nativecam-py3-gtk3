@@ -1,11 +1,12 @@
 (author : Fernand Veilleux)
 o<taper_id> sub
-(CALL [#begin_x] [#end_x] [#begin_z] [#angle] [#fine_finish])
+(CALL [#begin_x] [#end_x] [#begin_z] [#angle] [#fine_finish] [#path] [n_comp])
 
 	#<begin_z>     = #3
 	#<angle>       = #4
 	#<fine_finish> = #5
 	#<path>        = #6 (Follow drive line = 0 : Angular = 1)
+	#<n_comp>      = #7 (tool nose-radius comp on the finish wall)
 
 	#<begin_x>     = [#1 / 2 * #<_diameter_mode>]
 	#<end_x>       = [#2 / 2 * #<_diameter_mode>]
@@ -73,12 +74,40 @@ o<taper_id> sub
 
 	o20 if [#<fine_finish> AND #<_tool_usage> NE 1]
 		F#<_finish_feed>
+		(nose-radius comp on the bored finish wall: material is OUTSIDE the bore,)
+		(so the side inverts the OD taper - and the establishing move is the)
+		(radial feed from inside the bore out to the wall start, _ix_clear well)
+		(over the nose radius and in free air. Side is proven by the verifier)
+		o<tip_comp_dia> CALL [0] [#<n_comp>]
+		#<t_side> = 41
+		o<t_sd> if [#<begin_z> LT #<end_z>]
+			#<t_side> = 42
+		o<t_sd> endif
+		(comp-on approach from inside the bore must clear the wall start by at)
+		(least the nose radius so the outward radial establishing feed is valid)
+		#<t_appr> = #<_ix_clear>
+		o<t_ap> if [[#<n_comp> GT 0] AND [#<_tip_lead_w> GT #<_ix_clear>]]
+			#<t_appr> = #<_tip_lead_w>
+		o<t_ap> endif
 		o21 repeat [#<fine_finish>]
-			G0 X[#<end_x> - #<_ix_clear>] Z[#<begin_z>]
-			G0 X#<end_x>
-			G0 Z#<begin_z>
+			G0 X[#<end_x> - #<t_appr>] Z[#<begin_z>]
+			o<nc21> if [#<n_comp> GT 0]
+				o<tip_comp_on> CALL [#<t_side>]
+				G1 X#<end_x> Z#<begin_z>
+			o<nc21> else
+				G0 X#<end_x>
+				G0 Z#<begin_z>
+			o<nc21> endif
 			G1 X#<begin_x> Z#<end_z>
-			G0 X[#<begin_x> - #<_ix_clear>]
+			o<tip_comp_off> CALL
+			(with comp on, the round nose trails behind the sharp control point;)
+			(a bare _ix_clear radial pull at the deep corner swings that trailing)
+			(edge back into the finished wall, so clear by the nose width too)
+			#<id_rtr> = #<_ix_clear>
+			o<idrt> if [#<n_comp> GT 0]
+				#<id_rtr> = [#<_ix_clear> + #<_tip_lead_w>]
+			o<idrt> endif
+			G0 X[#<begin_x> - #<id_rtr>]
 		o21 endrepeat
 	o20 endif
 

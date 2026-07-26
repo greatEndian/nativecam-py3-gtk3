@@ -1,11 +1,12 @@
 (author : Fernand Veilleux)
 o<taper> sub
-(CALL [#begin_x] [#end_x] [#begin_z] [#angle] [#finishing_passes] [path])
+(CALL [#begin_x] [#end_x] [#begin_z] [#angle] [#finishing_passes] [path] [n_comp])
 
 	#<begin_z>          = #3
 	#<angle>            = #4
 	#<finishing_passes> = #5
 	#<path>             = #6 (Follow drive line = 0 : Angular = 1)
+	#<n_comp>           = #7 (tool nose-radius comp on the finish wall)
 	
 	#<begin_x>   = [#1 / 2 * #<_diameter_mode>]
 	#<end_x>     = [#2 / 2 * #<_diameter_mode>]
@@ -69,12 +70,37 @@ o<taper> sub
 
 	o20 if [#<finishing_passes> AND #<_tool_usage> NE 1]
 		F#<_finish_feed>
-		G0 X[#<end_x> + #<_x_clear> + #<finishcut>] Z[#<begin_z>]
+		(nose-radius comp on the angled finish wall: the radial approach from)
+		(above the OD down to the taper start is the establishing move - x_clear)
+		(is well over the nose radius and it runs in free air above the part -)
+		(so the taper line itself is cut fully compensated. Side follows the OD)
+		(turning convention - toward the chuck = 42 - and is proven, not trusted,)
+		(by the tangency verifier)
+		o<tip_comp_dia> CALL [0] [#<n_comp>]
+		#<t_side> = 42
+		o<t_sd> if [#<begin_z> LT #<end_z>]
+			#<t_side> = 41
+		o<t_sd> endif
+		(comp-on approach must be at least the nose radius out from the wall)
+		(start so the radial establishing feed is long enough for the interpreter)
+		#<t_appr> = #<_x_clear>
+		o<t_ap> if [[#<n_comp> GT 0] AND [#<_tip_lead_w> GT #<_x_clear>]]
+			#<t_appr> = #<_tip_lead_w>
+		o<t_ap> endif
+		G0 X[#<end_x> + #<t_appr> + #<finishcut>] Z[#<begin_z>]
 		o21 repeat [#<finishing_passes>]
-			G0 X[#<end_x> + #<_x_clear>] Z[#<begin_z>]
-			G0 X#<end_x>
-			G0 Z#<begin_z>
+			G0 X[#<end_x> + #<t_appr>] Z[#<begin_z>]
+			o<nc21> if [#<n_comp> GT 0]
+				(comp on above the OD; the radial feed down to the taper start)
+				(is the establishing move, so the wall itself is fully compensated)
+				o<tip_comp_on> CALL [#<t_side>]
+				G1 X#<end_x> Z#<begin_z>
+			o<nc21> else
+				G0 X#<end_x>
+				G0 Z#<begin_z>
+			o<nc21> endif
 			G1 X#<begin_x> Z#<end_z>
+			o<tip_comp_off> CALL
 			G0 X[#<begin_x> + #<_x_clear>]
 		o21 endrepeat
 	o20 endif

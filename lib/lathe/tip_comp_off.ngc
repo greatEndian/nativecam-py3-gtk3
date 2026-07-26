@@ -1,0 +1,7 @@
+(shared lathe tool-tip / nose-radius compensation - CANCEL)
+(cancels dynamic cutter comp. Must run before any pass-end retract and before)
+(any G17/G18/G19 plane switch, per the interpreter's plane/comp guard. Kept as)
+(its own sub so every op cancels comp through one identical call)
+o<tip_comp_off> sub
+	G40
+o<tip_comp_off> endsub

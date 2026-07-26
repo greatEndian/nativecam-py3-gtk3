@@ -1,0 +1,20 @@
+(shared lathe tool-tip / nose-radius compensation - TURN ON)
+(emits LinuxCNC dynamic cutter comp using the diameter/orientation already)
+(computed by o<tip_comp_dia> into #<_tip_comp_d> / #<_tip_comp_l>. Call this)
+(right at the entry point, after a straight lead-in at least the nose radius)
+(long, and cancel with o<tip_comp_off> - G40 - before any retract or plane)
+(switch. Guarded on a real diameter so nose-comp-off passes emit nothing)
+(CALL side[1])
+(side : 42 = comp right of travel - G42.1, material on the left of travel;)
+(  41 = comp left of travel - G41.1, material on the right. Pass the op's)
+(  own already-correct direction value, do not re-derive it here)
+o<tip_comp_on> sub
+	#<side> = #1
+	o<tc_on> if [#<_tip_comp_d> GT 0.0001]
+		o<tc_side> if [#<side> EQ 42]
+			G42.1 D#<_tip_comp_d> L#<_tip_comp_l>
+		o<tc_side> else
+			G41.1 D#<_tip_comp_d> L#<_tip_comp_l>
+		o<tc_side> endif
+	o<tc_on> endif
+o<tip_comp_on> endsub

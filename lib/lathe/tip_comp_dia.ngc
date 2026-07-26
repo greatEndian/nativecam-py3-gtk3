@@ -1,0 +1,43 @@
+(shared lathe tool-tip / nose-radius compensation - DIAMETER + ORIENTATION)
+(computes the dynamic-cutter-comp diameter and tool orientation once, into)
+(the globals #<_tip_comp_d> / #<_tip_comp_l>, so every lathe op derives the)
+(nose comp the same way. Separated from the emit - o<tip_comp_on> - because)
+(the polyline needs the diameter early to place its raw lead-in on the)
+(already-compensated entry point, before comp is actually turned on)
+(CALL extra_r[1] nose_on[2])
+(extra_r : per-side finishing allowance folded into the offset - 0 for the)
+(  parametric ops, the finish/pre-finish stock allowance for a contour pass)
+(nose_on : 1 = add the tool nose radius so the cutting edge, not the control)
+(  point, follows the profile - needed on tapers/radii/faces; 0 = pure)
+(  parallel offset of the control point only, orientation L forced to 0)
+o<tip_comp_dia> sub
+	#<extra_r> = #1
+	#<nose_on> = #2
+
+	(nose diameter source: the loaded tool's own #5410 when the tool table)
+	(carries one, else the machine global-default override _tip_nose_dia)
+	o<td_src> if [#5410 GT 0.0001]
+		#<tc_nd> = #5410
+	o<td_src> else
+		#<tc_nd> = #<_tip_nose_dia>
+	o<td_src> endif
+
+	(establishing-lead-in length as an X word: the interpreter rejects a comp)
+	(entry move shorter than the tool radius, so every op should approach the)
+	(first cut with a straight move at least this long. tc_nd as an X word is a)
+	(radial distance of the full nose diameter - twice the radius - a safe margin)
+	#<_tip_lead_w> = [#<tc_nd> * #<_diameter_mode>]
+
+	o<n_on> if [#<nose_on> GT 0]
+		#<_tip_comp_d> = [2 * #<extra_r> + #<tc_nd>]
+		(orientation: table #5413 when known, else the override _tip_orient)
+		o<or_src> if [#5413 GT 0]
+			#<_tip_comp_l> = #5413
+		o<or_src> else
+			#<_tip_comp_l> = #<_tip_orient>
+		o<or_src> endif
+	o<n_on> else
+		#<_tip_comp_d> = [2 * #<extra_r>]
+		#<_tip_comp_l> = 0
+	o<n_on> endif
+o<tip_comp_dia> endsub

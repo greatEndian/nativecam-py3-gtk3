@@ -1,11 +1,12 @@
 (author : Fernand Veilleux)
 o<boring> sub
-(CALL [#begin_x] [#end_x] [#begin_z] [#end_z] [#finishing_passes])
+(CALL [#begin_x] [#end_x] [#begin_z] [#end_z] [#finishing_passes] [taper] [n_comp])
 
 	#<begin_z>          = #3
 	#<end_z>            = #4
 	#<finishing_passes> = #5
 	#<taper>            = #6
+	#<n_comp>           = #7 (tool nose-radius comp on the finish bore wall)
 
 	#<begin_x>          = [#1 / 2 * #<_diameter_mode>]
 	#<end_x>            = [#2 / 2 * #<_diameter_mode>]
@@ -48,6 +49,31 @@ o<boring> sub
 
 	o20 if [#<finishing_passes> AND #<_tool_usage> NE 1]
 		F#<_finish_feed>
+	o<bnc> if [#<n_comp> GT 0]
+		(compensated finish: the bore wall is a straight Z cut, so nose comp sets)
+		(the correct bore DIAMETER. The radial feed from inside the bore out to)
+		(the wall at the mouth is the establishing move - _ix_clear well over the)
+		(nose radius and in free air. Material is outside the bore, so the side)
+		(inverts OD turning and is proven, not trusted, by the tangency verifier)
+		o<tip_comp_dia> CALL [0] [#<n_comp>]
+		#<b_side> = 41
+		o<b_sd> if [#<begin_z> LT #<end_z>]
+			#<b_side> = 42
+		o<b_sd> endif
+		#<b_estab> = #<_ix_clear>
+		o<b_es> if [#<_tip_lead_w> GT #<_ix_clear>]
+			#<b_estab> = #<_tip_lead_w>
+		o<b_es> endif
+		o23 repeat [#<finishing_passes>]
+			G0 Z#<begin_z>
+			G0 X[#<end_x> - #<b_estab>]
+			o<tip_comp_on> CALL [#<b_side>]
+			G1 X#<end_x>
+			G1 Z#<end_z>
+			o<tip_comp_off> CALL
+			G0 X[#<end_x> - #<_ix_clear> - #<_tip_lead_w>]
+		o23 endrepeat
+	o<bnc> else
 		G0 X[#<end_x> - #<_ix_clear>]
 		o21 repeat [#<finishing_passes>]
 			G0 Z#<begin_z>
@@ -55,6 +81,7 @@ o<boring> sub
 			G1 Z#<end_z>
 			G0 X[#<end_x> - #<_ix_clear>]
 		o21 endrepeat
+	o<bnc> endif
 	o20 endif
 	
 	M9 (cooling off)
