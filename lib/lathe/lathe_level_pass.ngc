@@ -344,26 +344,21 @@ o<lathe_level_pass> sub
 		#<_lo_cos> = [#<z_dir> * #<lo_bz>]
 		#<_lo_leff> = #<lo_len>
 
-		(an Artificial section boundary is not an obstruction - it is an)
-		(imaginary line sliced perpendicular through open material, with the)
-		(neighbouring slice roughed to the same depth on the far side of it.)
-		(The cap below assumes w_to is a real limit worth protecting, so on a)
-		(sliced boundary - where z_end is clamped to w_to exactly and the room)
-		(is therefore zero - it silently deleted the lead-out arc AND its)
-		(straight run, leaving every artificial slice ending bare while)
-		(natural endings kept theirs. Flag that case and let the configured)
-		(lead-out through, so an artificial ending behaves like a natural one)
-		#<lo_aend> = 0
-		o<lo_art> if [[#<_pl_sectioning> GT 0] AND [#<_pl_sect_mode> EQ 1] AND [ABS[#<z_end> - #<w_to>] LT 0.0001]]
-			#<lo_aend> = 1
-		o<lo_art> endif
-
-		(mirrors the lead-in's own _li_leff/li_cap_all cap above: keep the)
-		(retreat's own straight length from reaching past w_to into the)
-		(neighboring section/window. Gated on multi-crossing so the)
+		(mirrors the lead-in's own _li_leff/li_cap_all cap above, and bounds the)
+		(same end of the interval it does. The retreat travels BACKWARD, from)
+		(z_end toward w_from, for either z_dir - lo_bz carries z_dir, so the)
+		(move Z[end_z + _lo_leff * lo_bz] always runs against the cutting)
+		(direction. What it must not reach past is therefore w_from: on a)
+		(multi-crossing continuation interval that is where the boss blocking)
+		(the sweep sits. Measuring toward w_to instead bounded the one direction)
+		(the retreat never travels, which both deleted the lead-out outright)
+		(whenever a pass ran its whole window - z_end clamped to w_to, so zero)
+		(room, which is what left every artificial slice ending bare - and let)
+		(a continuation interval retreat run back over its own start when the)
+		(room ahead happened to be large. Gated on multi-crossing so the)
 		(single-crossing path stays byte-for-byte unchanged)
-		o<lo_cap_all> if [[#<_pl_multi_cross> GT 0] AND [#<lo_aend> EQ 0]]
-			#<_lo_room> = ABS[#<w_to> - #<z_end>]
+		o<lo_cap_all> if [#<_pl_multi_cross> GT 0]
+			#<_lo_room> = ABS[#<z_end> - #<w_from>]
 			o<lo_lcap> if [#<_lo_cos> GT 0.0001]
 				#<_lo_lmax> = [#<_lo_room> / #<_lo_cos>]
 				o<lo_lcap2> if [#<_lo_leff> GT #<_lo_lmax>]
