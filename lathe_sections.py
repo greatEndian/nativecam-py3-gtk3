@@ -12,12 +12,18 @@ unit-testable with plain python3 and has no circular-import risk with ncam.py
 (which imports this module and calls build_sections_gcode from a <exec> tag
 in cfg/lathe/polyline.cfg's [AFTER] content).
 
-Only resolves "poly-line-to" items. Any other item type in the polyline
-(arc-to, arc-ij, polar, ...) makes resolve_points() abort and return None,
-so build_sections_gcode() emits nothing - poly_lathe_mill.ngc's own
-_pl_sect_count > 0 gate then falls back to plain (Sectioning-off) windowing.
-A wrong-but-plausible section list is more dangerous than no section list at
-all, since an unmodeled item could reach a radius the analysis never saw.
+Resolves every item type the lathe polyline offers: Line To, Line Polar,
+Arc To Coords and Arc I,K. Arcs are subdivided into sub-chords on the true
+radius, by the same rule poly_mesh_lathe.ngc uses at runtime, so a radius is
+analysed as the curve it is and not as the chord across it. Anything else -
+an item type added later, or a missing parameter - still makes
+resolve_points() return None, so build_sections_gcode() emits nothing and
+poly_lathe_mill.ngc's own _pl_sect_count > 0 gate falls back to plain
+(Sectioning-off) windowing. A wrong-but-plausible section list is more
+dangerous than no section list at all, since an unmodelled item could reach
+a radius the analysis never saw - which is why the resolution here is checked
+against the record array the machine actually builds, in test_sections.py,
+not against the cfg text.
 """
 
 import math
@@ -37,7 +43,7 @@ def _fmt(val):
 
 
 def resolve_points(polyline_feature):
-    """Ordered list of (z, x) absolute points for each active Line-To
+    """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
     in (diameter units as typed - see module docstring in the plan:
     diameter-vs-radius is a uniform scale that doesn't affect wall
@@ -61,58 +67,417 @@ def resolve_points(polyline_feature):
     the ceiling's clamp against start_radius in poly_lathe_mill.ngc is
     already for - this function has no need to duplicate that.
 
-    Returns None if any child item isn't a plain Line-To (arc/polar items
-    need real curve math this module doesn't attempt) or if a param is
-    missing - callers must treat None as "can't safely analyze this
-    profile", not as an empty result.
+    Returns None if any child item is of a kind this module cannot resolve,
+    or if a param is missing - callers must treat None as "can't safely
+    analyze this profile", not as an empty result.
+    """
+    resolved = resolve_segments(polyline_feature)
+    if resolved is None:
+        return None
+    origin, segments = resolved
+
+    points = []
+    merges = []
+    prev_z, prev_r = origin
+
+    for index, seg in enumerate(segments):
+        # An arc reaches the analysis as the straight chord between its two
+        # endpoints unless it is broken up here, and the chord runs through
+        # material the arc itself leaves standing. That is the same error
+        # poly_mesh_lathe.ngc exists to remove at runtime, so this uses its
+        # subdivision rule verbatim - see _densify_arc.
+        #
+        # The first record is the exception, and deliberately so: it is the
+        # profile's start point, no recorded segment leads into it, and
+        # poly_mesh_lathe copies it through without subdividing. The level
+        # scans are blind to the run from the origin into it for the same
+        # reason. Densifying it here would give the analysis points the scans
+        # can never stop against, which is exactly the mismatch this module
+        # exists to avoid.
+        if index > 0 and seg['dir'] in (ARC_CW, ARC_CCW):
+            span = _densify_arc(prev_z, prev_r, seg)
+        else:
+            span = [(seg['z'], seg['r'])]
+
+        for i, (z, r) in enumerate(span):
+            points.append((z, r * DIAMETER_MODE))
+            # the merge radius rounds the vertex where this item BEGINS, so
+            # it belongs to the first sub-point only; apply_merge_radii reads
+            # merges[j + 1] as the radius rounding points[j]
+            merges.append(seg['merge'] if i == 0 else 0.0)
+
+        prev_z, prev_r = seg['z'], seg['r']
+
+    return apply_merge_radii(points, merges)
+
+
+# X is entered and carried here as a diameter, while a polar length, an arc
+# radius and the fillet maths are lengths in the Z/radius plane.
+# #<_diameter_mode> is a fixed 2.0 everywhere in this project - it is set once
+# in Preferences.create_defaults and never reassigned in cfg/ or lib/ - so the
+# conversion is a constant. resolve_segments works entirely in radius units,
+# the units the record array itself holds; only resolve_points converts back.
+DIAMETER_MODE = 2.0
+
+# a record's dir field carries the G-code word itself for arcs
+ARC_CW = 2
+ARC_CCW = 3
+
+# item kinds this module can resolve, and the cfg they come from
+LINE_TO = 'poly-line-to'
+LINE_POLAR = 'poly-line-polar'
+ARC_TO_COORDS = 'poly_arc_to_coords'
+ARC_IJ = 'poly_arc_IJ'
+
+# param_type on a Line Polar: where the LENGTH is measured from.
+POLAR_FROM_ORIGIN = 1
+# param_a_ref: what the ANGLE is measured from.
+POLAR_ANGLE_PREV_LINE = 1
+POLAR_ANGLE_PREV_ARC = 2
+
+# the sagitta poly_lathe_mill.ngc asks poly_mesh_lathe for
+MESH_MAX_SAG = 0.005
+
+
+def _phi(z1, r1, z2, r2):
+    """Direction from point 1 to point 2, degrees 0-360.
+
+    lib/utilities/line.ngc, which every angle in poly_add_item comes from,
+    including its snap to a vertical when the Z travel is negligible.
+    """
+    dz, dr = z2 - z1, r2 - r1
+    if abs(dz) >= 0.000001:
+        return math.degrees(math.atan2(dr, dz)) % 360.0
+    return 90.0 if dr >= 0 else 270.0
+
+
+def resolve_segments(polyline_feature):
+    """(origin, segments) mirroring the record array poly_add_item builds,
+    or None if any item cannot be resolved.
+
+    Each segment is a dict with the same fields a record carries - z, r, dir,
+    cz, cr - in radius units, plus the merge radius the item asks for. This is
+    deliberately a record-for-record mirror rather than a convenient shape of
+    its own: it is what lets test_sections.py diff it against the array the
+    interpreter actually builds, which is the only way to know the analysis
+    and the machine are looking at the same profile.
+
+    The origin is returned separately because poly_add_item's [-1] init call
+    is not a record - see resolve_points on why folding it in is wrong.
     """
     b_z_param = polyline_feature.get_param('param_b_z')
     b_x_param = polyline_feature.get_param('param_b_x')
     if b_z_param is None or b_x_param is None:
         return None
 
-    prev_z = _to_float(b_z_param.get_ngc_value())
-    prev_x = _to_float(b_x_param.get_ngc_value())
-    points = []
-    merges = []
+    origin = (_to_float(b_z_param.get_ngc_value()),
+              _to_float(b_x_param.get_ngc_value()) / DIAMETER_MODE)
+    prev_z, prev_r = origin
+
+    # the record fields poly_add_item reads back off the PREVIOUS record when
+    # it resolves a relative item. prev_ph is field +5 and prev_rh field +6;
+    # both are zero before the first record exists, from the init call.
+    prev_ph = 0.0
+    prev_rh = 0.0
+    prev_d = 0
+
+    segments = []
 
     for child in getattr(polyline_feature, 'child_features', []):
-        if child.get_attr('type') != 'poly-line-to':
+        kind = child.get_attr('type')
+        if kind not in (LINE_TO, LINE_POLAR, ARC_TO_COORDS, ARC_IJ):
             return None
 
         act_param = child.get_param('param_act')
         if act_param is not None and _to_float(act_param.get_ngc_value()) <= 0:
             continue
 
-        type_param = child.get_param('param_type')
-        z_param = child.get_param('param_z')
-        x_param = child.get_param('param_x')
-        if type_param is None or z_param is None or x_param is None:
-            return None
-
-        item_type = int(_to_float(type_param.get_ngc_value()))
-        z = _to_float(z_param.get_ngc_value())
-        x = _to_float(x_param.get_ngc_value())
-
-        if item_type == 0:
-            new_z, new_x = prev_z + z, prev_x + x
-        elif item_type == 10:
-            new_z, new_x = prev_z + z, x
-        elif item_type == 11:
-            new_z, new_x = z, prev_x + x
+        if kind == LINE_TO:
+            resolved = _resolve_line_to(child, prev_z, prev_r)
+        elif kind == LINE_POLAR:
+            resolved = _resolve_polar(child, prev_z, prev_r, prev_ph, prev_rh, prev_d)
+        elif kind == ARC_TO_COORDS:
+            resolved = _resolve_arc_to_coords(child, prev_z, prev_r)
         else:
-            new_z, new_x = z, x
+            resolved = _resolve_arc_ij(child, prev_z, prev_r)
 
-        points.append((new_z, new_x))
-        prev_z, prev_x = new_z, new_x
+        if resolved is None:
+            return None
+        new_z, new_r, direction, cz, cr = resolved
+
+        # poly_add_item's own validity_1 guard: an item that lands exactly
+        # where the profile already is never becomes a record at all, and the
+        # next relative item resolves from the point before it. Emitting it
+        # here would put a zero-length segment in front of every analysis
+        # walking this list.
+        if abs(new_z - prev_z) <= EPS and abs(new_r - prev_r) <= EPS:
+            continue
 
         style_param = child.get_param('param_m_style')
         r_param = child.get_param('param_m_r')
         style = int(_to_float(style_param.get_ngc_value())) if style_param is not None else 0
         radius = _to_float(r_param.get_ngc_value()) if r_param is not None else 0.0
-        merges.append(radius if style == MERGE_STYLE_RADIUS and radius > 0 else 0.0)
 
-    return apply_merge_radii(points, merges)
+        segments.append({'z': new_z, 'r': new_r, 'dir': direction,
+                         'cz': cz, 'cr': cr,
+                         'merge': radius if style == MERGE_STYLE_RADIUS and radius > 0 else 0.0})
+
+        # field +5 is the angle from the record BACK to the point before it -
+        # the reverse of travel - and field +6 the angle from the record to
+        # its own arc centre. Relative polar items are measured from those,
+        # so getting the direction of +5 backwards puts every "relative to
+        # previous line" item 180 degrees out; caught exactly that way by
+        # test_sections.py against the real array.
+        prev_ph = _phi(new_z, new_r, prev_z, prev_r)
+        prev_rh = _phi(new_z, new_r, cz, cr) if direction in (ARC_CW, ARC_CCW) else prev_ph
+        prev_d = direction
+        prev_z, prev_r = new_z, new_r
+
+    return origin, segments
+
+
+def _resolve_line_to(child, prev_z, prev_r):
+    """A Line To child, as poly_add_item item types 0, 1, 10 and 11."""
+    type_param = child.get_param('param_type')
+    z_param = child.get_param('param_z')
+    x_param = child.get_param('param_x')
+    if type_param is None or z_param is None or x_param is None:
+        return None
+
+    item_type = int(_to_float(type_param.get_ngc_value()))
+    z = _to_float(z_param.get_ngc_value())
+    r = _to_float(x_param.get_ngc_value()) / DIAMETER_MODE
+
+    if item_type == 0:
+        new_z, new_r = prev_z + z, prev_r + r
+    elif item_type == 10:
+        new_z, new_r = prev_z + z, r
+    elif item_type == 11:
+        new_z, new_r = z, prev_r + r
+    else:
+        new_z, new_r = z, r
+    return new_z, new_r, 1, 0.0, 0.0
+
+
+def _resolve_polar(child, prev_z, prev_r, prev_ph, prev_rh, prev_d):
+    """A Line Polar child, as poly_add_item item types 12, 2, 3 and 30.
+
+    Mirrors cfg/lathe/polyline-polar.cfg's [CALL] exactly - the same four
+    combinations of position reference and angle reference. Getting this wrong
+    would hand detect_sections a profile the machine never cuts, so it is
+    checked against the real record array in test_sections.py rather than by
+    reading the cfg.
+    """
+    l_param = child.get_param('param_l')
+    a_param = child.get_param('param_a')
+    if l_param is None or a_param is None:
+        return None
+    length = _to_float(l_param.get_ngc_value())
+    angle = _to_float(a_param.get_ngc_value())
+
+    t_param = child.get_param('param_type')
+    pos_ref = int(_to_float(t_param.get_ngc_value())) if t_param is not None else 2
+    r_param = child.get_param('param_a_ref')
+    ang_ref = int(_to_float(r_param.get_ngc_value())) if r_param is not None else 0
+
+    if pos_ref == POLAR_FROM_ORIGIN:
+        # length is the Z coordinate itself, measured parallel to Z; the angle
+        # is the slope the line runs at, so the radius follows from the travel
+        if abs(math.cos(math.radians(angle))) < EPS:
+            return length, prev_r, 1, 0.0, 0.0
+        d_radius = (length - prev_z) * math.tan(math.radians(angle))
+        return length, prev_r + d_radius, 1, 0.0, 0.0
+
+    # a step from the previous point, at an angle that may be measured from
+    # whichever direction the record array says the profile came in on
+    if ang_ref == POLAR_ANGLE_PREV_ARC:
+        angle += prev_rh if prev_d in (ARC_CW, ARC_CCW) else prev_ph
+    elif ang_ref == POLAR_ANGLE_PREV_LINE:
+        angle += prev_ph
+    rad = math.radians(angle)
+    return (prev_z + length * math.cos(rad),
+            prev_r + length * math.sin(rad), 1, 0.0, 0.0)
+
+
+def _resolve_arc_to_coords(child, prev_z, prev_r):
+    """An Arc To Coords child, as poly_add_item item types 4, 5, 41 and 42.
+
+    The end point comes straight from the coordinates; the centre is what
+    takes work. poly_add_item builds it off the chord: for a stated radius by
+    stepping the chord's half-height off the chord midpoint, and for a stated
+    arc height by intersecting the two perpendicular bisectors through the
+    apex. Both are reproduced here rather than replaced with a tidier
+    circumcentre, because "Flip center" and the too-short-chord fallback are
+    decisions the interpreter makes and the analysis has to make identically.
+    """
+    type_param = child.get_param('param_type')
+    z_param = child.get_param('param_z')
+    x_param = child.get_param('param_x')
+    h_param = child.get_param('param_height')
+    if None in (type_param, z_param, x_param, h_param):
+        return None
+
+    item_type = int(_to_float(type_param.get_ngc_value()))
+    z = _to_float(z_param.get_ngc_value())
+    r = _to_float(x_param.get_ngc_value()) / DIAMETER_MODE
+    size = _to_float(h_param.get_ngc_value())
+
+    a_param = child.get_param('param_atype')
+    atype = int(_to_float(a_param.get_ngc_value())) if a_param is not None else 0
+    d_param = child.get_param('param_dir')
+    direction = int(_to_float(d_param.get_ngc_value())) if d_param is not None else ARC_CW
+    v_param = child.get_param('param_rev')
+    flipped = int(_to_float(v_param.get_ngc_value())) if v_param is not None else 0
+
+    if item_type == 4:
+        new_z, new_r = prev_z + z, prev_r + r
+    elif item_type == 41:
+        new_z, new_r = prev_z + z, r
+    elif item_type == 42:
+        new_z, new_r = z, prev_r + r
+    else:
+        new_z, new_r = z, r
+
+    # phi runs from the END back to the start, matching the o<line> call
+    # poly_add_item makes here; the centre side is picked off that
+    phi = _phi(new_z, new_r, prev_z, prev_r)
+    chord = math.hypot(new_z - prev_z, new_r - prev_r)
+    mid_z, mid_r = (prev_z + new_z) / 2.0, (prev_r + new_r) / 2.0
+    side = phi + (270.0 if flipped else 90.0)
+
+    if atype == 0:
+        if chord >= size * 2.0:
+            # the interpreter prints "changed arc to line" and records a
+            # straight move; an analysis that kept treating it as an arc
+            # would be reasoning about a curve the machine never cuts
+            return new_z, new_r, 1, 0.0, 0.0
+        half = math.sqrt(max(size * size - (chord / 2.0) ** 2, 0.0))
+        cz = mid_z + half * math.cos(math.radians(side))
+        cr = mid_r + half * math.sin(math.radians(side))
+    else:
+        apex_z = mid_z + size * math.cos(math.radians(side))
+        apex_r = mid_r + size * math.sin(math.radians(side))
+        centre = _isect(((prev_z + apex_z) / 2.0, (prev_r + apex_r) / 2.0),
+                        _rot90(apex_z - (prev_z + apex_z) / 2.0,
+                               apex_r - (prev_r + apex_r) / 2.0),
+                        (mid_z, mid_r), (apex_z - mid_z, apex_r - mid_r))
+        if centre is None:
+            # parallel bisectors mean there is no circle through the three
+            # points. poly_add_item leaves the centre at 0,0 and still records
+            # an arc, which is a curve nobody can analyse - refuse instead.
+            return None
+        cz, cr = centre
+
+    return new_z, new_r, direction, cz, cr
+
+
+def _resolve_arc_ij(child, prev_z, prev_r):
+    """An Arc I,K child, as poly_add_item item types 6, 7, 61 and 62.
+
+    Here the centre is given and the end point is swept to. Note the I value
+    is a radius when it is an offset but a diameter when it is absolute -
+    polyline-arc-ij.cfg divides only in the absolute cases, and so does this.
+    """
+    type_param = child.get_param('param_type')
+    i_param = child.get_param('param_i')
+    k_param = child.get_param('param_k')
+    a_param = child.get_param('param_a')
+    if None in (type_param, i_param, k_param, a_param):
+        return None
+
+    item_type = int(_to_float(type_param.get_ngc_value()))
+    i_val = _to_float(i_param.get_ngc_value())
+    k_val = _to_float(k_param.get_ngc_value())
+    angle = _to_float(a_param.get_ngc_value())
+
+    e_param = child.get_param('param_etype')
+    etype = int(_to_float(e_param.get_ngc_value())) if e_param is not None else 0
+    d_param = child.get_param('param_dir')
+    direction = int(_to_float(d_param.get_ngc_value())) if d_param is not None else ARC_CCW
+
+    if item_type in (7, 61):
+        i_val /= DIAMETER_MODE
+
+    if item_type == 6:
+        cz, cr = prev_z + k_val, prev_r + i_val
+    elif item_type == 7:
+        cz, cr = k_val, i_val
+    elif item_type == 61:
+        cz, cr = prev_z + k_val, i_val
+    else:
+        cz, cr = k_val, prev_r + i_val
+
+    radius = math.hypot(prev_z - cz, prev_r - cr)
+    if etype == 1:
+        # the angle is absolute about the centre, so the end point is simply
+        # that bearing at the radius the start point already sets
+        new_z = cz + radius * math.cos(math.radians(angle))
+        new_r = cr + radius * math.sin(math.radians(angle))
+    else:
+        sweep = -angle if direction == ARC_CW else angle
+        new_z, new_r = _rotate(prev_z, prev_r, cz, cr, sweep)
+
+    return new_z, new_r, direction, cz, cr
+
+
+def _rotate(z, r, cz, cr, degrees):
+    """lib/utilities/rotate_xy.ngc."""
+    cos_a, sin_a = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    return ((z - cz) * cos_a - (r - cr) * sin_a + cz,
+            (z - cz) * sin_a + (r - cr) * cos_a + cr)
+
+
+def _rot90(vz, vr):
+    return -vr, vz
+
+
+def _isect(p0, s1, p2, s2):
+    """Where two lines given as point + direction cross, or None if parallel.
+
+    lib/utilities/isect_lines.ngc with its "extend the lines" branch, which is
+    the branch poly_add_item uses.
+    """
+    test = s1[0] * s2[1] - s2[0] * s1[1]
+    if abs(test) < 1e-12:
+        return None
+    t = (s2[0] * (p0[1] - p2[1]) - s2[1] * (p0[0] - p2[0])) / test
+    return p0[0] + t * s1[0], p0[1] + t * s1[1]
+
+
+def _densify_arc(prev_z, prev_r, seg):
+    """The arc's own points, subdivided the way poly_mesh_lathe.ngc does.
+
+    Deliberately the same rule and the same constants as the runtime mesh -
+    the step that holds each sub-chord's sagitta under MESH_MAX_SAG, the same
+    0.05 degree floor and the same 64 sub-record cap - so the profile this
+    module reasons about and the profile the level scans stop against are the
+    same curve. Returns the intermediate points followed by the arc's own end
+    point exactly, so the chain cannot drift off the profile.
+    """
+    cz, cr = seg['cz'], seg['cr']
+    radius = math.hypot(prev_z - cz, prev_r - cr)
+    if radius <= MESH_MAX_SAG or radius <= 0.0001:
+        return [(seg['z'], seg['r'])]
+
+    a1 = math.degrees(math.atan2(prev_r - cr, prev_z - cz))
+    a2 = math.degrees(math.atan2(seg['r'] - cr, seg['z'] - cz))
+    if seg['dir'] == ARC_CCW:
+        while a2 <= a1:
+            a2 += 360.0
+    else:
+        while a2 >= a1:
+            a2 -= 360.0
+    sweep = a2 - a1
+
+    step = max(2.0 * math.degrees(math.acos(1.0 - MESH_MAX_SAG / radius)), 0.05)
+    steps = min(max(int(math.ceil(abs(sweep) / step)), 1), 64)
+
+    out = []
+    for k in range(1, steps):
+        ang = math.radians(a1 + sweep * k / steps)
+        out.append((cz + radius * math.cos(ang), cr + radius * math.sin(ang)))
+    out.append((seg['z'], seg['r']))
+    return out
 
 
 # A Line-To child's "Merge with previous" = Radius. The radius rounds the
@@ -383,9 +748,9 @@ def profile_problem(polyline_feature):
     containing no useful motion at all. Regenerate appears to succeed and the
     backplot is empty, with nothing said anywhere.
 
-    Only profiles made entirely of Line-To items are checked - resolve_points
-    returns None for anything else, and staying quiet is better than a wrong
-    warning, so an arc or polar item disables this rather than guessing.
+    Every item type the polyline offers is checked, since resolve_points now
+    resolves all of them; a profile it cannot resolve still returns None and
+    stays quiet, because a wrong warning is worse than none.
 
     Keep every message free of parentheses: callers put it in a G-code
     comment, and LinuxCNC treats a nested one as an unclosed comment.
