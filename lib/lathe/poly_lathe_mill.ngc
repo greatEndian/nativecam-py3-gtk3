@@ -255,6 +255,8 @@ o<poly_lathe_mill> sub
         (that radius in the sections that pass already covered)
         #<_pl_ph1_z_end> = #<e_z>
         o<wh_w> while [1]
+                #<w_rlo> = -999999
+                #<w_rhi> =  999999
                 o<sec_pick> if [#<_pl_sectioning> LE 0]
                         (Sectioning off: today's plain windowing, unchanged -)
                         (one full-length window, or fixed-length sec_len)
@@ -287,9 +289,29 @@ o<poly_lathe_mill> sub
                         (build_sections_gcode's own docstring for why a)
                         (length-sliced monotonic taper must NOT be)
                         (processed back-to-front the way Natural would)
-                        #<sb> = [3400 + #<w_idx> * 2]
+                        (four slots per window: span, then the radius band it)
+                        (applies over. A section boundary only obstructs levels)
+                        (at or below whatever forms it - a wall's top, or a peak)
+                        (between two sections - so above that the material runs)
+                        (straight through and the sections either side are one)
+                        (window. lathe_sections.py works those merged windows out)
+                        (at generation time and emits each with its own band, so)
+                        (all that is needed here is to skip a level outside it)
+                        #<sb> = [3400 + #<w_idx> * 4]
                         #<w_from> = #[#<sb> + 1]
                         #<w_to>   = #[#<sb> + 2]
+                        #<w_rlo>  = [#[#<sb> + 3] / #<_diameter_mode>]
+                        #<w_rhi>  = [#[#<sb> + 4] / #<_diameter_mode>]
+                        (a generated file from before windows carried a band has)
+                        (two slots per window, so slots 3 and 4 hold the NEXT)
+                        (window's Z pair - both negative, giving an empty band)
+                        (that would silently reject every level and cut almost)
+                        (nothing. Treat an impossible band as no band at all, so)
+                        (a stale file still roughs the way it used to)
+                        o<band_stale> if [#<w_rhi> LE #<w_rlo>]
+                                #<w_rlo> = -999999
+                                #<w_rhi> =  999999
+                        o<band_stale> endif
                         o<mode_chk> if [#<_pl_sect_mode> EQ 1]
                                 (Artificial: no violet/ceiling phase ever ran,)
                                 (so every window always starts completely)
@@ -325,7 +347,14 @@ o<poly_lathe_mill> sub
                 #<current_radius> = #<lvl_start>
                 #<_pl_prev_lvl> = #<stock_r>
                 o<wh_00> while [1]
-                        o<lvl_ok> if [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]
+                        (a level outside this window's radius band is handled by)
+                        (a different window - either the merged one above the)
+                        (boundary, or the split ones below it)
+                        #<lvl_in_band> = 1
+                        o<band_chk> if [[#<current_radius> GT [#<w_rhi> + 0.000001]] OR [#<current_radius> LT [#<w_rlo> - 0.000001]]]
+                                #<lvl_in_band> = 0
+                        o<band_chk> endif
+                        o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]]
                                 #<_level_blocked> = 0
                                 (constant floor allowance: the level stops at the offset profile)
                                 #<lvl_d> = [#<dirsign> * [#<step_target> - #<final_radius>]]

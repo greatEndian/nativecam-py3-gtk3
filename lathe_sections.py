@@ -445,14 +445,110 @@ def build_sections_gcode(polyline_feature):
     stock_x = _to_float(b_x_param.get_ngc_value()) if b_x_param is not None else None
     top_x = ceiling(points, stock_x)
 
+    if sect_mode == 0:
+        windows = band_windows(sections, ordered, points)
+    else:
+        # Artificial bounds how long any single cut may be, at every depth,
+        # so its pieces deliberately apply over the whole radius range - see
+        # this function's own docstring for why it must not be merged.
+        windows = [(z_from, z_to, 0.0, BAND_ALL) for z_from, z_to in ordered]
+
     lines = [
-        '#<_pl_sect_count> = %d' % len(ordered),
+        '#<_pl_sect_count> = %d' % len(windows),
         '#<_pl_sect_mode> = %d' % sect_mode,
         '#<_pl_sect_top_dia> = %s' % _fmt(top_x),
     ]
-    for i, (z_from, z_to) in enumerate(ordered):
-        slot = 3400 + i * 2
+    for i, (z_from, z_to, r_lo, r_hi) in enumerate(windows):
+        slot = 3400 + i * 4
         lines.append('#%d = %s' % (slot + 1, _fmt(z_from)))
         lines.append('#%d = %s' % (slot + 2, _fmt(z_to)))
+        lines.append('#%d = %s' % (slot + 3, _fmt(r_lo)))
+        lines.append('#%d = %s' % (slot + 4, _fmt(r_hi)))
 
     return '\n'.join(lines) + '\n'
+
+
+# Stand-in for "no upper limit" on a window's radius band, in the diameter
+# units the whole module works in. Larger than any real workpiece.
+BAND_ALL = 1.0e6
+
+
+def boundary_height(points, z_b):
+    """How far up the profile actually reaches at boundary z_b - the height
+    of whatever separates the two sections meeting there.
+
+    For a step it is the top of that wall; for a peak between two sections
+    it is the peak itself. Either way, a roughing level ABOVE this sees
+    continuous material across the boundary and must not be stopped by it.
+    """
+    hits = []
+    for (z1, x1), (z2, x2) in zip(points, points[1:]):
+        lo, hi = min(z1, z2), max(z1, z2)
+        if lo - EPS <= z_b <= hi + EPS:
+            if abs(z2 - z1) < EPS:
+                hits.extend((x1, x2))
+            else:
+                hits.append(x1 + (x2 - x1) * (z_b - z1) / (z2 - z1))
+    return max(hits) if hits else 0.0
+
+
+def band_windows(sections, ordered, points):
+    """Turn the ranked section list into windows carrying the radius band
+    each one applies over: (z_from, z_to, r_lo, r_hi).
+
+    A section boundary only obstructs levels at or below the height of the
+    thing that forms it. Above that the material runs straight through, so
+    the sections either side are one window and splitting them there just
+    cuts the same level twice - a full pass stopping dead on the boundary,
+    then a stub pass with its own lead-in, lead-out and retract clearing
+    what was left, which is what showed up as a doubled lead-out inside a
+    merge radius.
+
+    Rather than teach the runtime to merge, the merged windows are computed
+    here and emitted alongside the plain ones, each gated to the band of
+    radii where it applies. poly_lathe_mill.ngc then needs only to skip a
+    level outside a window's band - no merging logic at runtime at all.
+
+    Ordering is preserved from `ordered` (weakest-first) within each band,
+    and bands are emitted highest-first so roughing still works downward.
+    """
+    z_ordered = sorted(sections, key=lambda s: -s[0]) if sections[0][0] > sections[-1][0] \
+        else sorted(sections, key=lambda s: s[0])
+    spans = [(z_from, z_to) for z_from, z_to, _m in z_ordered]
+    if len(spans) < 2:
+        return [(z_from, z_to, 0.0, BAND_ALL) for z_from, z_to in spans]
+
+    # height of each internal boundary, in profile order
+    heights = [boundary_height(points, spans[i][1]) for i in range(len(spans) - 1)]
+
+    # band edges: every distinct boundary height, lowest first
+    edges = sorted(set(round(h, 6) for h in heights))
+    windows = []
+    seen = set()
+    # highest band first: above every boundary the whole profile is one window
+    bands = [(edges[-1], BAND_ALL)] + \
+            [(edges[i - 1], edges[i]) for i in range(len(edges) - 1, 0, -1)] + \
+            [(0.0, edges[0])]
+    for r_lo, r_hi in bands:
+        if r_hi - r_lo < EPS:
+            continue
+        # merge runs of sections whose separating boundary is below this band
+        merged = []
+        cur = spans[0]
+        for i in range(1, len(spans)):
+            if heights[i - 1] <= r_lo + EPS:
+                cur = (cur[0], spans[i][1])
+            else:
+                merged.append(cur)
+                cur = spans[i]
+        merged.append(cur)
+        # keep the caller's weakest-first order for pieces that survive whole
+        rank = {(z_from, z_to): n for n, (z_from, z_to) in enumerate(ordered)}
+        merged.sort(key=lambda s: rank.get(s, -1))
+        for s in merged:
+            key = (round(s[0], 6), round(s[1], 6), round(r_lo, 6), round(r_hi, 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            windows.append((s[0], s[1], r_lo, r_hi))
+    return windows
