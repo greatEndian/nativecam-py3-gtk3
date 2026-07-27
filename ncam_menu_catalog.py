@@ -223,6 +223,8 @@ class NCamMenuCatalogMixin:
         v_menu.append(self._create_menu_item(self.actionHideCol))
         v_menu.append(self._create_menu_item(self.actionSubHdrs))
         v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(gtk.SeparatorMenuItem())
+        v_menu.append(self._create_menu_item(self.actionIconColour))
         v_menu.append(self._create_menu_item(self.actionSaveLayout))
 
         view_menu = self._create_menu_item(self.actionViewMenu)

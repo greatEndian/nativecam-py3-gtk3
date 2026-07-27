@@ -232,6 +232,96 @@ def search_path(warn, f, *argsl) :
         mess_dlg(_("Can not find file %(filename)s") % {"filename":f})
     return None
 
+# The accent colour the shipped icon set is drawn in, and the window of hues
+# around it that counts as "the accent". Everything else in an icon - the reds,
+# yellows and blues - sits far outside this window and is never touched.
+ICON_BASE_RGB = (68, 230, 68)
+ICON_HUE_LO, ICON_HUE_HI = 100 / 360.0, 140 / 360.0
+# None = leave the icons as drawn. Set from the display/icon_colour preference
+# or the View > Icon Colour dialog.
+ICON_ACCENT_RGB = None
+
+
+def accent_from_pref(text):
+    """Parse a display/icon_colour preference into an rgb tuple, or None.
+
+    None means "leave the icons as drawn", and is also what anything
+    unparseable gives - a malformed preference must not stop the program
+    starting, and a silently as-drawn icon set is an obvious enough symptom.
+    """
+    if not text:
+        return None
+    try:
+        parts = [int(v.strip()) for v in str(text).split(',')]
+    except (TypeError, ValueError):
+        return None
+    if len(parts) != 3 or any(v < 0 or v > 255 for v in parts):
+        return None
+    return tuple(parts)
+
+
+def set_icon_accent(rgb):
+    """Choose the accent colour icons are recoloured to, or None for as-drawn.
+
+    Clears the pixbuf cache so the next get_pixbuf reloads from disk and
+    recolours from the original - recolouring is never applied on top of an
+    already-recoloured icon, so repeated changes cannot drift.
+    """
+    global ICON_ACCENT_RGB
+    if rgb is not None and tuple(rgb) == ICON_BASE_RGB:
+        rgb = None
+    ICON_ACCENT_RGB = tuple(rgb) if rgb is not None else None
+    PIXBUF_DICT.clear()
+
+
+def recolour_pixbuf(pix_buf, rgb):
+    """Return a copy of pix_buf with its accent hue moved to rgb.
+
+    Hue is replaced outright; saturation and value are scaled by whatever it
+    takes to map the base accent exactly onto the target, so every shaded and
+    anti-aliased variant of the accent moves with it and the icon keeps its
+    original edges.
+    """
+    import colorsys
+    th, ts, tv = colorsys.rgb_to_hsv(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    bh, bs, bv = colorsys.rgb_to_hsv(ICON_BASE_RGB[0] / 255.0,
+                                     ICON_BASE_RGB[1] / 255.0,
+                                     ICON_BASE_RGB[2] / 255.0)
+    s_ratio = (ts / bs) if bs > 0.001 else 1.0
+    v_ratio = (tv / bv) if bv > 0.001 else 1.0
+
+    pix_buf = pix_buf.copy()
+    n = pix_buf.get_n_channels()
+    if n < 3:
+        return pix_buf
+    stride = pix_buf.get_rowstride()
+    w, h = pix_buf.get_width(), pix_buf.get_height()
+    data = bytearray(pix_buf.get_pixels())
+
+    for y in range(h):
+        row = y * stride
+        for x in range(w):
+            i = row + x * n
+            r, g, b = data[i], data[i + 1], data[i + 2]
+            if n > 3 and data[i + 3] < 20:
+                continue
+            mx, mn = max(r, g, b), min(r, g, b)
+            if mx == 0 or (mx - mn) / mx < 0.12:
+                continue
+            ph, ps, pv = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+            if not (ICON_HUE_LO <= ph <= ICON_HUE_HI):
+                continue
+            nr, ng, nb = colorsys.hsv_to_rgb(th, min(1.0, ps * s_ratio),
+                                             min(1.0, pv * v_ratio))
+            data[i] = int(round(nr * 255))
+            data[i + 1] = int(round(ng * 255))
+            data[i + 2] = int(round(nb * 255))
+
+    return GdkPixbuf.Pixbuf.new_from_bytes(
+        GLib.Bytes.new(bytes(data)), pix_buf.get_colorspace(),
+        pix_buf.get_has_alpha(), pix_buf.get_bits_per_sample(), w, h, stride)
+
+
 def get_pixbuf(icon, size) :
     if size < 16 :
         size = 16
@@ -250,6 +340,11 @@ def get_pixbuf(icon, size) :
     if icon_fname is not None :
         try :
             pix_buf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_fname, size, size)
+            if ICON_ACCENT_RGB is not None :
+                try :
+                    pix_buf = recolour_pixbuf(pix_buf, ICON_ACCENT_RGB)
+                except Exception :
+                    pass
             PIXBUF_DICT[icon_id] = pix_buf
             return pix_buf
         except GLib.Error as err :
@@ -2083,6 +2178,10 @@ class Preferences(object):
             self.col_width_adj_value = read_int(config, 'display', 'name_col_width', 160)
             self.tv_w_adj_value = read_int(config, 'display', 'master_tv_width', 175)
             self.restore_expand_state = read_boolean(config, 'display', 'restore_expand_state', True)
+            # empty means "as drawn"; otherwise "r,g,b" naming the accent
+            # colour every icon's accent hue is mapped onto - see
+            # set_icon_accent / recolour_pixbuf
+            self.icon_colour = read_str(config, 'display', 'icon_colour', '')
             self.tv2_expandable = read_boolean(config, 'display', 'tv2_expandable', False)
             self.tv_expandable = read_boolean(config, 'display', 'tv_expandable', False)
             self.use_dual_views = read_boolean(config, 'layout', 'dual_view', True)
@@ -2100,6 +2199,10 @@ class Preferences(object):
             vkb_height = read_int(config, 'virtual_kb', 'height', 260)
             vkb_cancel_on_out = read_boolean(config, 'virtual_kb', 'cancel_on_focus_out', True)
             self.name_ellipsis = read_int(config, 'display', 'name-ellipsis', 2)
+
+            # point the icon loader at the saved accent before anything asks
+            # for a pixbuf, so the first tree/menu build already has it
+            set_icon_accent(accent_from_pref(self.icon_colour))
 
         config.read(self.pref_file)
 

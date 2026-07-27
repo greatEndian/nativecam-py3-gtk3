@@ -14,6 +14,7 @@ from ncam import (
     CATALOGS_DIR, CFG_DIR, CUSTOM_DIR, DEFAULTS_DIR, EXAMPLES_DIR, GRAPHICS_DIR,
     LIB_DIR, PROJECTS_DIR, VALID_CATALOGS, SUPPORTED_DATA_TYPES,
     APP_COMMENTS, APP_LICENCE, DONATE_URL, GENERATED_FILE, HOME_PAGE,
+    ConfigParser, CONFIG_FILE,
 )
 
 
@@ -142,6 +143,115 @@ class NCamAppActionsMixin:
 
     def action_build(self, *arg) :
         self.autorefresh_call()
+
+
+    def _apply_icon_colour(self, rgb):
+        """Point the icon loader at a new accent and rebuild everything that
+        already has pixbufs baked into it."""
+        ncam.set_icon_accent(rgb)
+        try:
+            self.create_nc_toolbar()
+            self.nc_toolbar.show_all()
+            self.create_menubar()
+            self.menubar.show_all()
+            self.update_catalog()
+            self.treeview.queue_draw()
+            if self.treeview2 is not None:
+                self.treeview2.queue_draw()
+        except Exception as e:
+            print(_('Icon colour: could not refresh the display: %s') % str(e))
+
+    def action_icon_colour(self, *arg):
+        """View > Icon Colour: three 0-255 sliders driving the icon accent.
+
+        The icon set is drawn in one accent colour; recolouring moves that hue
+        and leaves every other colour alone, so the sliders restyle the whole
+        set without touching the artwork. Applied live on release so the
+        choice can be judged against the real tree, and reverted on Cancel.
+        """
+        start = ncam.ICON_ACCENT_RGB or ncam.ICON_BASE_RGB
+
+        dlg = gtk.Dialog(title=_("Icon Colour"), parent=self.get_toplevel(),
+                         flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
+        dlg.add_button(_("Reset"), 1)
+        dlg.add_button(_("Cancel"), gtk.ResponseType.CANCEL)
+        dlg.add_button(_("OK"), gtk.ResponseType.OK)
+        dlg.set_default_size(360, -1)
+
+        box = dlg.get_content_area()
+        box.set_border_width(8)
+        grid = gtk.Grid()
+        grid.set_row_spacing(4)
+        grid.set_column_spacing(8)
+        box.pack_start(grid, True, True, 0)
+
+        swatch = gtk.DrawingArea()
+        swatch.set_size_request(-1, 34)
+        state = {'rgb': list(start)}
+
+        def on_draw(area, cr):
+            r, g, b = state['rgb']
+            cr.set_source_rgb(r / 255.0, g / 255.0, b / 255.0)
+            cr.paint()
+            return False
+        swatch.connect('draw', on_draw)
+
+        scales = []
+        for row, (label, idx) in enumerate((( _("Red"), 0), (_("Green"), 1), (_("Blue"), 2))):
+            lbl = gtk.Label(label=label)
+            lbl.set_halign(gtk.Align.START)
+            sc = gtk.Scale.new_with_range(gtk.Orientation.HORIZONTAL, 0, 255, 1)
+            sc.set_value(start[idx])
+            sc.set_digits(0)
+            sc.set_hexpand(True)
+            sc.set_value_pos(gtk.PositionType.RIGHT)
+            grid.attach(lbl, 0, row, 1, 1)
+            grid.attach(sc, 1, row, 1, 1)
+            scales.append(sc)
+
+            def changed(widget, i=idx):
+                state['rgb'][i] = int(widget.get_value())
+                swatch.queue_draw()
+            sc.connect('value-changed', changed)
+            # live apply only once the slider is let go - recolouring every
+            # icon on each intermediate value would crawl
+            sc.connect('button-release-event',
+                       lambda w, e: (self._apply_icon_colour(tuple(state['rgb'])), False)[1])
+            sc.connect('key-release-event',
+                       lambda w, e: (self._apply_icon_colour(tuple(state['rgb'])), False)[1])
+
+        grid.attach(swatch, 0, 3, 2, 1)
+        box.show_all()
+
+        while True:
+            resp = dlg.run()
+            if resp == 1:
+                state['rgb'] = list(ncam.ICON_BASE_RGB)
+                for i, sc in enumerate(scales):
+                    sc.set_value(ncam.ICON_BASE_RGB[i])
+                self._apply_icon_colour(None)
+                continue
+            break
+        dlg.destroy()
+
+        if resp == gtk.ResponseType.OK:
+            self._apply_icon_colour(tuple(state['rgb']))
+            self._save_icon_colour(tuple(state['rgb']))
+        else:
+            self._apply_icon_colour(start if tuple(start) != ncam.ICON_BASE_RGB else None)
+
+    def _save_icon_colour(self, rgb):
+        cfg_file = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, CONFIG_FILE)
+        parser = ConfigParser.ConfigParser()
+        parser.read(cfg_file)
+        if not parser.has_section('display'):
+            parser.add_section('display')
+        if rgb is None or tuple(rgb) == ncam.ICON_BASE_RGB:
+            parser.set('display', 'icon_colour', '')
+        else:
+            parser.set('display', 'icon_colour', '%d,%d,%d' % tuple(rgb))
+        with open(cfg_file, 'w') as configfile:
+            parser.write(configfile)
 
 
     def action_preferences(self, *arg):
@@ -316,6 +426,7 @@ class NCamAppActionsMixin:
         self.actionViewMenu = ca("ViewMenu", None, _("_View"), None, None, self.view_menu_activate)
         self.actionCollapse = ca("Collapse", 'gtk-zoom-out', _("Collapse All Other Nodes"), '<control>K', _("Collapse All Other Nodes"), self.action_collapse)
         self.actionSaveLayout = ca("SaveLayout", 'gtk-save', _('Save As Default Layout'), '', _('Save As Default Layout'), self.action_saveLayout)
+        self.actionIconColour = ca("IconColour", 'gtk-select-color', _('Icon Colour...'), None, _('Set the accent colour of the icons'), self.action_icon_colour)
 
         def on_view_changed(action):
             if not action.get_active():
