@@ -396,9 +396,18 @@ class NCamProjectIOMixin:
                                         q.attr['path'] = p.attr['path']
                                         if 'value' in p.attr :
                                             q.attr['value'] = p.attr['value']
-                                        if 'minimum_value' in p.attr :
+                                        # Carry a saved bound forward only while the
+                                        # cfg still declares one. Every minimum/maximum
+                                        # in cfg/ is a static declaration, so a saved
+                                        # copy is just a snapshot of what the cfg said
+                                        # when the project was saved - and copying it
+                                        # back unconditionally meant a cfg could never
+                                        # relax a bound: the stale limit kept winning
+                                        # on every existing project, so the change
+                                        # only ever reached newly added features.
+                                        if 'minimum_value' in p.attr and 'minimum_value' in q.attr :
                                             q.attr['minimum_value'] = p.attr['minimum_value']
-                                        if 'maximum_value' in p.attr :
+                                        if 'maximum_value' in p.attr and 'maximum_value' in q.attr :
                                             q.attr['maximum_value'] = p.attr['maximum_value']
                                         if 'hidden' in p.attr :
                                             q.attr['hidden'] = p.attr['hidden']
