@@ -1,6 +1,6 @@
 (author : Fernand Veilleux)
 o<facing> sub
-(CALL [#begin_x] [#end_x] [#begin_z] [#end_z] [#finishing_passes] [#set_to_0] [#li_len] [#li_ang] [#li_rad] [#lo_len] [#lo_ang] [#lo_rad] [#num_passes] [n_comp])
+(CALL [#begin_x] [#end_x] [#begin_z] [#end_z] [#finishing_passes] [#set_to_0] [#li_len] [#li_ang] [#li_rad] [#lo_len] [#lo_ang] [#lo_rad] [#num_passes] [n_comp] [stock_leave])
 
 	#<begin_x>   = [#1 / 2 * #<_diameter_mode>]
 	#<end_x>     = [#2 / 2 * #<_diameter_mode>]
@@ -15,14 +15,24 @@ o<facing> sub
 	#<lo_ang> = #11
 	#<lo_rad> = #12
 	#<n_comp> = #14 (tool nose-radius comp on the finish face)
+	#<stock_leave> = #15 (axial material the roughing passes leave on the face)
 
 	/ G0 X#<begin_x> Z#<end_z>
 	/ G1 X#<end_x>
 	/ o<facing> return
 
+	(what roughing removes, stopping short of the final face by whatever the)
+	(finishing pass is meant to take off. The operation's own axial stock to)
+	(leave wins when it is set; otherwise fall back to the tool change's)
+	(finish cut depth, which is what this always used and what an older saved)
+	(project still sends as 0 here)
+	#<f_leave> = #<_finish_cut>
+	o<f_sl> if [#<stock_leave> GT 0]
+		#<f_leave> = #<stock_leave>
+	o<f_sl> endif
 	#<cut_rough_total> = ABS[#<begin_z> - #<end_z>]
 	o10 if [#<finishing_passes> GT 0]
-		#<cut_rough_total> = [#<cut_rough_total> - #<_finish_cut>]
+		#<cut_rough_total> = [#<cut_rough_total> - #<f_leave>]
 	o10 endif
 
 	(roughing pass count is always exactly #num_passes - no depth-of-cut fallback)
