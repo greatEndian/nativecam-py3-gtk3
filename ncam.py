@@ -2780,9 +2780,13 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
         self._resize_grip.connect('motion-notify-event', self._grip_motion)
         self._grip_drag = None
         grip_row = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=0)
+        # the rail stays visible when the panel is rolled away, so it has to sit
+        # outside main_box - everything else in the row gets hidden
+        grip_row.pack_start(self.build_collapse_rail(), False, False, 0)
         grip_row.pack_start(self._resize_grip, False, False, 0)
         grip_row.pack_start(self.main_box, True, True, 0)
         grip_row.show()
+        self._collapse_rail.show_all()
         self._resize_grip.show_all()
         self.pack_start(grip_row, True, True, 0)
 

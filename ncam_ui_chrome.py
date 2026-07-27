@@ -103,6 +103,84 @@ class NCamUIChromeMixin:
         return event.button == 1
 
 
+    # width of the collapsed rail - just enough for the arrow and the label
+    COLLAPSE_RAIL_W = 24
+
+    def build_collapse_rail(self):
+        """A thin vertical rail on the panel's own edge: an arrow that rolls
+        NativeCAM out to the centre, and rolls it back out of the way again.
+
+        The panel lives at the side of the host GUI, so when it is not being
+        used it is only in the way of the backplot. Collapsing leaves this rail
+        behind rather than the whole tree, and the rail keeps the arrow and the
+        name so it is obvious what to click to get it back.
+        """
+        rail = gtk.Box(orientation=gtk.Orientation.VERTICAL, spacing=2)
+        rail.set_size_request(self.COLLAPSE_RAIL_W, -1)
+
+        btn = gtk.Button()
+        btn.set_relief(gtk.ReliefStyle.NONE)
+        self._collapse_arrow = gtk.Image.new_from_icon_name(
+            'pan-end-symbolic', gtk.IconSize.BUTTON)
+        btn.add(self._collapse_arrow)
+        btn.connect('clicked', self.toggle_panel)
+        rail.pack_start(btn, False, False, 0)
+
+        lbl = gtk.Label(label='NativeCAM')
+        lbl.set_angle(270)
+        rail.pack_start(lbl, False, False, 4)
+
+        self._collapse_btn = btn
+        self._collapse_rail = rail
+        self._panel_collapsed = False
+        self._panel_width = None
+        self._update_collapse_button()
+        return rail
+
+    def _update_collapse_button(self):
+        """Arrow points the way the panel will move, and the tooltip says so."""
+        if getattr(self, '_collapse_arrow', None) is None:
+            return
+        collapsed = getattr(self, '_panel_collapsed', False)
+        self._collapse_arrow.set_from_icon_name(
+            'pan-start-symbolic' if collapsed else 'pan-end-symbolic',
+            gtk.IconSize.BUTTON)
+        self._collapse_btn.set_tooltip_text(
+            _('Roll NativeCAM out') if collapsed else _('Roll NativeCAM away'))
+
+    def toggle_panel(self, *arg):
+        self.set_panel_collapsed(not getattr(self, '_panel_collapsed', False))
+
+    def set_panel_collapsed(self, collapsed):
+        """Hide or restore everything except the rail.
+
+        Width is driven the same way the drag grip drives it - a size request
+        plus a resize of the plug's own toplevel, because shrinking does not
+        propagate through the size request alone when embedded.
+        """
+        collapsed = bool(collapsed)
+        if collapsed == getattr(self, '_panel_collapsed', False):
+            return
+        if collapsed:
+            w = self.get_allocated_width()
+            if w > self.COLLAPSE_RAIL_W:
+                self._panel_width = w
+        self._panel_collapsed = collapsed
+
+        for w in (getattr(self, 'main_box', None), getattr(self, '_resize_grip', None)):
+            if w is not None:
+                w.set_visible(not collapsed)
+
+        target = self.COLLAPSE_RAIL_W if collapsed else (self._panel_width or 400)
+        self.set_size_request(target, 80)
+        top = self.get_toplevel()
+        if isinstance(top, gtk.Window) and top is not self:
+            try:
+                top.resize(target, max(80, top.get_allocated_height()))
+            except Exception:
+                pass
+        self._update_collapse_button()
+
     def _grip_motion(self, widget, event):
         if self._grip_drag is None:
             return False
