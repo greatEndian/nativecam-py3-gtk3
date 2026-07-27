@@ -100,10 +100,13 @@ o<facing> sub
 			o<f_li1> endif
 			G1 X#<end_x>
 			o<f_lo1> if [#<has_lo>]
-				(mirror of the lead-in: the arc leaves the face tangentially at the)
-				(point the cut ends on, then the straight lead runs on from its own)
-				(tangent point. Sweep is flipped - it is traversed V-to-T1)
-				o<fillet_lead> CALL [#<z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [-#<f_loz>] [-#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
+				(the arc carries the tool on in the direction it was already cutting)
+				(and curves it away, rather than reversing it at the face end. Both)
+				(tangent points sit on the same circle - centre on the line parallel)
+				(to Z through the face end point, tangent to the face there - but only)
+				(this one continues the cut; the other doubles the tool straight back)
+				(on itself. Sweep is flipped because it is traversed V-to-T1)
+				o<fillet_lead> CALL [#<z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
 				#<lex> = #<end_x>
 				#<lez> = #<z>
 				o<f_lo1a> if [#<_flt_ok>]
@@ -186,10 +189,13 @@ o<facing> sub
 			o<f_li2> endif
 			G1 X#<end_x>
 			o<f_lo2> if [#<has_lo>]
-				(mirror of the lead-in: the arc leaves the face tangentially at the)
-				(point the cut ends on, then the straight lead runs on from its own)
-				(tangent point. Sweep is flipped - it is traversed V-to-T1)
-				o<fillet_lead> CALL [#<end_z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [-#<f_loz>] [-#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
+				(the arc carries the tool on in the direction it was already cutting)
+				(and curves it away, rather than reversing it at the face end. Both)
+				(tangent points sit on the same circle - centre on the line parallel)
+				(to Z through the face end point, tangent to the face there - but only)
+				(this one continues the cut; the other doubles the tool straight back)
+				(on itself. Sweep is flipped because it is traversed V-to-T1)
+				o<fillet_lead> CALL [#<end_z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
 				#<lex> = #<end_x>
 				#<lez> = #<end_z>
 				o<f_lo2a> if [#<_flt_ok>]
