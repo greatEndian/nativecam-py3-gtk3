@@ -6,6 +6,7 @@ o<poly_add_item> sub
 ; -3 = mirror all previous items backward -4 = create arc connector to mirror line
 ; line to : 0 = rel, 1 = abs, 10 = X relative, Y absolute, 11 = X absolute, Y relative
 ; line polar : 2 = abs, 3 = rel w/ prev chord/line, 30 = rel w/ prev arc ctr if so
+; line polar absolute-Z : 12 = x is the absolute Z, y is the angle the line runs at
 ; arc to coords : 4 = abs, 5 = relative or polar
 ; arc ij : 6 = relative to start, 7 = absolute from center
 ; arc w/ ctr at polar : 8 = abs, 9 = rel w/ prev chord/line, 10 = rel w/ prev arc ctr if so
@@ -52,6 +53,22 @@ o<poly_add_item> sub
 		#60 = #2
 		#61 = [#<prev_y> + #3]
 		
+	o<if01> elseif [#1 EQ 12] (X absolute, Y follows the angle)
+		(a lathe-shaped absolute polar: #2 is the Z coordinate itself,)
+		(measured parallel to Z from the origin, and #3 is the angle the)
+		(line runs at, so the radius follows from how far in Z it travels.)
+		(The plain polar form measures its length along the diagonal, which)
+		(on a lathe means a stated distance of 40 only advances 28.28 in Z)
+		(at 45 degrees - never what a profile dimension means)
+		#60 = #2
+		o<pa12> if [ABS[COS[#3]] LT 0.000001]
+			(a line at 90 degrees is purely radial and can never reach a)
+			(different Z - keep the radius rather than divide by zero)
+			#61 = #<prev_y>
+		o<pa12> else
+			#61 = [#<prev_y> + [#2 - #<prev_x>] * TAN[#3]]
+		o<pa12> endif
+
 	o<if01> elseif [#1 EQ 3] (polar line relative w/ prev chord/line)
 		o<rotate_xy> CALL [#<prev_x> + #2] [#<prev_y> + #3] [#<prev_x>] [#<prev_y>] [#<prev_ph>] [0] [60] [61]
 
