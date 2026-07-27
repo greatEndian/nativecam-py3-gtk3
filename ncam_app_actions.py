@@ -145,6 +145,21 @@ class NCamAppActionsMixin:
         self.autorefresh_call()
 
 
+    def restore_bar_order(self):
+        """Put the menubar and the two toolbars back at the top of main_box.
+
+        create_menubar and create_nc_toolbar both pack_start, which APPENDS -
+        so anything that rebuilds them drops them at the bottom of the window
+        and there is no way to drag them back. set_preferences has always done
+        this after the preferences dialog rebuilds them; anything else that
+        rebuilds has to do it too.
+        """
+        for pos, w in ((0, getattr(self, 'menubar', None)),
+                       (1, getattr(self, 'main_toolbar', None)),
+                       (2, getattr(self, 'nc_toolbar', None))):
+            if w is not None and w.get_parent() is self.main_box:
+                self.main_box.reorder_child(w, pos)
+
     def _apply_icon_colour(self, rgb):
         """Point the icon loader at a new accent and rebuild everything that
         already has pixbufs baked into it."""
@@ -155,6 +170,9 @@ class NCamAppActionsMixin:
             self.create_menubar()
             self.menubar.show_all()
             self.update_catalog()
+            # both rebuilds re-pack at the end of main_box, which would leave
+            # the menubar and toolbar stranded at the bottom of the window
+            self.restore_bar_order()
             self.treeview.queue_draw()
             if self.treeview2 is not None:
                 self.treeview2.queue_draw()
@@ -499,9 +517,7 @@ class NCamAppActionsMixin:
 
 
     def set_preferences(self):
-        self.main_box.reorder_child(self.menubar, 0)
-        self.main_box.reorder_child(self.main_toolbar, 1)
-        self.main_box.reorder_child(self.nc_toolbar, 2)
+        self.restore_bar_order()
 
         self.main_toolbar.set_icon_size(ncam.toolbar_icon_size)
         self.add_toolbar.set_icon_size(ncam.toolbar_icon_size)

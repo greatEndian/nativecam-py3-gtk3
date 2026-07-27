@@ -139,6 +139,38 @@ def main():
               ncam.accent_from_pref(text) == want,
               'got %s' % (ncam.accent_from_pref(text),))
 
+    # 7 - the refresh must not strand the menubar at the bottom of the window
+    # create_menubar/create_nc_toolbar both pack_start, which appends, so a
+    # rebuild moves them to the end of main_box and the user cannot drag them
+    # back. This reproduces that and checks restore_bar_order undoes it.
+    from ncam import gtk
+    from ncam_app_actions import NCamAppActionsMixin
+
+    class _Stub(NCamAppActionsMixin):
+        pass
+
+    st = _Stub()
+    st.main_box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
+    st.menubar, st.main_toolbar = gtk.MenuBar(), gtk.Toolbar()
+    st.nc_toolbar, body = gtk.Toolbar(), gtk.Box()
+    names = {}
+    for w, nm in ((st.menubar, 'menubar'), (st.main_toolbar, 'main_toolbar'),
+                  (st.nc_toolbar, 'nc_toolbar'), (body, 'body')):
+        st.main_box.pack_start(w, False, False, 0)
+        names[id(w)] = nm
+
+    def order():
+        return [names[id(c)] for c in st.main_box.get_children()]
+
+    want = ['menubar', 'main_toolbar', 'nc_toolbar', 'body']
+    check('layout starts in the expected order', order() == want, str(order()))
+    for w in (st.menubar, st.nc_toolbar):        # simulate the rebuild
+        st.main_box.remove(w)
+        st.main_box.pack_start(w, False, False, 0)
+    check('a rebuild does strand the bars at the bottom', order() != want, str(order()))
+    st.restore_bar_order()
+    check('restore_bar_order puts them back on top', order() == want, str(order()))
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
