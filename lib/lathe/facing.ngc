@@ -44,6 +44,20 @@ o<facing> sub
 	#<has_li> = [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
 	#<has_lo> = [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
 
+	(which way the face travels in X, and the rotation sense fillet_lead needs)
+	(so its arc centre lands on the side the lead approaches from)
+	#<f_dirx> = -1
+	o<f_dx> if [#<end_x> GT #<begin_x>]
+		#<f_dirx> = 1
+	o<f_dx> endif
+	#<f_zdir> = [#<z_factor> * #<f_dirx>]
+	(lead line unit directions, pointing away from the cut toward the far)
+	(rapid point - the same li_ang/lo_ang convention that places that point)
+	#<f_liz> = [#<z_factor> * SIN[#<li_ang>]]
+	#<f_lix> = COS[#<li_ang>]
+	#<f_loz> = [#<z_factor> * SIN[#<lo_ang>]]
+	#<f_lox> = COS[#<lo_ang>]
+
 	G0 Z[#<begin_z> + #<_z_clear> * #<z_factor>]
 	M#<_cooling_mode>
 
@@ -53,19 +67,31 @@ o<facing> sub
 		o12 repeat [#<rough_passes>]
 			#<z> = [#<z> - #<each_cut> * #<z_factor>]
 			o<f_li1> if [#<has_li>]
-				(straight lead at angle into the tangent quarter-arc start)
-				#<asx> = [#<begin_x> + #<li_rad> * #<_diameter_mode>]
-				#<asz> = [#<z> + #<z_factor> * #<li_rad>]
+				(round the corner between the lead line and the face with a true)
+				(tangent blend - the same construction every other radius in this)
+				(toolpath uses. The face itself is not shortened: fillet_lead lands)
+				(the arc exactly on the face start, tangent to the face direction)
+				(there, and moves only the lead line's own tangent point. The fixed)
+				(quarter-arc this replaces was tangent only at 90 degrees and left a)
+				(kink at every other lead angle)
+				o<fillet_lead> CALL [#<z>] [#<begin_x> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
+				o<f_li1t> if [#<_flt_ok>]
+					#<asx> = [#<_flt_t1x> * #<_diameter_mode>]
+					#<asz> = #<_flt_t1z>
+				o<f_li1t> else
+					#<asx> = #<begin_x>
+					#<asz> = #<z>
+				o<f_li1t> endif
 				G0 X[#<asx> + #<li_len> * COS[#<li_ang>] * #<_diameter_mode>]
 				G0 Z[#<asz> + #<z_factor> * #<li_len> * SIN[#<li_ang>]]
 				o<f_li1s> if [#<li_len> GT 0]
 					G1 X#<asx> Z#<asz>
 				o<f_li1s> endif
-				o<f_li1a> if [#<li_rad> GT 0]
-					o<f_li1d> if [#<z_factor> GT 0]
-						G3 X#<begin_x> Z#<z> I[-#<li_rad>] K0
+				o<f_li1a> if [#<_flt_ok>]
+					o<f_li1d> if [#<_flt_cw>]
+						G2 X#<begin_x> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li1d> else
-						G2 X#<begin_x> Z#<z> I[-#<li_rad>] K0
+						G3 X#<begin_x> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li1d> endif
 				o<f_li1a> endif
 			o<f_li1> else
@@ -74,17 +100,20 @@ o<facing> sub
 			o<f_li1> endif
 			G1 X#<end_x>
 			o<f_lo1> if [#<has_lo>]
+				(mirror of the lead-in: the arc leaves the face tangentially at the)
+				(point the cut ends on, then the straight lead runs on from its own)
+				(tangent point. Sweep is flipped - it is traversed V-to-T1)
+				o<fillet_lead> CALL [#<z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [-#<f_loz>] [-#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
 				#<lex> = #<end_x>
 				#<lez> = #<z>
-				o<f_lo1a> if [#<lo_rad> GT 0]
-					(quarter-arc pulling off the face, curling back up in X)
-					o<f_lo1d> if [#<z_factor> GT 0]
-						G3 X[#<end_x> + #<lo_rad> * #<_diameter_mode>] Z[#<z> + #<z_factor> * #<lo_rad>] I[#<lo_rad>] K0
+				o<f_lo1a> if [#<_flt_ok>]
+					o<f_lo1d> if [#<_flt_cw>]
+						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
 					o<f_lo1d> else
-						G2 X[#<end_x> + #<lo_rad> * #<_diameter_mode>] Z[#<z> + #<z_factor> * #<lo_rad>] I[#<lo_rad>] K0
+						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
 					o<f_lo1d> endif
-					#<lex> = [#<end_x> + #<lo_rad> * #<_diameter_mode>]
-					#<lez> = [#<z> + #<z_factor> * #<lo_rad>]
+					#<lex> = [#<_flt_t1x> * #<_diameter_mode>]
+					#<lez> = #<_flt_t1z>
 				o<f_lo1a> endif
 				o<f_lo1s> if [#<lo_len> GT 0]
 					G1 X[#<lex> + #<lo_len> * COS[#<lo_ang>] * #<_diameter_mode>] Z[#<lez> + #<z_factor> * #<lo_len> * SIN[#<lo_ang>]]
@@ -124,18 +153,31 @@ o<facing> sub
 	o<fnc> else
 		o21 repeat [#<finishing_passes>]
 			o<f_li2> if [#<has_li>]
-				#<asx> = [#<begin_x> + #<li_rad> * #<_diameter_mode>]
-				#<asz> = [#<end_z> + #<z_factor> * #<li_rad>]
+				(round the corner between the lead line and the face with a true)
+				(tangent blend - the same construction every other radius in this)
+				(toolpath uses. The face itself is not shortened: fillet_lead lands)
+				(the arc exactly on the face start, tangent to the face direction)
+				(there, and moves only the lead line's own tangent point. The fixed)
+				(quarter-arc this replaces was tangent only at 90 degrees and left a)
+				(kink at every other lead angle)
+				o<fillet_lead> CALL [#<end_z>] [#<begin_x> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
+				o<f_li2t> if [#<_flt_ok>]
+					#<asx> = [#<_flt_t1x> * #<_diameter_mode>]
+					#<asz> = #<_flt_t1z>
+				o<f_li2t> else
+					#<asx> = #<begin_x>
+					#<asz> = #<end_z>
+				o<f_li2t> endif
 				G0 X[#<asx> + #<li_len> * COS[#<li_ang>] * #<_diameter_mode>]
 				G0 Z[#<asz> + #<z_factor> * #<li_len> * SIN[#<li_ang>]]
 				o<f_li2s> if [#<li_len> GT 0]
 					G1 X#<asx> Z#<asz>
 				o<f_li2s> endif
-				o<f_li2a> if [#<li_rad> GT 0]
-					o<f_li2d> if [#<z_factor> GT 0]
-						G3 X#<begin_x> Z#<end_z> I[-#<li_rad>] K0
+				o<f_li2a> if [#<_flt_ok>]
+					o<f_li2d> if [#<_flt_cw>]
+						G2 X#<begin_x> Z#<end_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li2d> else
-						G2 X#<begin_x> Z#<end_z> I[-#<li_rad>] K0
+						G3 X#<begin_x> Z#<end_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li2d> endif
 				o<f_li2a> endif
 			o<f_li2> else
@@ -144,16 +186,20 @@ o<facing> sub
 			o<f_li2> endif
 			G1 X#<end_x>
 			o<f_lo2> if [#<has_lo>]
+				(mirror of the lead-in: the arc leaves the face tangentially at the)
+				(point the cut ends on, then the straight lead runs on from its own)
+				(tangent point. Sweep is flipped - it is traversed V-to-T1)
+				o<fillet_lead> CALL [#<end_z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [-#<f_loz>] [-#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
 				#<lex> = #<end_x>
 				#<lez> = #<end_z>
-				o<f_lo2a> if [#<lo_rad> GT 0]
-					o<f_lo2d> if [#<z_factor> GT 0]
-						G3 X[#<end_x> + #<lo_rad> * #<_diameter_mode>] Z[#<end_z> + #<z_factor> * #<lo_rad>] I[#<lo_rad>] K0
+				o<f_lo2a> if [#<_flt_ok>]
+					o<f_lo2d> if [#<_flt_cw>]
+						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<end_z>]
 					o<f_lo2d> else
-						G2 X[#<end_x> + #<lo_rad> * #<_diameter_mode>] Z[#<end_z> + #<z_factor> * #<lo_rad>] I[#<lo_rad>] K0
+						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<end_z>]
 					o<f_lo2d> endif
-					#<lex> = [#<end_x> + #<lo_rad> * #<_diameter_mode>]
-					#<lez> = [#<end_z> + #<z_factor> * #<lo_rad>]
+					#<lex> = [#<_flt_t1x> * #<_diameter_mode>]
+					#<lez> = #<_flt_t1z>
 				o<f_lo2a> endif
 				o<f_lo2s> if [#<lo_len> GT 0]
 					G1 X[#<lex> + #<lo_len> * COS[#<lo_ang>] * #<_diameter_mode>] Z[#<lez> + #<z_factor> * #<lo_len> * SIN[#<lo_ang>]]
