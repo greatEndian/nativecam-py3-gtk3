@@ -375,6 +375,41 @@ def ceiling(points, stock_x=None):
     return max(candidates)
 
 
+def profile_problem(polyline_feature):
+    """One plain-language reason this profile cannot be roughed, or None.
+
+    The failure this exists for is silent: a profile whose items all sit at
+    one Z, or that resolves to a single point, generates a valid G-code file
+    containing no useful motion at all. Regenerate appears to succeed and the
+    backplot is empty, with nothing said anywhere.
+
+    Only profiles made entirely of Line-To items are checked - resolve_points
+    returns None for anything else, and staying quiet is better than a wrong
+    warning, so an arc or polar item disables this rather than guessing.
+
+    Keep every message free of parentheses: callers put it in a G-code
+    comment, and LinuxCNC treats a nested one as an unclosed comment.
+    """
+    points = resolve_points(polyline_feature)
+    if points is None:
+        return None
+    if len(points) < 2:
+        return ('the profile has %d point, and needs at least two items - '
+                'the Start Z and Start Diameter are what the first item is '
+                'measured from, not a point on the profile itself'
+                % len(points))
+    zs = [z for z, _x in points]
+    if max(zs) - min(zs) < EPS:
+        return ('every item sits at Z %s, so the profile has no length along '
+                'Z and there is nothing to rough - give the items different '
+                'Z positions' % _fmt(zs[0]))
+    xs = [x for _z, x in points]
+    if min(xs) < EPS:
+        return ('the profile reaches diameter %s, at or through the spindle '
+                'axis - check the item that goes there' % _fmt(min(xs)))
+    return None
+
+
 def build_sections_gcode(polyline_feature):
     """Returns literal G-code text assigning _pl_sect_count, _pl_sect_mode,
     the raw (unconverted) ceiling, and the #3400+ window block - or '' if
