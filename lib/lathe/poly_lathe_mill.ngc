@@ -292,6 +292,7 @@ o<poly_lathe_mill> sub
         (first section boundary - phase 2 needs to know that to avoid redoing)
         (that radius in the sections that pass already covered)
         #<_pl_ph1_z_end> = #<e_z>
+        (roughing levels begin - bracket for the flank clearance proof)
         o<wh_w> while [1]
                 #<w_rlo> = -999999
                 #<w_rhi> =  999999
@@ -516,6 +517,7 @@ o<poly_lathe_mill> sub
                 #<w_from> = #<w_to>
                 #<w_idx> = [#<w_idx> + 1]
         o<wh_w> endwhile
+        (roughing levels end)
 
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)

@@ -108,6 +108,10 @@ def main():
                     help='finished profile as "Z,diameter Z,diameter ..."')
     ap.add_argument('--back', type=float, required=True,
                     help='tool back angle, the tool table J column')
+    ap.add_argument('--flank-len', type=float, default=0.0,
+                    help='how far the flank extends along itself; 0 = infinite. '
+                         'Must match the feature, or a correct finite-flank path '
+                         'is judged against a tool longer than the real one')
     ap.add_argument('--dir', type=int, default=0,
                     help='0 front to back, 1 back to front, 2 both')
     ap.add_argument('--tol', type=float, default=0.01,
@@ -116,8 +120,14 @@ def main():
                     help='ignore tips this close to the finished surface - the '
                          'contour passes are meant to touch it, and the shadow '
                          'governs roughing only')
-    ap.add_argument('--after', default=None,
-                    help='only look after this comment, e.g. "begin Lathe Polyline"')
+    ap.add_argument('--after', default='roughing levels begin',
+                    help='start looking after this comment appears')
+    ap.add_argument('--until', default='roughing levels end',
+                    help='stop at this comment. Together with --after these '
+                         'bracket the roughing levels, which is the only part '
+                         'the flank shadow governs - the contour passes trace '
+                         'the profile by design and always show their flank in '
+                         'the wall behind them')
     args = ap.parse_args()
 
     prof = []
@@ -133,6 +143,9 @@ def main():
         print('[VERDICT: PASS] back angle %.1f constrains nothing' % args.back)
         return 0
     slope = math.tan(math.radians(eff))
+    reach = None
+    if args.flank_len > 0:
+        reach = args.flank_len * math.cos(math.radians(eff))
     sides = (-1,) if args.dir == 1 else ((1, -1) if args.dir == 2 else (1,))
 
     canon, _out = run_rs274(args.ini, args.ngc, args.tbl, var_path=args.var)
@@ -143,6 +156,11 @@ def main():
         except StopIteration:
             print('[VERDICT: FAIL - marker %r never appears]' % args.after)
             return 1
+    if args.until:
+        for i, ln in enumerate(lines):
+            if args.until in ln:
+                lines = lines[:i]
+                break
     moves = [m for m in parse_canon('\n'.join(lines)) if m['kind'] != 'comment']
     if not moves:
         print('[VERDICT: FAIL - no motion parsed, check the ngc and ini]')
@@ -165,6 +183,8 @@ def main():
                         d = (zp - zt) * side
                         if d <= 0:
                             continue
+                        if reach is not None and d > reach:
+                            continue    # past the end of the flank
                         # where the flank is, at that Z
                         flank_r = rt + d * slope
                         over = rp - flank_r
@@ -174,8 +194,9 @@ def main():
             prev = (m['z'], m['x'])
 
     print('sampled %d cutting points against %d profile points' % (checked, len(prof)))
-    print('back angle %.1f -> flank ramp %.1f deg from Z, slope %.4f'
-          % (args.back, eff, slope))
+    print('back angle %.1f -> flank ramp %.1f deg from Z, slope %.4f, reach %s'
+          % (args.back, eff, slope,
+             'infinite' if reach is None else '%.3f mm' % reach))
     if worst[1] is None or worst[0] <= args.tol:
         print('deepest flank overlap: %.4f mm (tolerance %.4f)' % (worst[0], args.tol))
         print('[VERDICT: PASS]')
