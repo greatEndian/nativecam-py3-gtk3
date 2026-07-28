@@ -195,6 +195,28 @@ def main():
     check('and that shadow never sits inside either feature',
           not [z for z, x in er2 if (ls._outer_x(stepped, z) or 0) - x > 1e-6])
 
+    # --- a real insert's flank is not infinite ------------------------------
+    # the shadow may only reach flank_len * cos(ramp) in Z; past that the body
+    # has stepped back and the wall no longer touches it
+    bl = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0),
+          (-50.0, 40.0), (-80.0, 40.0)]
+    inf = ls.flank_envelope(bl, 75.0, 0, 0.0)
+    check('0 means infinite, exactly as before the field existed',
+          ls.flank_envelope(bl, 75.0, 0) == inf)
+    # the full ramp is 18.66 mm of Z, so a 20 mm flank - 19.3 mm of reach -
+    # covers it and must change nothing
+    check('a flank longer than the ramp changes nothing',
+          ls.flank_envelope(bl, 75.0, 0, 20.0) == inf)
+    for L in (5.0, 2.0):
+        reach = L * math.cos(math.radians(15.0))
+        e = ls.flank_envelope(bl, 75.0, 0, L)
+        check('a %.0f mm flank releases the shadow %.2f mm past the wall' % (L, reach),
+              abs(at(e, -50.0 - reach - 0.01) - 40.0) < 0.05,
+              'D%.2f just past the limit' % at(e, -50.0 - reach - 0.01))
+        check('and still shadows inside that reach',
+              at(e, -50.0 - reach + 0.5) > 45.0,
+              'D%.2f inside it' % at(e, -50.0 - reach + 0.5))
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))

@@ -1030,7 +1030,7 @@ def flank_sides(rough_dir):
     return (1,)
 
 
-def flank_envelope(points, back_deg, rough_dir=0):
+def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
     """The profile widened into the shape the tool can actually reach.
 
     A wedge dilation by the trailing flank: a point (zp, rp) on the shadowed
@@ -1047,6 +1047,14 @@ def flank_envelope(points, back_deg, rough_dir=0):
     every corner sits where one point's ray meets another point's radius, and
     the result has to travel into G-code as a record array.
 
+    flank_len is how far the flank actually extends along itself before the
+    tool steps back - the insert is not an infinite wedge. Past that, the body
+    has ended and the obstruction no longer touches it, so only obstructions
+    within it constrain. An obstruction at a Z distance d lies L = d / cos(ramp)
+    along the flank, so the reach in Z is flank_len * cos(ramp). 0 means treat
+    the flank as unbounded, which is what this did before the parameter existed
+    and is the conservative answer.
+
     points are (z, x) in the diameter units resolve_points works in, so the
     slope - a rise in RADIUS - is scaled to match, or the ramp comes out at
     half the angle.
@@ -1059,6 +1067,13 @@ def flank_envelope(points, back_deg, rough_dir=0):
         return list(points)
     k *= DIAMETER_MODE
     slopes = [(side, k) for side in flank_sides(rough_dir)]
+
+    # how far along Z the flank still exists
+    reach = None
+    if flank_len and flank_len > EPS:
+        reach = flank_len * math.cos(math.radians(90.0 - back_deg))
+        if reach <= EPS:
+            return list(points)
 
     zs = [p[0] for p in points]
     lo, hi = min(zs), max(zs)
@@ -1086,6 +1101,15 @@ def flank_envelope(points, back_deg, rough_dir=0):
                     zc = zp - side * (rp - r2) / kk
                     if lo <= zc <= hi:
                         cand.add(zc)
+            # where the flank ends, so the shadow can release there. BOTH sides
+            # of the limit are needed: the point exactly at it still lies on the
+            # full ramp line and gets dropped as collinear, so without the one
+            # just past it the release is never expressed and a finite flank
+            # looks identical to an infinite one.
+            if reach is not None:
+                for zc in (zp - side * reach, zp - side * (reach + EPS * 4)):
+                    if lo <= zc <= hi:
+                        cand.add(zc)
 
     out = []
     for z0 in sorted(cand):
@@ -1095,7 +1119,7 @@ def flank_envelope(points, back_deg, rough_dir=0):
         for zp, rp in points:
             for side, kk in slopes:
                 d = (zp - z0) * side
-                if d > EPS:
+                if d > EPS and (reach is None or d <= reach + EPS):
                     bound = rp - d * kk
                     if bound > best:
                         best = bound
@@ -1138,7 +1162,9 @@ def build_flank_gcode(polyline_feature, back_deg):
 
     d_param = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(d_param.get_ngc_value())) if d_param is not None else 0
-    env = flank_envelope(points, back_deg, rough_dir)
+    l_param = polyline_feature.get_param('param_flank_len')
+    flank_len = _to_float(l_param.get_ngc_value()) if l_param is not None else 0.0
+    env = flank_envelope(points, back_deg, rough_dir, flank_len)
     # the scans walk records in profile order, so hand the envelope back the
     # same way round the profile was drawn rather than sorted ascending
     if points[0][0] > points[-1][0]:
