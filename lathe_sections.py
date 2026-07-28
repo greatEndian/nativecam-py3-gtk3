@@ -1023,7 +1023,10 @@ def flank_envelope(points, back_deg):
         return list(points)
 
     rays = flank_directions(back_deg)
-    slopes = [(1 if dz > 0 else -1, dx / abs(dz))
+    # points carry DIAMETERS but a flank slope is rise-in-RADIUS per unit Z, so
+    # it has to be scaled to match or the ramp comes out at half the angle -
+    # a 75 degree back angle emitted as 61.8, which is what testing_15_0 showed
+    slopes = [(1 if dz > 0 else -1, dx / abs(dz) * DIAMETER_MODE)
               for dz, dx in rays if abs(dz) > EPS]
     if not slopes:
         return list(points)
