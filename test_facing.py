@@ -76,7 +76,12 @@ o<dir> if [%(dir)d EQ 1]
 \t#<f_bx> = #<f_ex>
 \t#<f_ex> = #<f_tmp>
 o<dir> endif
-o<facing> CALL [#<f_bx>] [#<f_ex>] [#<_wp_z> + %(zd).4f] [#<_wp_z>] [%(fin)d] [0] [0] [45] [0] [0] [45] [0] [%(np)d] [0] [%(sl).4f]
+o<fzr> if [%(fzr)d EQ 1]
+\t#<f_fz> = %(fz).4f
+o<fzr> else
+\t#<f_fz> = [#<_wp_z> + %(fz).4f]
+o<fzr> endif
+o<facing> CALL [#<f_bx>] [#<f_ex>] [#<f_fz> + %(zd).4f] [#<f_fz>] [%(fin)d] [0] [0] [45] [0] [0] [45] [0] [%(np)d] [0] [%(sl).4f]
 M2
 """
 
@@ -87,12 +92,13 @@ def check(name, cond, detail=''):
         FAILED.append(name)
 
 
-def run(bxr=0, bx=62.0, exr=0, ex=0.0, direction=0, zd=2.0, fin=1, np_=1, sl=0.0):
+def run(bxr=0, bx=62.0, exr=0, ex=0.0, direction=0, zd=2.0, fin=1, np_=1, sl=0.0,
+        fzr=0, fz=0.0):
     """Emit a harness, trace it, return the list of cutting moves as (z, radius)."""
     from parse_rs274 import run_rs274, parse_canon
     body = PREAMBLE % {'od': STOCK_OD, 'id': STOCK_ID} + RESOLVE % {
         'bxr': bxr, 'bx': bx, 'exr': exr, 'ex': ex, 'dir': direction,
-        'zd': zd, 'fin': fin, 'np': np_, 'sl': sl}
+        'zd': zd, 'fin': fin, 'np': np_, 'sl': sl, 'fzr': fzr, 'fz': fz}
     d = tempfile.mkdtemp(prefix='test_facing_')
     path = os.path.join(d, 'case.ngc')
     with open(path, 'w') as f:
@@ -162,22 +168,49 @@ def main():
           in_out is not None and abs(in_out[0] - out_in[1]) < 1e-3
           and abs(in_out[1] - out_in[0]) < 1e-3, 'span=%s' % (in_out,))
 
-    # 4 - Axial stock to leave: roughing must stop short of the final face by it
-    def rough_floor(sl):
-        mv = run(bxr=0, bx=62.0, exr=0, ex=0.0, zd=2.0, fin=1, np_=1, sl=sl)
+    # 4 - Axial stock to leave is material left ON the face when the operation
+    # finishes, so it is the DEEPEST cutting Z that has to move - not just where
+    # roughing stops. Checking only the roughing floor is what let this ship
+    # doing nothing at all for the common no-roughing-passes case.
+    def face_reached(sl, np_=1):
+        mv = run(bxr=0, bx=62.0, exr=0, ex=0.0, zd=2.0, fin=1, np_=np_, sl=sl)
         zs = [z for k, z, _r in mv if k in ('feed', 'arc')]
-        return max(zs)          # least-deep cutting Z = where roughing stopped
+        return min(zs)          # deepest cutting Z = the face actually produced
 
-    z0 = rough_floor(0.0)
+    check('with no allowance the face is cut to the defined Z',
+          abs(face_reached(0.0)) < 1e-3, 'face at Z%.4f' % face_reached(0.0))
     for sl in (0.5, 1.0):
-        z = rough_floor(sl)
-        check('axial stock to leave %.1f holds roughing that far off the face' % sl,
-              abs((z - z0) - (sl - 0.25)) < 1e-3,
-              'roughing Z %.4f vs %.4f with no allowance' % (z, z0))
+        z = face_reached(sl)
+        check('axial stock to leave %.1f leaves the face that far proud' % sl,
+              abs(z - sl) < 1e-3, 'face left at Z%.4f, wanted Z%.4f' % (z, sl))
 
-    # 5 - zero allowance keeps the old behaviour, the tool change finish cut
-    check('0 falls back to the tool change finish cut, as before',
-          abs(z0 - 0.25) < 1e-3, 'roughing stopped at Z%.4f' % z0)
+    # the case actually reported: no roughing passes at all. The allowance used
+    # to be applied only to the roughing span, so with none it did nothing.
+    for sl in (0.0, 0.5):
+        z = face_reached(sl, np_=0)
+        check('stock to leave %.1f applies with no roughing passes too' % sl,
+              abs(z - sl) < 1e-3, 'face left at Z%.4f, wanted Z%.4f' % (z, sl))
+
+    # roughing still stops short of the finish target by the tool change's
+    # finish cut depth, on top of whatever is being left on the face
+    mv = run(bxr=0, bx=62.0, exr=0, ex=0.0, zd=2.0, fin=1, np_=1, sl=0.5)
+    zs = sorted(z for k, z, _r in mv if k in ('feed', 'arc'))
+    check('roughing still leaves the finish cut depth above the finish target',
+          abs(zs[-1] - (0.5 + 0.25)) < 1e-3, 'roughing stopped at Z%.4f' % zs[-1])
+
+    # 5 - Face Z: an offset from the stock face, or an absolute coordinate
+    for fz in (1.5, -2.0):
+        z = min(z for k, z, _r in run(fzr=0, fz=fz) if k in ('feed', 'arc'))
+        check('face Z offset %+.1f from the stock face lands at Z%+.1f' % (fz, fz),
+              abs(z - fz) < 1e-3, 'face at Z%.4f' % z)
+    for fz in (3.0, -1.0):
+        z = min(z for k, z, _r in run(fzr=1, fz=fz) if k in ('feed', 'arc'))
+        check('absolute face Z %+.1f lands at Z%+.1f' % (fz, fz),
+              abs(z - fz) < 1e-3, 'face at Z%.4f' % z)
+
+    # the two stack: the face is offset, then the allowance sits above it
+    z = min(z for k, z, _r in run(fzr=1, fz=2.0, sl=0.5) if k in ('feed', 'arc'))
+    check('face Z and stock to leave combine', abs(z - 2.5) < 1e-3, 'face at Z%.4f' % z)
 
     print()
     if FAILED:

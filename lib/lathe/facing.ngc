@@ -21,33 +21,37 @@ o<facing> sub
 	/ G1 X#<end_x>
 	/ o<facing> return
 
-	(what roughing removes, stopping short of the final face by whatever the)
-	(finishing pass is meant to take off. The operation's own axial stock to)
-	(leave wins when it is set; otherwise fall back to the tool change's)
-	(finish cut depth, which is what this always used and what an older saved)
-	(project still sends as 0 here)
-	#<f_leave> = #<_finish_cut>
-	o<f_sl> if [#<stock_leave> GT 0]
-		#<f_leave> = #<stock_leave>
-	o<f_sl> endif
-	#<cut_rough_total> = ABS[#<begin_z> - #<end_z>]
-	o10 if [#<finishing_passes> GT 0]
-		#<cut_rough_total> = [#<cut_rough_total> - #<f_leave>]
-	o10 endif
-
-	(roughing pass count is always exactly #num_passes - no depth-of-cut fallback)
-	(0 = skip roughing entirely: the finishing pass alone covers begin_z to end_z)
-	#<rough_passes> = #13
-	#<each_cut> = 0
-	o<f_ec> if [#<rough_passes> GT 0]
-		#<each_cut> = [#<cut_rough_total> / #<rough_passes>]
-	o<f_ec> endif
-
 	o13 if [#<begin_z> GT #<end_z>]
 		#<z_factor> = 1
 	o13 else
 		#<z_factor> = -1
 	o13 endif
+
+	(Axial stock to leave is material this operation leaves ON the face for a)
+	(later one to take off, so it moves the face every pass stops at - roughing)
+	(and finishing alike - back from the defined face by that much. It used to)
+	(shorten the roughing passes only, which meant the finish pass still went to)
+	(the defined face and the part came out with nothing left on it; with no)
+	(roughing passes at all it did nothing whatsoever. end_z stays the DEFINED)
+	(face: the touch-off at the end must set Z0 there, not on the material still)
+	(standing proud of it)
+	#<cut_z> = [#<end_z> + #<z_factor> * #<stock_leave>]
+
+	(what roughing removes, stopping short of the finish target by the tool)
+	(change's finish cut depth - what the finishing pass is meant to take off)
+	#<f_leave> = #<_finish_cut>
+	#<cut_rough_total> = ABS[#<begin_z> - #<cut_z>]
+	o10 if [#<finishing_passes> GT 0]
+		#<cut_rough_total> = [#<cut_rough_total> - #<f_leave>]
+	o10 endif
+
+	(roughing pass count is always exactly #num_passes - no depth-of-cut fallback)
+	(0 = skip roughing entirely: the finishing pass alone covers begin_z to cut_z)
+	#<rough_passes> = #13
+	#<each_cut> = 0
+	o<f_ec> if [#<rough_passes> GT 0]
+		#<each_cut> = [#<cut_rough_total> / #<rough_passes>]
+	o<f_ec> endif
 
 	(lead geometry, face cut travels -X with the free side toward +Z*z_factor:)
 	(0 degrees = along the face in X, 90 = perpendicular in Z)
@@ -142,7 +146,7 @@ o<facing> sub
 		(compensated finish: a clean face with a straight run-in that establishes)
 		(comp in free air beyond the OD - a nose-comp entry move must be a straight)
 		(feed of at least the nose radius, so the lead-in/out arcs are skipped here.)
-		(face travels -X at Z=end_z; material is on the +Z*z_factor side, so the comp)
+		(face travels -X at Z=cut_z; material is on the +Z*z_factor side, so the comp)
 		(side follows z_factor and is proven, not trusted, by the tangency verifier)
 		o<tip_comp_dia> CALL [0] [#<n_comp>]
 		#<f_side> = 41
@@ -155,13 +159,13 @@ o<facing> sub
 			#<f_estab> = [#<_tip_lead_w> * #<_diameter_mode>]
 		o<f_es> endif
 		o22 repeat [#<finishing_passes>]
-			G0 Z[#<end_z> + #<_z_clear> * #<z_factor>]
+			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
 			G0 X[#<begin_x> + #<f_estab>]
-			G0 Z#<end_z>
+			G0 Z#<cut_z>
 			o<tip_comp_on> CALL [#<f_side>]
 			G1 X#<end_x>
 			o<tip_comp_off> CALL
-			G0 Z[#<end_z> + #<_z_clear> * #<z_factor>]
+			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
 		o22 endrepeat
 	o<fnc> else
 		o21 repeat [#<finishing_passes>]
@@ -173,13 +177,13 @@ o<facing> sub
 				(there, and moves only the lead line's own tangent point. The fixed)
 				(quarter-arc this replaces was tangent only at 90 degrees and left a)
 				(kink at every other lead angle)
-				o<fillet_lead> CALL [#<end_z>] [#<begin_x> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
+				o<fillet_lead> CALL [#<cut_z>] [#<begin_x> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
 				o<f_li2t> if [#<_flt_ok>]
 					#<asx> = [#<_flt_t1x> * #<_diameter_mode>]
 					#<asz> = #<_flt_t1z>
 				o<f_li2t> else
 					#<asx> = #<begin_x>
-					#<asz> = #<end_z>
+					#<asz> = #<cut_z>
 				o<f_li2t> endif
 				G0 X[#<asx> + #<li_len> * COS[#<li_ang>] * #<_diameter_mode>]
 				G0 Z[#<asz> + #<z_factor> * #<li_len> * SIN[#<li_ang>]]
@@ -188,14 +192,14 @@ o<facing> sub
 				o<f_li2s> endif
 				o<f_li2a> if [#<_flt_ok>]
 					o<f_li2d> if [#<_flt_cw>]
-						G2 X#<begin_x> Z#<end_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
+						G2 X#<begin_x> Z#<cut_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li2d> else
-						G3 X#<begin_x> Z#<end_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
+						G3 X#<begin_x> Z#<cut_z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li2d> endif
 				o<f_li2a> endif
 			o<f_li2> else
 				G0 X#<begin_x>
-				G0 Z#<end_z>
+				G0 Z#<cut_z>
 			o<f_li2> endif
 			G1 X#<end_x>
 			o<f_lo2> if [#<has_lo>]
@@ -205,14 +209,14 @@ o<facing> sub
 				(to Z through the face end point, tangent to the face there - but only)
 				(this one continues the cut; the other doubles the tool straight back)
 				(on itself. Sweep is flipped because it is traversed V-to-T1)
-				o<fillet_lead> CALL [#<end_z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
+				o<fillet_lead> CALL [#<cut_z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
 				#<lex> = #<end_x>
-				#<lez> = #<end_z>
+				#<lez> = #<cut_z>
 				o<f_lo2a> if [#<_flt_ok>]
 					o<f_lo2d> if [#<_flt_cw>]
-						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<end_z>]
+						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<cut_z>]
 					o<f_lo2d> else
-						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<end_z>]
+						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<cut_z>]
 					o<f_lo2d> endif
 					#<lex> = [#<_flt_t1x> * #<_diameter_mode>]
 					#<lez> = #<_flt_t1z>
@@ -221,7 +225,7 @@ o<facing> sub
 					G1 X[#<lex> + #<lo_len> * COS[#<lo_ang>] * #<_diameter_mode>] Z[#<lez> + #<z_factor> * #<lo_len> * SIN[#<lo_ang>]]
 				o<f_lo2s> endif
 			o<f_lo2> endif
-			G0 Z[#<end_z> + #<_z_clear> * #<z_factor>]
+			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
 		o21 endrepeat
 	o<fnc> endif
 	o20 endif
