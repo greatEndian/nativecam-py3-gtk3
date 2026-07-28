@@ -16,8 +16,8 @@ o<tip_comp_dia> sub
 
 	(nose diameter source: the loaded tool's own #5410 when the tool table)
 	(carries one, else the machine global-default override _tip_nose_dia)
-	o<td_src> if [#5410 GT 0.0001]
-		#<tc_nd> = #5410
+	o<td_src> if [[#5410 * #<_tbl_scale>] GT 0.0001]
+		#<tc_nd> = [#5410 * #<_tbl_scale>]
 	o<td_src> else
 		#<tc_nd> = #<_tip_nose_dia>
 	o<td_src> endif

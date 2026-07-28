@@ -34,10 +34,10 @@ o<lathe_level_next_start> sub
 	(deliberately larger than l_eff's own 0.001 grazing epsilon, a different)
 	(purpose: that one tolerates the level exactly grazing the floor, this one)
 	(has to tell "a new interval" apart from "the same point we started at")
-	#<resume_margin> = 0.01
+	#<resume_margin> = [0.01 * #<_mm>]
 
 	#<d_off> = #<cross_t>
-	#<l_eff> = [#<level> + 0.001]
+	#<l_eff> = [#<level> + [0.001 * #<_mm>]]
 	#<_pl_resume_found> = 0
 	#<_pl_resume_z> = 0
 	#<have_prev> = 0

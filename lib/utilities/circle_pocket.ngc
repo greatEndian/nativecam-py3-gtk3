@@ -10,7 +10,7 @@ o<circle_pocket> sub
 #<dia>      = #5
 #<feed>     = #6
 
-#<tool_dia>   = #5410
+#<tool_dia>   = [#5410 * #<_tbl_scale>]
 #<cut_radius> = [[#<dia> - #<tool_dia>] / 2.0]
 
 (Move to center and safe Z)

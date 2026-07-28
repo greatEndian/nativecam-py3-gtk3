@@ -10,18 +10,18 @@ o<get_arc_len> sub
 	
 	o<if00> if [#8 EQ 2] (CW)
 		o<if01> if [#9 EQ 42]
-			#<radius> = [#7 - #5410 / 2]
+			#<radius> = [#7 - [#5410 * #<_tbl_scale>] / 2]
 		o<if01> elseif [#9 EQ 41]
-			#<radius> = [#7 + #5410 / 2]
+			#<radius> = [#7 + [#5410 * #<_tbl_scale>] / 2]
 		o<if01> else
 			#<radius> = #7
 		o<if01> endif
 		#<_arc_rotation> = [360 - #<_angle_phi>]
 	o<if00> else (CCW)
 		o<if02> if [#9 EQ 42]
-			#<radius> = [#7 + #5410 / 2]
+			#<radius> = [#7 + [#5410 * #<_tbl_scale>] / 2]
 		o<if02> elseif [#9 EQ 41]
-			#<radius> = [#7 - #5410 / 2]
+			#<radius> = [#7 - [#5410 * #<_tbl_scale>] / 2]
 		o<if02> else
 			#<radius> = #7
 		o<if02> endif

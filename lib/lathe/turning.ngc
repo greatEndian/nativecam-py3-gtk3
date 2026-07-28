@@ -36,7 +36,7 @@ o<turning> sub
 		#<dir> = 3
 	o30 endif
 
-	o40 if [[#<radius> GT [#5410 / 2]] AND [#<begin_x> GT #<end_x>]]
+	o40 if [[#<radius> GT [[#5410 * #<_tbl_scale>] / 2]] AND [#<begin_x> GT #<end_x>]]
 		o43 if [#<mode> EQ 2] (mode 2 = Stop at Begin diameter)
 			#<rad_x> = [[#1 - #2] / 2]
 			o44 if [[#<rad_x> LE 0] OR [#<rad_x> GE #6]]

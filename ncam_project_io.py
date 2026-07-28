@@ -91,8 +91,51 @@ class NCamProjectIOMixin:
         self.set_expand()
 
 
+    def resolve_program_units(self) :
+        """Set the units the file is about to be written in, from the Workpiece.
+
+        Has to run before the header is built: Preferences.create_defaults()
+        runs once at start-up, so without rebuilding it here the G20/G21 line
+        and #<_tbl_scale> would still describe the machine rather than this
+        project. Every float then converts through Parameter.get_ngc_value(),
+        which reads the same flag.
+
+        No Workpiece, or Workpiece set to "From machine", means the machine's
+        own units - which is every project that predates this.
+        """
+        wanted = None
+        itr = self.treestore.get_iter_first()
+        while itr is not None :
+            f = self.treestore.get(itr, 0)[0]
+            if f.__class__ is Feature and f.get_attr('type') == 'workpiece' :
+                p = f.get_param('param_units')
+                if p is not None :
+                    wanted = get_int(p.get_ngc_value())
+                break
+            itr = self.treestore.iter_next(itr)
+
+        machine = getattr(ncam, 'machine_metric', True)
+        if wanted == 21 :
+            ncam.program_metric = True
+        elif wanted == 20 :
+            ncam.program_metric = False
+        else :
+            ncam.program_metric = machine
+
+        # a tool-table reading is in machine units whatever the file declares
+        if ncam.program_metric == machine :
+            ncam.TBL_SCALE = 1.0
+        elif machine :
+            ncam.TBL_SCALE = 1.0 / 25.4      # mm table into an inch program
+        else :
+            ncam.TBL_SCALE = 25.4            # inch table into a metric program
+
+        self.pref.create_defaults()
+
+
     def to_gcode(self, *arg) :
         ncam.UNIQUE_ID = 9
+        self.resolve_program_units()
 
         def recursive(itr, ldr, parent_feature = None) :
             gcode_def = ""

@@ -41,7 +41,7 @@ o<lathe_level_pass> sub
 	(arcs are treated as their chords - the pre-finish pass trues them up)
 	(the epsilon lets the level exactly on the roughing floor graze it)
 	#<d_off> = #<cross_t>
-	#<l_eff> = [#<level> + 0.001]
+	#<l_eff> = [#<level> + [0.001 * #<_mm>]]
 	#<found> = 0
 	#<have_prev> = 0
 	#<zc>    = [#<w_to> - #<z_dir>]

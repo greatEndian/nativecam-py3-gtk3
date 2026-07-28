@@ -167,6 +167,26 @@ PIXBUF_DICT = {}
 USER_VALUES = {}
 USER_SUBROUTINES = []
 TB_CATALOG = {}
+
+# Units the generated PROGRAM is written in, as opposed to machine_metric,
+# which is the machine's own units from the ini's TRAJ/LINEAR_UNITS. They are
+# the same until a Workpiece asks otherwise, which is what lets an inch program
+# come off a metric machine. Every float is stored in inches internally (see
+# Parameter.set_value), so this is the single flag deciding the way out.
+program_metric = True
+
+# What a value read straight from the tool table must be multiplied by to reach
+# program units. #5410 and friends are NOT converted by G20/G21 - verified with
+# rs274 against a metric config, where a D0.8 tool reads 0.800000 under both -
+# so every dimensional tool-table read has to scale itself. 1.0 whenever the
+# program and the machine agree, which is every existing project.
+TBL_SCALE = 1.0
+
+# Decimal places for a value emitted in inches. Six is the metric convention
+# and gives 0.001 mm there, but the same six in inches is only 0.025 mm, and
+# the roughing loop steps level by level so that error accumulates - measured
+# as 0.05 mm of drift across one test part before this was raised.
+NGC_INCH_DIGITS = 8
 EXCL_MESSAGES = {}
 GLOBAL_PREF = None
 UNIQUE_ID = 9
@@ -1610,10 +1630,15 @@ class Parameter(object) :
             else :
                 return val
         if self.get_type() == 'float' :
-            if machine_metric and "metric_value" in self.attr :
+            # program_metric, not machine_metric: the value goes into the file,
+            # so it must be in the units the file declares in its G20/G21.
+            # An inch program needs more decimal places for the same resolution
+            # - 6 of them is 0.001 mm in metric but 0.025 mm in inches, and the
+            # roughing loop accumulates that error one level at a time.
+            if program_metric and "metric_value" in self.attr :
                 return get_string(get_float(self.attr["value"]) * 25.4, 6, False)
             else :
-                return get_string(get_float(self.attr["value"]), 6, False)
+                return get_string(get_float(self.attr["value"]), NGC_INCH_DIGITS, False)
         else :
             return self.attr["value"] if "value" in self.attr else ""
 
@@ -2391,11 +2416,26 @@ class Preferences(object):
         self.default +=     '30840-new-syntax-highlighting-for-gedit)\n'
         self.default += '(or https://github.com/FernV/Gcode-highlight-for-Kate)\n\n'
 
-        if machine_metric :
+        if program_metric :
             self.default += _("G21  (metric)\n")
         else :
             self.default += _("G20  (imperial/inches)\n")
         self.default += (self.ngc_init_str + "\n\n")
+
+        # Tool-table values are whatever the table holds and are not touched by
+        # G20/G21, so any subroutine reading one has to bring it into program
+        # units itself. 1.0 unless the Workpiece asked for units the machine
+        # does not use. Emitted for every machine type: lib/utilities routines
+        # read it too, and LinuxCNC validates named parameters at load time.
+        self.default += ("#<_tbl_scale>               = %s\n"
+                         % get_string(TBL_SCALE, 10, False))
+        # One millimetre expressed in program units. Subroutine tolerances are
+        # written as millimetres because that is what they were sized against -
+        # a 0.001 nudge on a level radius is nothing in mm and 0.0254 mm in
+        # inches, which moved a roughing level's Z stop by 0.05 mm. Anything
+        # dimensional and hard-coded in lib/ must be multiplied by this.
+        self.default += ("#<_mm>                      = %s\n\n"
+                         % get_string(1.0 if program_metric else 1.0 / 25.4, 10, False))
 
         if self.cat_name == 'mill' :
             self.default += ("\n#<center_drill_depth>       = " + self.drill_center_depth + "\n\n")
@@ -2426,12 +2466,12 @@ class Preferences(object):
             self.default += ("#<_spindle_dir>             = 3\n")
             self.default += ("#<_cooling_mode>            = 9\n")
             self.default += ("#<_rough_feed>              = 100.0\n")
-            self.default += ("#<_rough_cut>               = 1.0\n")
+            self.default += ("#<_rough_cut>               = [1.0 * #<_mm>]\n")
             self.default += ("#<_finish_feed>             = 50.0\n")
-            self.default += ("#<_finish_cut>              = 0.25\n")
-            self.default += ("#<_z_clear>                 = 2.0\n")
-            self.default += ("#<_x_clear>                 = 2.0\n")
-            self.default += ("#<_ix_clear>                = 1.0\n")
+            self.default += ("#<_finish_cut>              = [0.25 * #<_mm>]\n")
+            self.default += ("#<_z_clear>                 = [2.0 * #<_mm>]\n")
+            self.default += ("#<_x_clear>                 = [2.0 * #<_mm>]\n")
+            self.default += ("#<_ix_clear>                = [1.0 * #<_mm>]\n")
             self.default += ("#<_diameter_mode>           = 2.0\n")
             self.default += ("#<_x_clamp_r>               = 999999.0\n")
             self.default += ("#<_trace_stop_rec>          = 0.0\n")
@@ -2447,13 +2487,13 @@ class Preferences(object):
             self.default += ("#<_level_blocked>           = 0.0\n")
             self.default += ("#<_lo_rad_cap>              = 0.0\n")
             self.default += ("#<_pl_ret_mode>             = 0.0\n")
-            self.default += ("#<_pl_ret_dist>             = 1.0\n")
+            self.default += ("#<_pl_ret_dist>             = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_park_on>              = 0.0\n")
             self.default += ("#<_pl_park_x>               = 0.0\n")
             self.default += ("#<_pl_park_z>               = 0.0\n")
             self.default += ("#<_pl_prev_lvl>             = 0.0\n")
             self.default += ("#<_pl_zc_ovr>               = 0.0\n")
-            self.default += ("#<_pl_z_clear>              = 1.0\n")
+            self.default += ("#<_pl_z_clear>              = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_multi_cross>          = 0.0\n")
             self.default += ("#<_pl_level_z_end>          = 0.0\n")
             self.default += ("#<_pl_resume_found>         = 0.0\n")

@@ -39,7 +39,12 @@ def _to_float(s):
 
 
 def _fmt(val):
-    return '%0.6f' % val
+    # These become the #3401+ window bounds, which decide where a roughing
+    # level stops. Six decimals is 0.001 mm in a metric program but 0.025 mm in
+    # an inch one, and that quantisation showed up directly as ~0.025 mm of
+    # drift in the level stops when the same part was generated both ways.
+    # Eight costs nothing in metric and removes it.
+    return '%0.8f' % val
 
 
 def resolve_points(polyline_feature):

@@ -20,7 +20,7 @@ o<radius_od> sub
 
 	#<peak_x>   = [#1 / 2 * #<_diameter_mode>]
 	#<x_radius> = [#<radius> * #<_diameter_mode>]
-	#<xtend>    = [#5410 * #<_diameter_mode>]
+	#<xtend>    = [#5410 * #<_tbl_scale> * #<_diameter_mode>]
 	#<x_step>   = [#<z_step> * #<_diameter_mode>]
 
 	o31 if [#<direction> EQ 0]
@@ -69,14 +69,14 @@ o<radius_od> sub
 				G0 Z[#<peak_z>]
 				G1 X[#<peak_x> - #<x_step> * #<pass>]
 				G#<dir> X[#<peak_x>] Z[#<peak_z> + #<z_step> * #<pass> * #<z_factor>] K[#<z_step> * #<pass> * #<z_factor>]
-				G1 Z[#<peak_z> + [#<z_step> * #<pass> + #5410] * #<z_factor>]
+				G1 Z[#<peak_z> + [#<z_step> * #<pass> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
 				G0 X[#<peak_x> + #<_x_clear>]
 				G0 Z[#<peak_z> - #<_z_clear> * #<z_factor>]
 				#<pass> = [#<pass> + 1]
 			o<loop00> endwhile (begin on Z axis)
 		o14 else
 			o<loop01> while [#<pass> LT #<rough_passes>]
-				G0 Z[#<peak_z> + [#<z_step> * #<pass> + #5410] * #<z_factor>]
+				G0 Z[#<peak_z> + [#<z_step> * #<pass> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
 				G0 X[#<peak_x>]
 				G1 Z[#<peak_z> + [#<z_step> * #<pass>] * #<z_factor>]
 				G#<dir> X[#<peak_x> - #<x_step> * #<pass>] Z[#<peak_z>] I-[#<z_step> * #<pass>]
@@ -96,13 +96,13 @@ o<radius_od> sub
 				G0 Z[#<peak_z>]
 				G1 X[#<peak_x> - #<x_radius>]
 				G#<dir> X[#<peak_x>] Z[#<peak_z> + #<radius> * #<z_factor>] K[#<radius> * #<z_factor>]
-				G1 Z[#<peak_z> + [#<radius> + #5410] * #<z_factor>]
+				G1 Z[#<peak_z> + [#<radius> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
 				G0 X[#<peak_x> + #<_x_clear>]
 				G0 Z[#<peak_z> - #<_z_clear> * #<z_factor>]
 			o<loop10> endrepeat (begin on Z axis)
 		o24 else
 			o<loop11> repeat [#<finishing_passes>]
-				G0 Z[#<peak_z> + [#<radius> + #5410] * #<z_factor>]
+				G0 Z[#<peak_z> + [#<radius> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
 				G0 X[#<peak_x>]
 				G1 Z[#<peak_z> + #<radius> * #<z_factor>]
 				G#<dir> X[#<peak_x> - #<x_radius>] Z[#<peak_z>] I-[#<radius>]
