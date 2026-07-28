@@ -16,7 +16,9 @@ class NCamTreeviewMixin:
         self.treeview.set_grid_lines(gtk.TreeViewGridLines.VERTICAL)
         self.builder.get_object("feat_scrolledwindow").add(self.treeview)
 
-        self.treeview.add_events(gdk.EventMask.BUTTON_PRESS_MASK)
+        self.treeview.add_events(gdk.EventMask.BUTTON_PRESS_MASK |
+                                 gdk.EventMask.SCROLL_MASK |
+                                 gdk.EventMask.SMOOTH_SCROLL_MASK)
         self.treeview.connect('button-press-event', self.pop_menu)
         self.treeview.connect('row_activated', self.tv_row_activated)
         self.treeview.connect('key_press_event', self.tv_key_pressed_event)
@@ -66,7 +68,9 @@ class NCamTreeviewMixin:
 
     def create_second_treeview(self):
         self.treeview2 = gtk.TreeView()
-        self.treeview2.add_events(gdk.EventMask.BUTTON_PRESS_MASK)
+        self.treeview2.add_events(gdk.EventMask.BUTTON_PRESS_MASK |
+                                  gdk.EventMask.SCROLL_MASK |
+                                  gdk.EventMask.SMOOTH_SCROLL_MASK)
         self.treeview2.connect('button-press-event', self.pop_menu)
         self.treeview2.connect('cursor-changed', self.tv2_selected)
         self.treeview2.connect('row_activated', self.tv_row_activated)
