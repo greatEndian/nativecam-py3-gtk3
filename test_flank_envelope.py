@@ -30,8 +30,16 @@ def check(name, cond, detail=''):
 
 
 def at(env, z):
-    """Envelope radius at a Z, by interpolation."""
-    return ls._interpolate_x(env, z)
+    """Envelope diameter at a Z. Interpolates on a Z-sorted copy: the envelope
+    comes back in profile order, which may be descending, and _interpolate_x
+    assumes otherwise."""
+    e = sorted(env)
+    for (z0, x0), (z1, x1) in zip(e, e[1:]):
+        if z0 - 1e-9 <= z <= z1 + 1e-9:
+            if abs(z1 - z0) < 1e-9:
+                return max(x0, x1)
+            return x0 + (x1 - x0) * (z - z0) / (z1 - z0)
+    return e[-1][1] if z > e[-1][0] else e[0][1]
 
 
 def main():
@@ -76,7 +84,7 @@ def main():
 
     # never below the true profile, anywhere
     below = [(z, r) for z, r in env
-             if (ls._interpolate_x(prof, z) or 0) - r > 1e-6]
+             if (ls._outer_x(prof, z) or 0) - r > 1e-6]
     check('the envelope never dips below the profile', not below, str(below[:3]))
 
     # --- the angle actually changes the ramp --------------------------------
@@ -142,6 +150,32 @@ def main():
         check('a J%.0f insert ramps at %.0f deg from Z' % (ang, want),
               got is not None and abs(got - want) < 0.01,
               'measured %.2f deg' % got if got else 'no ramp found')
+
+    # --- the reported part: a boss with plain ground either side ------------
+    # Front to back over a D50 boss spanning Z-20..-50 in D40 stock. Only the
+    # ground the tool has already driven past is shadowed; the approach side is
+    # ordinary roughing, because there the tip is the highest touching point.
+    boss = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0),
+            (-50.0, 40.0), (-80.0, 40.0)]
+    eb = ls.flank_envelope(boss, 75.0, 0)
+    check('the approach side Z0..-20 is left as plain roughing',
+          all(abs(at(eb, z) - 40.0) < 0.01 for z in (-2.0, -10.0, -19.0)),
+          'D%.2f at Z-10' % at(eb, -10.0))
+    check('the boss itself is held at its own diameter',
+          all(abs(at(eb, z) - 50.0) < 0.01 for z in (-25.0, -35.0, -49.0)),
+          'D%.2f at Z-35' % at(eb, -35.0))
+    check('the far side is shadowed, reaching the floor at Z-68.66',
+          abs(at(eb, -60.0) - 44.64) < 0.05 and abs(at(eb, -70.0) - 40.0) < 0.01,
+          'D%.2f at Z-60, D%.2f at Z-70' % (at(eb, -60.0), at(eb, -70.0)))
+    # a wall gives one Z two diameters; seeding from the foot put the envelope
+    # INSIDE the boss, which gouges rather than merely under-cuts
+    check('the envelope never sits inside the boss',
+          not [z for z, x in eb if (ls._outer_x(boss, z) or 0) - x > 1e-6])
+    # and back to front mirrors which side is left alone
+    er = ls.flank_envelope(boss, 75.0, 1)
+    check('back to front shadows the other side instead',
+          abs(at(er, -10.0) - 44.64) < 0.05 and abs(at(er, -60.0) - 40.0) < 0.01,
+          'D%.2f at Z-10, D%.2f at Z-60' % (at(er, -10.0), at(er, -60.0)))
 
     print()
     if FAILED:

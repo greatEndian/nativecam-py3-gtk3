@@ -980,6 +980,26 @@ def band_windows(sections, ordered, points):
 # roughing runs in Both directions.
 
 
+def _outer_x(points, z):
+    """The OUTERMOST material diameter at a Z.
+
+    A vertical wall gives one Z two diameters, and _interpolate_x answers with
+    only one of them - the foot. Seeding the envelope from that puts it BELOW
+    the profile across the whole wall, which is not a missed optimisation but a
+    gouge: roughing would cut into the boss it is supposed to be avoiding.
+    """
+    best = None
+    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+        lo, hi = min(z0, z1), max(z0, z1)
+        if lo - EPS <= z <= hi + EPS:
+            if abs(z1 - z0) < EPS:
+                cand = max(x0, x1)
+            else:
+                cand = x0 + (x1 - x0) * (z - z0) / (z1 - z0)
+            best = cand if best is None else max(best, cand)
+    return best
+
+
 def flank_slope(back_deg):
     """Rise in radius per unit of Z along the trailing flank, or None.
 
@@ -1044,6 +1064,21 @@ def flank_envelope(points, back_deg, rough_dir=0):
     lo, hi = min(zs), max(zs)
 
     cand = set(zs)
+    # A vertical wall puts two diameters at one Z. The candidate set holds that
+    # Z once and _outer_x answers with the top, so the foot is lost and the
+    # output interpolates straight across the wall - which reads as a phantom
+    # ramp on the side that should have been left alone. Put a candidate just
+    # clear of each wall so the foot survives as its own breakpoint.
+    walls = set()
+    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+        if abs(z1 - z0) < EPS and abs(x1 - x0) > EPS:
+            walls.add(z0)
+    step = EPS * 2          # must clear _outer_x own EPS or the wall swallows it
+    for zw in walls:
+        for zc in (zw - step, zw + step):
+            if lo <= zc <= hi:
+                cand.add(zc)
+
     for zp, rp in points:
         for side, kk in slopes:
             for _z2, r2 in points:
@@ -1054,7 +1089,7 @@ def flank_envelope(points, back_deg, rough_dir=0):
 
     out = []
     for z0 in sorted(cand):
-        best = _interpolate_x(points, z0)
+        best = _outer_x(points, z0)
         if best is None:
             best = points[0][1]
         for zp, rp in points:
