@@ -980,68 +980,75 @@ def band_windows(sections, ordered, points):
 # roughing runs in Both directions.
 
 
-def flank_directions(back_deg):
-    """The limiting flank ray as (dz, dx) in the Z/radius plane, or [].
+def flank_slope(back_deg):
+    """Rise in radius per unit of Z along the trailing flank, or None.
 
-    The tool table's BACK column is the one that matters: it is the trailing
-    flank, the one that fouls a wall the tool has already driven past, which is
-    what photo/spaceBehindIssue_0.png shows. FRONT is the leading edge and is
-    what actually cuts, so it does not bound the reachable floor the same way.
-
-    A flank pointing inward in radius, dx <= 0, cannot be obstructed by
-    something taller and so constrains nothing - that returns [].
+    The tool table's BACK angle is measured off the perpendicular, so the ramp
+    the flank actually leaves behind a wall sits at 90 - BACK from the Z axis:
+    a J75 insert ramps at 15 degrees and needs a long projection in Z to clear
+    a wall, not a short one. Using BACK directly gives the complement and a
+    shadow far too short.
     """
-    rad = math.radians(back_deg)
-    dz, dx = math.cos(rad), math.sin(rad)
-    return [(dz, dx)] if dx > EPS else []
+    eff = 90.0 - back_deg
+    if eff <= EPS or eff >= 90.0 - EPS:
+        return None
+    return math.tan(math.radians(eff))
 
 
-def flank_envelope(points, back_deg):
+def flank_sides(rough_dir):
+    """Which side of a peak casts a shadow, from the roughing direction.
+
+    Cutting front to back the tool drives past a boss and the sections BEHIND
+    it are the ones it can no longer reach, so only peaks on the +Z side
+    constrain. Back to front mirrors that. Both directions has to take both,
+    since each pass meets a different face of the same boss.
+    """
+    if rough_dir == 1:
+        return (-1,)
+    if rough_dir == 2:
+        return (1, -1)
+    return (1,)
+
+
+def flank_envelope(points, back_deg, rough_dir=0):
     """The profile widened into the shape the tool can actually reach.
 
-    A wedge dilation by the back flank: for a nose at (z0, r) that flank must
-    clear every profile point, so a point (zp, rp) lying along the flank's own
-    direction bounds the nose radius below by
+    A wedge dilation by the trailing flank: a point (zp, rp) on the shadowed
+    side bounds the nose radius below by
 
-        rp - |zp - z0| * (dx / |dz|)
+        rp - |zp - z0| * slope
 
-    and the envelope is the largest such bound over every point, never below the
-    profile. Reaching the true profile is the finishing passes' job; this shape
-    is only for the roughing scans - the same thing the mesh copy
+    and the envelope is the largest such bound over every point, never below
+    the profile. Reaching the true profile is the finishing passes' job; this
+    shape is only for the roughing scans - the same thing the mesh copy
     poly_mesh_lathe builds is for, and the only thing that reads it.
 
     Returns BREAKPOINTS, not a sampled curve: the envelope is piecewise linear,
     every corner sits where one point's ray meets another point's radius, and
-    the result has to travel into G-code as a record array, so a dense grid
-    would be both wasteful and less exact.
+    the result has to travel into G-code as a record array.
 
-    points are (z, x) in the diameter units resolve_points works in. A flank at
-    or past vertical constrains nothing and the profile comes back unchanged -
-    which is right: such a tool can drop straight down.
+    points are (z, x) in the diameter units resolve_points works in, so the
+    slope - a rise in RADIUS - is scaled to match, or the ramp comes out at
+    half the angle.
     """
     if not points or len(points) < 2:
         return list(points)
 
-    rays = flank_directions(back_deg)
-    # points carry DIAMETERS but a flank slope is rise-in-RADIUS per unit Z, so
-    # it has to be scaled to match or the ramp comes out at half the angle -
-    # a 75 degree back angle emitted as 61.8, which is what testing_15_0 showed
-    slopes = [(1 if dz > 0 else -1, dx / abs(dz) * DIAMETER_MODE)
-              for dz, dx in rays if abs(dz) > EPS]
-    if not slopes:
+    k = flank_slope(back_deg)
+    if k is None:
         return list(points)
+    k *= DIAMETER_MODE
+    slopes = [(side, k) for side in flank_sides(rough_dir)]
 
     zs = [p[0] for p in points]
     lo, hi = min(zs), max(zs)
 
-    # candidate corners: every profile Z, plus every Z where one point's ray
-    # reaches another point's radius
     cand = set(zs)
     for zp, rp in points:
-        for side, k in slopes:
+        for side, kk in slopes:
             for _z2, r2 in points:
                 if r2 < rp - EPS:
-                    zc = zp - side * (rp - r2) / k
+                    zc = zp - side * (rp - r2) / kk
                     if lo <= zc <= hi:
                         cand.add(zc)
 
@@ -1051,29 +1058,27 @@ def flank_envelope(points, back_deg):
         if best is None:
             best = points[0][1]
         for zp, rp in points:
-            for side, k in slopes:
+            for side, kk in slopes:
                 d = (zp - z0) * side
                 if d > EPS:
-                    bound = rp - d * k
+                    bound = rp - d * kk
                     if bound > best:
                         best = bound
         out.append((z0, best))
 
-    # drop points that sit on the line between their neighbours - they carry no
-    # information and every one costs eight numbered parameters downstream
     if len(out) < 3:
         return out
     keep = [out[0]]
-    for i in range(1, len(out) - 1):
+    for i2 in range(1, len(out) - 1):
         z0, r0 = keep[-1]
-        z1, r1 = out[i]
-        z2, r2 = out[i + 1]
+        z1, r1 = out[i2]
+        z2, r2 = out[i2 + 1]
         if abs(z2 - z0) < EPS:
-            keep.append(out[i])
+            keep.append(out[i2])
             continue
         on_line = r0 + (r2 - r0) * (z1 - z0) / (z2 - z0)
         if abs(on_line - r1) > EPS:
-            keep.append(out[i])
+            keep.append(out[i2])
     keep.append(out[-1])
     return keep
 
@@ -1096,7 +1101,9 @@ def build_flank_gcode(polyline_feature, back_deg):
     if not points or len(points) < 2:
         return ''
 
-    env = flank_envelope(points, back_deg)
+    d_param = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(d_param.get_ngc_value())) if d_param is not None else 0
+    env = flank_envelope(points, back_deg, rough_dir)
     # the scans walk records in profile order, so hand the envelope back the
     # same way round the profile was drawn rather than sorted ascending
     if points[0][0] > points[-1][0]:

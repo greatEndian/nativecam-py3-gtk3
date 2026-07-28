@@ -44,8 +44,20 @@ def main():
     # --- the limiting flank -------------------------------------------------
     # BACK is the trailing flank and the one that fouls a wall already driven
     # past, so it is the column this uses. T2 is J75.
-    check('a back flank facing out gives a ray', len(ls.flank_directions(75)) == 1)
-    check('a back flank facing inward gives none', len(ls.flank_directions(255)) == 0)
+    # BACK is measured off the perpendicular, so the ramp is at 90 - BACK from
+    # the Z axis: a J75 insert ramps at 15 degrees and needs a LONG projection
+    check('a J75 insert ramps at 15 deg',
+          abs(ls.flank_slope(75.0) - math.tan(math.radians(15.0))) < 1e-9)
+    check('a J45 insert ramps at 45 deg',
+          abs(ls.flank_slope(45.0) - 1.0) < 1e-9)
+    check('a flank at or past the perpendicular constrains nothing',
+          ls.flank_slope(90.0) is None and ls.flank_slope(0.0) is None)
+
+    # which side is shadowed follows the roughing direction
+    check('front to back shadows what is behind, the +Z side',
+          ls.flank_sides(0) == (1,))
+    check('back to front mirrors it', ls.flank_sides(1) == (-1,))
+    check('both directions takes both faces', set(ls.flank_sides(2)) == {1, -1})
 
     # --- the shape itself ---------------------------------------------------
     # a boss at r20 from Z0 to Z-10, then a valley floor at r10 out to Z-40
@@ -71,7 +83,7 @@ def main():
     # a steeper flank gets closer to the boss: 75 degrees rises at tan(75), so
     # it recovers the floor in 10/tan(75) = 2.68 mm instead of 10
     env75 = ls.flank_envelope(prof, 75.0)
-    reach = 5.0 / math.tan(math.radians(75.0))
+    reach = 5.0 / math.tan(math.radians(90.0 - 75.0))
     check('a 75 deg flank recovers the floor in %.2f mm' % reach,
           abs(at(env75, -10.0 - reach) - 10.0) < 0.06,
           'r%.3f at Z%.3f' % (at(env75, -10.0 - reach), -10.0 - reach))
@@ -121,13 +133,14 @@ def main():
     # exactly what testing_15_0 showed - a 75 degree tool ramping at 61.8
     for ang in (75.0, 60.0, 45.0, 30.0):
         e = sorted(ls.flank_envelope([(0.0, 40.0), (-10.0, 40.0),
-                                      (-10.0, 20.0), (-40.0, 20.0)], ang))
+                                      (-10.0, 22.0), (-90.0, 22.0)], ang))
         got = None
         for (z0, r0), (z1, r1) in zip(e, e[1:]):
             if abs(z1 - z0) > 1e-9 and abs(r1 - r0) > 1e-9:
                 got = math.degrees(math.atan(abs((r1 - r0) / 2.0 / (z1 - z0))))
-        check('a %.0f deg back angle ramps at %.0f deg' % (ang, ang),
-              got is not None and abs(got - ang) < 0.01,
+        want = 90.0 - ang
+        check('a J%.0f insert ramps at %.0f deg from Z' % (ang, want),
+              got is not None and abs(got - want) < 0.01,
               'measured %.2f deg' % got if got else 'no ramp found')
 
     print()
