@@ -194,9 +194,23 @@ o<poly_lathe_mill> sub
         o<mesh_base> else
                 #<m_pds> = [#<pds> + #[#<pds>] * 8 + 1]
         o<mesh_base> endif
+        (safe retract diameter for inside work: back down inside the hole the)
+        (tool entered through, clearance below it, never past the spindle axis)
+        #<_pl_id_ret> = [#<start_radius> * #<_diameter_mode> - #<_ix_clear>]
+        o<id_ret_min> if [#<_pl_id_ret> LT 0]
+                #<_pl_id_ret> = 0
+        o<id_ret_min> endif
+
         o<poly_mesh_lathe> CALL [#<r_pds>] [#<m_pds>] [0.005]
 
-        #<stock_r> = [#<_wp_dia_od> / #<_diameter_mode>]
+        (the boundary roughing works away from - the stock OD for outside)
+        (work, the existing hole for inside. dirsign already carries which)
+        (way into the material is, so the gate below needs only this value)
+        o<sr_side> if [#<_pl_side> EQ 1]
+                #<stock_r> = #<start_radius>
+        o<sr_side> else
+                #<stock_r> = [#<_wp_dia_od> / #<_diameter_mode>]
+        o<sr_side> endif
         #<e_z> = #[#<r_pds> + 1]
         #<l_z> = #[#<r_pds> + [#[#<r_pds>] - 1] * 8 + 1]
         o<wzd> if [#<e_z> GE #<l_z>]
@@ -529,7 +543,11 @@ o<poly_lathe_mill> sub
         #<_trace_stop_rec> = 0
         #<_x_wall_dir> = 0
 
-        G0 X[#<_wp_dia_od> + #<_X_rapid>]
+        o<ret_side> if [#<_pl_side> EQ 1]
+                G0 X#<_pl_id_ret>
+        o<ret_side> else
+                G0 X[#<_wp_dia_od> + #<_X_rapid>]
+        o<ret_side> endif
         G40
         o<park_out> if [#<_pl_park_on> GT 0]
                 (return to the user start point)

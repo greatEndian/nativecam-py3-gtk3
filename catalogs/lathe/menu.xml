@@ -6,7 +6,7 @@
 		</menu>
 		<menu action='cutting'  name=_("Cutting")_ icon="threading.png">
 			<menu action='contour'  name=_("Contour")_ icon="od-advanced.png" tool_tip=_("Profile operations built from a polyline - the general way to cut a shape")_>
-				<menuitem action='poly_start'  name=_("Outside Contour")_ tool_tip= _("Rough and finish an external profile built from a polyline")_ icon="lathe-multipass.png" src="lathe/polyline.cfg"/>
+				<menuitem action='poly_start'  name=_("Start Contour")_ tool_tip= _("Start a contour profile - outside or inside, chosen on the feature")_ icon="lathe-multipass.png" src="lathe/polyline.cfg"/>
 				<separator/>
 				<menuitem action='polyline_to'  name=_("Line To")_ tool_tip= _("Relative or absolute position")_ icon="line-to.png" src="lathe/polyline-to.cfg"/>
 				<menuitem action='polyline_pol'  name=_("Line Polar")_ tool_tip= _("Define angle and length")_ icon="line-polar.png" src="lathe/polyline-polar.cfg"/>

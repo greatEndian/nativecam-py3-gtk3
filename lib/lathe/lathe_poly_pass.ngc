@@ -69,7 +69,11 @@ o<lathe_poly_pass> sub
 	#<comp_ex> = [#<entry_x> + #<comp_r> * #<_ent_nx>]
 
 	(safe approach: retract above stock, rapid back in Z)
-	G0 X[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]
+	o<ap_side> if [#<_pl_side> EQ 1]
+		G0 X#<_pl_id_ret>
+	o<ap_side> else
+		G0 X[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]
+	o<ap_side> endif
 
 	(Does the contour trace begin on an ARC? The trace starts at record 2, so)
 	(record 2 is the first move compensation sees - and an arc can neither)
@@ -90,6 +94,11 @@ o<lathe_poly_pass> sub
 	o<c_sd> if [#<z_dir> GT 0]
 		#<c_side> = 42
 	o<c_sd> endif
+	o<c_sd_id> if [#<_pl_side> EQ 1]
+		(material is outside the profile on a bore, so the offset goes)
+		(the other way - the inversion boring.ngc makes against taper.ngc)
+		#<c_side> = [83 - #<c_side>]
+	o<c_sd_id> endif
 	#<comp_done> = 0
 
 	#<arc_entry> = 0
@@ -116,7 +125,7 @@ o<lathe_poly_pass> sub
 		(here places it at Z>0, safely in front, with the correct 45 degree)
 		(sweep matching li_ang. 0 degrees continues along Z, 90 breaks radial)
 		#<li_bz> = [#<z_dir> * COS[#<li_ang>]]
-		#<li_bx> = SIN[#<li_ang>]
+		#<li_bx> = [#<_pl_x_sgn> * SIN[#<li_ang>]]
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<li_rad> GT 0]
@@ -252,7 +261,7 @@ o<lathe_poly_pass> sub
 		(retreats this way, and the user wants the finishing passes to match)
 		(it exactly. 0 degrees continues along Z, 90 breaks fully radial)
 		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
-		#<lo_bx> = SIN[#<lo_ang>]
+		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
 
 		#<_flt_ok> = 0
 		o<lo_geom> if [#<lo_rad> GT 0]

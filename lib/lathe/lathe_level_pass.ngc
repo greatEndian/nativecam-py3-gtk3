@@ -256,18 +256,22 @@ o<lathe_level_pass> sub
 	(previous pass level - safe because that band is already cut)
 	o<ret_md> if [#<_pl_ret_mode> GT 0]
 		#<ret_x> = [[#<_pl_prev_lvl> + #<_pl_ret_dist>] * #<_diameter_mode>]
-		o<ret_cap> if [#<ret_x> GT [#<_wp_dia_od> + #<_x_clear>]]
+		o<ret_cap> if [[#<_pl_side> EQ 0] AND [#<ret_x> GT [#<_wp_dia_od> + #<_x_clear>]]]
 			#<ret_x> = [#<_wp_dia_od> + #<_x_clear>]
 		o<ret_cap> endif
 		G0 X#<ret_x>
 	o<ret_md> else
-		G0 X[#<_wp_dia_od> + #<_x_clear>]
+		o<rt_side> if [#<_pl_side> EQ 1]
+			G0 X#<_pl_id_ret>
+		o<rt_side> else
+			G0 X[#<_wp_dia_od> + #<_x_clear>]
+		o<rt_side> endif
 	o<ret_md> endif
 	o<lead_in> if [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
 		(a level pass always travels along Z at constant X, so the toolpath's)
 		(own direction at the entry is always pure Z - no profile lookup needed)
 		#<li_bz> = [#<z_dir> * COS[#<li_ang>]]
-		#<li_bx> = SIN[#<li_ang>]
+		#<li_bx> = [#<_pl_x_sgn> * SIN[#<li_ang>]]
 		#<_li_leff> = #<li_len>
 		#<_li_reff> = #<li_rad>
 
@@ -347,7 +351,7 @@ o<lathe_level_pass> sub
 		(lead-out line direction: unit vector pointing from the exit toward)
 		(the far rapid point - 0 degrees along Z surface, 90 radial)
 		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
-		#<lo_bx> = SIN[#<lo_ang>]
+		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
 		#<_lo_cos> = [#<z_dir> * #<lo_bz>]
 		#<_lo_leff> = #<lo_len>
 
