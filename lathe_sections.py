@@ -980,91 +980,136 @@ def band_windows(sections, ordered, points):
 # roughing runs in Both directions.
 
 
-def flank_directions(front_deg, back_deg):
-    """The two flank rays as (dz, dx) unit vectors in the Z/radius plane.
+def flank_directions(back_deg):
+    """The limiting flank ray as (dz, dx) in the Z/radius plane, or [].
 
-    Only rays with dx > 0 are returned: a flank pointing inward cannot be
-    obstructed by something taller, so it constrains nothing here.
+    The tool table's BACK column is the one that matters: it is the trailing
+    flank, the one that fouls a wall the tool has already driven past, which is
+    what photo/spaceBehindIssue_0.png shows. FRONT is the leading edge and is
+    what actually cuts, so it does not bound the reachable floor the same way.
+
+    A flank pointing inward in radius, dx <= 0, cannot be obstructed by
+    something taller and so constrains nothing - that returns [].
     """
-    out = []
-    for ang in (front_deg, back_deg):
-        rad = math.radians(ang)
-        dz, dx = math.cos(rad), math.sin(rad)
-        if dx > EPS:
-            out.append((dz, dx))
-    return out
+    rad = math.radians(back_deg)
+    dz, dx = math.cos(rad), math.sin(rad)
+    return [(dz, dx)] if dx > EPS else []
 
 
-def flank_envelope(points, front_deg, back_deg, step=None):
+def flank_envelope(points, back_deg):
     """The profile widened into the shape the tool can actually reach.
 
-    A wedge dilation: for a nose at (z0, r) the flank leaving it must clear
-    every profile point, so for a point (zp, rp) further along the flank's own
-    direction the nose radius is bounded below by
+    A wedge dilation by the back flank: for a nose at (z0, r) that flank must
+    clear every profile point, so a point (zp, rp) lying along the flank's own
+    direction bounds the nose radius below by
 
         rp - |zp - z0| * (dx / |dz|)
 
     and the envelope is the largest such bound over every point, never below the
-    profile itself. Reaching the true profile is what the finishing passes are
-    for; this shape is only for the roughing scans, exactly like the mesh copy
-    poly_mesh_lathe builds, which is the only thing that reads it.
+    profile. Reaching the true profile is the finishing passes' job; this shape
+    is only for the roughing scans - the same thing the mesh copy
+    poly_mesh_lathe builds is for, and the only thing that reads it.
 
-    points are (z, x) in the diameter units resolve_points works in. Returns the
-    same form, on a z grid fine enough to hold the wedge corners.
+    Returns BREAKPOINTS, not a sampled curve: the envelope is piecewise linear,
+    every corner sits where one point's ray meets another point's radius, and
+    the result has to travel into G-code as a record array, so a dense grid
+    would be both wasteful and less exact.
 
-    A flank at or past vertical (dz == 0) constrains nothing beyond the profile,
-    which is the correct answer: a tool with a vertical flank can drop straight
-    down and this returns the profile unchanged.
+    points are (z, x) in the diameter units resolve_points works in. A flank at
+    or past vertical constrains nothing and the profile comes back unchanged -
+    which is right: such a tool can drop straight down.
     """
     if not points or len(points) < 2:
         return list(points)
 
-    rays = flank_directions(front_deg, back_deg)
-    slopes = []
-    for dz, dx in rays:
-        if abs(dz) > EPS:
-            # rise in radius per unit of Z travel away from the nose, and which
-            # side of the nose this flank reaches over
-            slopes.append((1 if dz > 0 else -1, dx / abs(dz)))
+    rays = flank_directions(back_deg)
+    slopes = [(1 if dz > 0 else -1, dx / abs(dz))
+              for dz, dx in rays if abs(dz) > EPS]
     if not slopes:
         return list(points)
 
-    zs = sorted({p[0] for p in points})
-    if step is None:
-        span = zs[-1] - zs[0]
-        step = max(span / 400.0, EPS * 10)
-    grid = []
-    z = zs[0]
-    while z < zs[-1]:
-        grid.append(z)
-        z += step
-    grid.append(zs[-1])
+    zs = [p[0] for p in points]
+    lo, hi = min(zs), max(zs)
 
-    # The envelope is piecewise linear and every corner sits where one point's
-    # flank ray reaches another point's radius. Sampling alone rounds those
-    # corners off, and on a steep flank a 0.1 mm grid is already 0.37 mm of
-    # radius - so put the exact breakpoints in as well.
-    lo, hi = zs[0], zs[-1]
+    # candidate corners: every profile Z, plus every Z where one point's ray
+    # reaches another point's radius
+    cand = set(zs)
     for zp, rp in points:
         for side, k in slopes:
             for _z2, r2 in points:
                 if r2 < rp - EPS:
                     zc = zp - side * (rp - r2) / k
                     if lo <= zc <= hi:
-                        grid.append(zc)
-    grid = sorted(set(grid + zs))
+                        cand.add(zc)
 
     out = []
-    for z0 in grid:
+    for z0 in sorted(cand):
         best = _interpolate_x(points, z0)
         if best is None:
             best = points[0][1]
         for zp, rp in points:
             for side, k in slopes:
                 d = (zp - z0) * side
-                if d > EPS:                      # the peak is on this flank's side
+                if d > EPS:
                     bound = rp - d * k
                     if bound > best:
                         best = bound
         out.append((z0, best))
-    return out
+
+    # drop points that sit on the line between their neighbours - they carry no
+    # information and every one costs eight numbered parameters downstream
+    if len(out) < 3:
+        return out
+    keep = [out[0]]
+    for i in range(1, len(out) - 1):
+        z0, r0 = keep[-1]
+        z1, r1 = out[i]
+        z2, r2 = out[i + 1]
+        if abs(z2 - z0) < EPS:
+            keep.append(out[i])
+            continue
+        on_line = r0 + (r2 - r0) * (z1 - z0) / (z2 - z0)
+        if abs(on_line - r1) > EPS:
+            keep.append(out[i])
+    keep.append(out[-1])
+    return keep
+
+
+def build_flank_gcode(polyline_feature, back_deg):
+    """Literal G-code building the reachable envelope as a record array, or ''.
+
+    Emitted as records so poly_lathe_mill can hand it straight to the level
+    scans in place of the mesh poly_mesh_lathe would build. The scans are the
+    only thing that reads that array - the contour passes keep tracing the true
+    profile - so this changes what roughing stops against and nothing else.
+
+    Returns '' when there is nothing to do: no back angle, a flank that
+    constrains nothing, or an envelope identical to the profile. The runtime
+    gate is _pl_env_count > 0, so '' leaves roughing exactly as it was.
+    """
+    if back_deg is None or back_deg <= 0:
+        return ''
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2:
+        return ''
+
+    env = flank_envelope(points, back_deg)
+    # the scans walk records in profile order, so hand the envelope back the
+    # same way round the profile was drawn rather than sorted ascending
+    if points[0][0] > points[-1][0]:
+        env = list(reversed(env))
+    if len(env) == len(points) and all(
+            abs(a[0] - b[0]) < EPS and abs(a[1] - b[1]) < EPS
+            for a, b in zip(sorted(env), sorted(points))):
+        return ''
+
+    base = 3600
+    lines = ['(reachable envelope: the profile widened by the tool back angle)',
+             '(so roughing cannot try to cut where the flank would foul a wall)',
+             '#<_pl_env_base>  = %d' % base,
+             '#<_pl_env_count> = %d' % len(env)]
+    for i, (z, x) in enumerate(env):
+        slot = base + i * 2
+        lines.append('#%d = %s' % (slot, _fmt(z)))
+        lines.append('#%d = %s' % (slot + 1, _fmt(x / DIAMETER_MODE)))
+    return '\n'.join(lines)

@@ -201,7 +201,24 @@ o<poly_lathe_mill> sub
                 #<_pl_id_ret> = 0
         o<id_ret_min> endif
 
-        o<poly_mesh_lathe> CALL [#<r_pds>] [#<m_pds>] [0.005]
+        (The scans run against the mesh copy and nothing else does, so the)
+        (reachable envelope goes here: roughing then stops where the tool)
+        (back flank actually allows, through the existing crossing logic,)
+        (and the contour passes keep tracing the true profile untouched.)
+        (_pl_env_count is 0 unless the operator asked for it, and then this)
+        (is the plain mesh exactly as before.)
+        o<env_use> if [#<_pl_env_count> GT 0]
+                #[#<m_pds>] = 0
+                #<ei> = 0
+                #<ep> = #<_pl_env_base>
+                o<env_b> while [#<ei> LT #<_pl_env_count>]
+                        o<add_mill_data> CALL [#<m_pds>] [#[#<ep>]] [#[#<ep> + 1]] [1] [0] [0] [0] [0] [0]
+                        #<ep> = [#<ep> + 2]
+                        #<ei> = [#<ei> + 1]
+                o<env_b> endwhile
+        o<env_use> else
+                o<poly_mesh_lathe> CALL [#<r_pds>] [#<m_pds>] [0.005]
+        o<env_use> endif
 
         (the boundary roughing works away from - the stock OD for outside)
         (work, the existing hole for inside. dirsign already carries which)

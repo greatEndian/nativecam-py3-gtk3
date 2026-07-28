@@ -722,6 +722,7 @@ class Tools(object):
         return '0 - ' + _('None')
 
     def save_tool_orient(self, tn):
+        self.saved_tool = tn
         if tn == 0 :
             self.orientation = 0
         else :
@@ -767,6 +768,15 @@ class Tools(object):
 
     def get_tool_orient(self):
         return self.orientation
+
+    def get_back_angle(self):
+        """Back angle of the last tool selected in a Tool Change.
+
+        The flank shadow needs it at generation time, where the polyline has no
+        idea which tool it will run under - the Tool Change feature does, and it
+        already tells TOOL_TABLE via save_tool_orient.
+        """
+        return self.get_tool_back_angle(getattr(self, 'saved_tool', 0))
 
 class VKB(object):
 
@@ -2500,6 +2510,8 @@ class Preferences(object):
             self.default += ("#<_pl_resume_z>             = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_pl_side>                = 0.0\n")
+            self.default += ("#<_pl_env_base>            = 0.0\n")
+            self.default += ("#<_pl_env_count>           = 0.0\n")
             self.default += ("#<_pl_id_ret>              = 0.0\n")
             self.default += ("#<_pl_x_sgn>               = 1.0\n")
             self.default += ("#<_pl_sectioning>           = 0.0\n")
