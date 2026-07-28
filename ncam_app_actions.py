@@ -635,10 +635,12 @@ class NCamAppActionsMixin:
     LATHE_NOSE_OFFSET = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
                          (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
 
+    # the centre-line angle LinuxCNC's own figure labels each position with,
+    # measured clockwise from a line parallel to Z+
     LATHE_ORIENT_DESC = {
         0: _('not set'),
-        1: _('X+  Z-'), 2: _('X+  Z+'), 3: _('X-  Z+'), 4: _('X-  Z-'),
-        5: _('Z-'), 6: _('X+'), 7: _('Z+'), 8: _('X-'),
+        1: _('CL 135\u00b0'), 2: _('CL 45\u00b0'), 3: _('CL 315\u00b0'), 4: _('CL 225\u00b0'),
+        5: _('CL 180\u00b0'), 6: _('CL 90\u00b0'), 7: _('CL 0\u00b0'), 8: _('CL 270\u00b0'),
         9: _('on the point'),
     }
 
@@ -665,7 +667,8 @@ class NCamAppActionsMixin:
         intro = gtk.Label(label=_(
             'The cross is the point your program commands. The circle is where the\n'
             'tool nose actually sits, one nose radius away in the direction shown.\n'
-            'Lathe view: Z to the right, X up.'))
+            'Lathe view as AXIS draws it: Z to the right, X down.\n'
+            'CL is the centre-line angle, clockwise from Z+, as in the LinuxCNC manual.'))
         intro.set_halign(gtk.Align.START)
         vbox.pack_start(intro, False, False, 0)
         vbox.pack_start(gtk.Separator(), False, False, 4)
@@ -748,8 +751,10 @@ class NCamAppActionsMixin:
         ctx.stroke()
 
         dx, dz = off
-        # screen: Z is the horizontal axis, X the vertical one and inverted
-        ncx, ncy = cx + dz * r, cy - dx * r
+        # screen: Z runs right, X runs DOWN - the lathe view AXIS draws, where
+        # Position 6 (CL 90, +X) is at the bottom. Screen y already grows
+        # downward, so +X needs no inversion
+        ncx, ncy = cx + dz * r, cy + dx * r
         ctx.set_line_width(1.0)
         ctx.set_source_rgb(0.15, 0.55, 0.15)
         ctx.arc(ncx, ncy, r, 0, 2 * 3.14159265)

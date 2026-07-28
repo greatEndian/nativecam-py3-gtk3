@@ -27,6 +27,13 @@ from ncam_app_actions import NCamAppActionsMixin  # noqa: E402
 LINUXCNC_LATHE_SHAPES = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
                          (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
 
+# The centre-line angle LinuxCNC's manual gives for each position, clockwise
+# from a line parallel to Z+ (docs section "Lathe Tool Orientation"). This is
+# the independent statement of the geometry: the offsets above say where the
+# nose is, these say what angle the manual calls it, and they must agree.
+LINUXCNC_CL_DEG = {1: 135, 2: 45, 3: 315, 4: 225,
+                   5: 180, 6: 90, 7: 0, 8: 270}
+
 SIZE = 84
 FAILED = []
 
@@ -83,8 +90,22 @@ def main():
         check('orientation %d sits square on, exactly R' % n,
               abs(math.hypot(dx, dz) - 1.0) < 1e-9)
 
-    # what actually gets drawn: the nose circle must land in the direction the
-    # table names, with Z to the right and X up
+    # the offsets must agree with the manual's centre-line angles: CL is
+    # measured clockwise from Z+, so Z = cos(CL) and X = sin(CL)
+    for n, cl in sorted(LINUXCNC_CL_DEG.items()):
+        dx, dz = app.LATHE_NOSE_OFFSET[n]
+        wz, wx = math.cos(math.radians(cl)), math.sin(math.radians(cl))
+        norm = math.hypot(dx, dz)
+        check('orientation %d matches the manual\'s CL %d deg' % (n, cl),
+              abs(dz / norm - wz / math.hypot(wz, wx)) < 1e-9
+              and abs(dx / norm - wx / math.hypot(wz, wx)) < 1e-9,
+              'offset (X%+d, Z%+d)' % (dx, dz))
+        check('orientation %d is labelled with its CL angle' % n,
+              str(cl) in app.LATHE_ORIENT_DESC[n], app.LATHE_ORIENT_DESC[n])
+
+    # what actually gets drawn: X+ runs DOWN, the way AXIS draws a lathe and
+    # the way LinuxCNC's own figure is laid out - Position 6, CL 90, +X, is at
+    # the bottom of it. Getting this upside down mirrors every diagonal.
     centre = SIZE / 2.0
     r = SIZE * 0.19
     for n in range(1, 10):
@@ -93,7 +114,7 @@ def main():
             check('orientation %d draws a nose circle' % n, False)
             continue
         dx, dz = app.LATHE_NOSE_OFFSET[n]
-        want = (centre + dz * r, centre - dx * r)
+        want = (centre + dz * r, centre + dx * r)
         ok = abs(got[0] - want[0]) < 2.0 and abs(got[1] - want[1]) < 2.0
         check('orientation %d draws the nose %s of the point' % (n, app.LATHE_ORIENT_DESC[n]),
               ok, 'drawn at (%.1f, %.1f), expected (%.1f, %.1f)'
@@ -104,6 +125,12 @@ def main():
           green_centroid(render(app, 0)) is None)
 
     # 9 is on the point itself, not offset anywhere
+    # Position 6 is CL 90 = +X, which must be BELOW the point on screen
+    six = green_centroid(render(app, 6))
+    check('orientation 6 (CL 90) is drawn below the point, not above',
+          six is not None and six[1] > centre,
+          'y=%.1f vs centre %.1f' % (six[1], centre) if six else 'nothing drawn')
+
     got = green_centroid(render(app, 9))
     where = ('(%.1f, %.1f)' % got) if got else 'nothing drawn'
     check('orientation 9 draws the nose on the point',

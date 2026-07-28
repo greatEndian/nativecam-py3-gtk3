@@ -14,6 +14,7 @@
 				<menuitem action='poly_arc_coords'  name=_("Arc To Coords")_ tool_tip= _("Define end point, arc height or radius")_ icon="arc-to-coords.png" src="lathe/polyline-arc-to.cfg"/>
 			</menu>
 			<menuitem action='facing'  name=_("Facing")_ tool_tip= _("Finish face and optionnaly touch off")_ icon="lathe-facing.png" src="lathe/facing.cfg"/>
+			<menuitem action='drilling'  name=_("Drilling - not implemented yet")_ tool_tip= _("Placeholder. Centre drilling, peck drilling and tapping on the lathe axis are planned - see the drilling section of the plan.")_ icon="drill-in-center.png"/>
 			<menuitem action='threading'  name=_("Threading")_ tool_tip= _("External or internal threads, metric or imperial")_ icon="threading.png" src="lathe/threading.cfg"/>
 			<menu action='primitives'  name=_("Primitives")_ icon="misc.png" tool_tip=_("Single-shape operations - one cut each, no profile needed")_>
 				<menu action='prim_od'  name=_("Outside")_ icon="lathe-surface.png" tool_tip=_("External single-shape cuts")_>
