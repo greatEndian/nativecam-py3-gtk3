@@ -491,6 +491,9 @@ class NCamAppActionsMixin:
         self.actionHelpMenu = ca("HelpMenu", None, _("_Help"), None, None, None)
         self.actionYouTube = ca("YouTube", None, _('NativeCAM on YouTube'), None, None, self.action_youTube)
         self.actionYouTrans = ca("YouTranslate", None, _('Translating NativeCAM'), None, None, self.action_youTrans)
+        self.actionToolOrient = ca("ToolOrient", None, _('Lathe Tool Orientation'), None,
+                                   _("LinuxCNC's tool orientation numbers, drawn"),
+                                   self.action_toolOrient)
         self.actionCNCHome = ca("CNCHome", None, _("LinuxCNC web Site"), None, None, self.action_lcncHome)
         self.actionForum = ca("CNCForum", None, _('LinuxCNC Forum'), None, None, self.action_lcncForum)
         self.actionAbout = ca("About", 'gtk-about', None, None, None, self.action_about)
@@ -620,6 +623,137 @@ class NCamAppActionsMixin:
                 pass
 
         return False
+
+
+    # Where the tool nose CIRCLE sits relative to the programmed control point,
+    # as (X, Z) multiples of the nose radius. Copied from LinuxCNC's own
+    # backplot - rs274/glcanon.py, StatCanon.lathe_shapes - rather than from a
+    # description of it, so the picture cannot drift from what AXIS draws. The
+    # (X, Z) reading is confirmed by the glVertex3f(radius*dx, 0, radius*dy)
+    # call that consumes it. Note 1-4 put the centre a diagonal away, R * sqrt2,
+    # which is the same offset prove_tip_comp.py works with.
+    LATHE_NOSE_OFFSET = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
+                         (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
+
+    LATHE_ORIENT_DESC = {
+        0: _('not set'),
+        1: _('X+  Z-'), 2: _('X+  Z+'), 3: _('X-  Z+'), 4: _('X-  Z-'),
+        5: _('Z-'), 6: _('X+'), 7: _('Z+'), 8: _('X-'),
+        9: _('on the point'),
+    }
+
+    def action_toolOrient(self, *arg):
+        """Draw LinuxCNC's lathe tool orientation numbers.
+
+        The number goes in the tool table's Q column and decides which way the
+        nose radius is offset from the point the program commands, so it is
+        what makes tool-nose compensation cut the right side. Nothing in the
+        UI said what the numbers meant.
+        """
+        dlg = gtk.Dialog(title=_('Lathe Tool Orientation'),
+                         transient_for=self.get_toplevel(), modal=True)
+        dlg.set_resizable(False)
+        vbox = dlg.get_content_area()
+        vbox.set_spacing(6)
+        vbox.set_border_width(12)
+
+        lbl = gtk.Label()
+        lbl.set_markup('<b>' + _('Tool table Q column') + '</b>')
+        lbl.set_halign(gtk.Align.START)
+        vbox.pack_start(lbl, False, False, 0)
+
+        intro = gtk.Label(label=_(
+            'The cross is the point your program commands. The circle is where the\n'
+            'tool nose actually sits, one nose radius away in the direction shown.\n'
+            'Lathe view: Z to the right, X up.'))
+        intro.set_halign(gtk.Align.START)
+        vbox.pack_start(intro, False, False, 0)
+        vbox.pack_start(gtk.Separator(), False, False, 4)
+
+        grid = gtk.Grid()
+        grid.set_row_spacing(4)
+        grid.set_column_spacing(10)
+
+        for n in range(10) :
+            col, row = n % 5, (n // 5) * 3
+            area = gtk.DrawingArea()
+            area.set_size_request(84, 84)
+            area.connect('draw', self.draw_orient_cell, n)
+            grid.attach(area, col, row, 1, 1)
+
+            num = gtk.Label()
+            num.set_markup('<b>%d</b>' % n)
+            grid.attach(num, col, row + 1, 1, 1)
+
+            desc = gtk.Label()
+            desc.set_markup('<small>%s</small>' % self.LATHE_ORIENT_DESC[n])
+            grid.attach(desc, col, row + 2, 1, 1)
+
+        vbox.pack_start(grid, False, False, 0)
+        vbox.pack_start(gtk.Separator(), False, False, 4)
+
+        note = gtk.Label(label=_(
+            '0 means no orientation is set and compensation has nothing to work from.\n'
+            '9 puts the nose on the point itself, for a full-radius or button tool.\n'
+            'Set it in the tool table Q column, or as a default in Tool Change.'))
+        note.set_halign(gtk.Align.START)
+        vbox.pack_start(note, False, False, 0)
+
+        dlg.add_button('gtk-close', gtk.ResponseType.CLOSE)
+        dlg.set_destroy_with_parent(True)
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
+
+
+    def draw_orient_cell(self, area, ctx, orient, size = None):
+        """One orientation cell: the commanded point and where the nose sits.
+
+        Split out of the dialog so it can be rendered - and checked - without
+        putting a modal window on screen. size overrides the widget
+        allocation for that case.
+        """
+        w = h = size if size else 0
+        if not size :
+            w, h = area.get_allocated_width(), area.get_allocated_height()
+        # a diagonal orientation puts the circle sqrt(2)*r away, so the drawing
+        # reaches 2.414*r from the centre and anything above size/4.83 gets
+        # clipped by the cell edge - which looked like a lopsided nose
+        cx, cy, r = w / 2.0, h / 2.0, min(w, h) * 0.19
+        ctx.set_line_width(1.0)
+        ctx.set_source_rgb(0.55, 0.55, 0.55)          # axes through the point
+        ctx.move_to(cx - r * 2.2, cy)
+        ctx.line_to(cx + r * 2.2, cy)
+        ctx.move_to(cx, cy - r * 2.2)
+        ctx.line_to(cx, cy + r * 2.2)
+        ctx.stroke()
+
+        off = self.LATHE_NOSE_OFFSET[orient] if orient else None
+        if off is None :
+            ctx.set_source_rgb(0.6, 0.6, 0.6)
+            ctx.arc(cx, cy, r, 0, 2 * 3.14159265)
+            ctx.set_dash([3.0, 3.0])
+            ctx.stroke()
+            ctx.set_dash([])
+            return
+        # the control point marker goes down FIRST: for 5-8 the nose circle
+        # passes exactly through it, and drawing the cross last bit a chunk out
+        # of the ring
+        ctx.set_line_width(2.0)
+        ctx.set_source_rgb(0.85, 0.2, 0.2)
+        ctx.move_to(cx - 4, cy)
+        ctx.line_to(cx + 4, cy)
+        ctx.move_to(cx, cy - 4)
+        ctx.line_to(cx, cy + 4)
+        ctx.stroke()
+
+        dx, dz = off
+        # screen: Z is the horizontal axis, X the vertical one and inverted
+        ncx, ncy = cx + dz * r, cy - dx * r
+        ctx.set_line_width(1.0)
+        ctx.set_source_rgb(0.15, 0.55, 0.15)
+        ctx.arc(ncx, ncy, r, 0, 2 * 3.14159265)
+        ctx.stroke()
 
 
     def action_about(self, *arg):

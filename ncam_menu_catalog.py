@@ -285,6 +285,8 @@ class NCamMenuCatalogMixin:
         menu_help.append(self._create_menu_item(self.actionYouTube, "youtube.png"))
 #        menu_help.append(self._create_menu_item(self.actionYouTrans, "youtube.png"))
         menu_help.append(gtk.SeparatorMenuItem())
+        menu_help.append(self._create_menu_item(self.actionToolOrient, "lathe-tool.png"))
+        menu_help.append(gtk.SeparatorMenuItem())
         menu_help.append(self._create_menu_item(self.actionCNCHome, "linuxcncicon.png",))
         menu_help.append(self._create_menu_item(self.actionForum, "linuxcncicon.png",))
         menu_help.append(gtk.SeparatorMenuItem())
