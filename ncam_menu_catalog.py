@@ -350,54 +350,63 @@ class NCamMenuCatalogMixin:
                         p.tag.lower(), _(name), src, path, tooltip])
 
 
+    def build_menu_from_node(self, grp_menu, path) :
+        """Fill a Gtk.Menu from a <menu>/<group> node of the catalog XML.
+
+        A method rather than a closure because a toolbar dropdown needs it too -
+        that way the dropdown and the menubar are built from the same node by
+        the same code, and cannot drift apart.
+        """
+        for ptr in range(len(path)) :
+            try :
+                p = path[ptr]
+                if p.tag.lower() in ["menu", "menuitem", "group", "sub"] :
+                    name = p.get("name") if "name" in p.keys() else ""
+                    a_menu_item = gtk.ImageMenuItem(label=_(name))
+
+                    tooltip = _(p.get("tool_tip")) if "tool_tip" in p.keys() else None
+                    if (tooltip is not None) and (tooltip != '') :
+                        a_menu_item.set_tooltip_markup(_(tooltip))
+
+                    icon = p.get('icon')
+                    if icon is not None :
+                        img = gtk.Image()
+                        img.set_from_pixbuf(get_pixbuf(icon, ncam.add_menu_icon_size))
+                        a_menu_item.set_image(img)
+
+                    src = p.get('src')
+                    if src is not None :
+                        a_menu_item.connect("activate", self.add_feature, src)
+
+                    grp_menu.append(a_menu_item)
+
+                    if p.tag.lower() in ['menu', "group"] :
+                        a_menu = gtk.Menu()
+                        a_menu_item.set_submenu(a_menu)
+                        self.build_menu_from_node(a_menu, p)
+
+                elif p.tag.lower() == "separator":
+                    grp_menu.append(gtk.SeparatorMenuItem())
+            except Exception:
+                pass
+
+
     def add_catalog_items(self, menu_add):
-
-        def add_to_menu(grp_menu, path) :
-            for ptr in range(len(path)) :
-                try :
-                    p = path[ptr]
-                    if p.tag.lower() in ["menu", "menuitem", "group", "sub"] :
-                        name = p.get("name") if "name" in p.keys() else ""
-                        a_menu_item = gtk.ImageMenuItem(label=_(name))
-
-                        tooltip = _(p.get("tool_tip")) if "tool_tip" in p.keys() else None
-                        if (tooltip is not None) and (tooltip != '') :
-                            a_menu_item.set_tooltip_markup(_(tooltip))
-
-                        icon = p.get('icon')
-                        if icon is not None :
-                            img = gtk.Image()
-                            img.set_from_pixbuf(get_pixbuf(icon, ncam.add_menu_icon_size))
-                            a_menu_item.set_image(img)
-
-                        src = p.get('src')
-                        if src is not None :
-                            a_menu_item.connect("activate", self.add_feature, src)
-
-                        grp_menu.append(a_menu_item)
-
-                        if p.tag.lower() in ['menu', "group"] :
-                            a_menu = gtk.Menu()
-                            a_menu_item.set_submenu(a_menu)
-                            add_to_menu(a_menu, p)
-
-                    elif p.tag.lower() == "separator":
-                        grp_menu.append(gtk.SeparatorMenuItem())
-                except Exception:
-                    pass
-
         if self.catalog.tag != 'ncam_ui' :
             mess_dlg(_('Menu is old format, no toolbar defined.\nUpdate to new format'))
-            add_to_menu(menu_add, self.catalog)
+            self.build_menu_from_node(menu_add, self.catalog)
         else :
             for _ptr in range(len(self.catalog)) :
                 _p = self.catalog[_ptr]
                 if _p.tag.lower() in ["menu", "group"] :
-                    add_to_menu(menu_add, _p)
+                    self.build_menu_from_node(menu_add, _p)
 
 
     def get_toolbar_actions(self):
         MENU_LISTING = {}
+        # <menu>/<group> nodes by action name, so a <toolmenu> in the toolbar
+        # can point at one and get a dropdown of everything inside it
+        MENU_NODES = {}
 
         def add_actions(path) :
             for ptr in range(len(path)) :
@@ -413,6 +422,8 @@ class NCamMenuCatalogMixin:
                         if (actionname is not None) and (src is not None) :
                             MENU_LISTING[actionname] = [name, tooltip, src, icon]
                     if p.tag.lower() in ["menu", "group"] :
+                        if p.get("action") is not None :
+                            MENU_NODES[p.get("action")] = p
                         add_actions(p)
                 except Exception:
                     return
@@ -426,6 +437,14 @@ class NCamMenuCatalogMixin:
                         ncam.TB_CATALOG[toolbar_rank] = "separator"
                     elif p.tag.lower() == 'toolitem':
                         ncam.TB_CATALOG[toolbar_rank] = MENU_LISTING[p.get("action")]
+                    elif p.tag.lower() == 'toolmenu':
+                        node = MENU_NODES[p.get("action")]
+                        ncam.TB_CATALOG[toolbar_rank] = [
+                            node.get("name") or p.get("action"),
+                            p.get("tool_tip") or node.get("tool_tip"),
+                            None,                        # a dropdown adds nothing itself
+                            p.get("icon") or node.get("icon"),
+                            node]
                 except Exception:
                     return
                 toolbar_rank += 1
@@ -452,15 +471,34 @@ class NCamMenuCatalogMixin:
             if li == 'separator' :
                 self.nc_toolbar.insert(gtk.SeparatorToolItem(), -1)
             else :
+                icon = None
                 if li[3] is not None :
                     icon = gtk.Image()
                     icon.set_from_pixbuf(get_pixbuf(li[3], ncam.quick_access_icon_size))
-                    button = gtk.ToolButton(icon_widget = icon, label = _(li[0]))
+
+                if len(li) > 4 and li[4] is not None :
+                    # a dropdown: the button itself adds nothing, it just opens
+                    # the menu built from the catalog node it names
+                    if icon is not None :
+                        button = gtk.MenuToolButton(icon_widget = icon, label = _(li[0]))
+                    else :
+                        button = gtk.MenuToolButton(label = li[0])
+                    a_menu = gtk.Menu()
+                    self.build_menu_from_node(a_menu, li[4])
+                    a_menu.show_all()
+                    button.set_menu(a_menu)
+                    # clicking the icon should open the menu too, not do nothing
+                    button.connect('clicked',
+                                   lambda b : b.get_menu().popup_at_pointer(None))
                 else :
-                    button = gtk.ToolButton(label = li[0])
+                    if icon is not None :
+                        button = gtk.ToolButton(icon_widget = icon, label = _(li[0]))
+                    else :
+                        button = gtk.ToolButton(label = li[0])
+                    button.connect('clicked', self.add_feature, li[2])
+
                 if li[1] is not None :
                     button.set_tooltip_markup(_(li[1]))
-                button.connect('clicked', self.add_feature, li[2])
                 self.nc_toolbar.insert(button, -1)
 
         self.main_box.pack_start(self.nc_toolbar, False, False, 0)
