@@ -143,6 +143,17 @@ class NCamProjectIOMixin:
             sub_ldr = ldr
             f = self.treestore.get(itr, 0)[0]
             if f.__class__ is Feature :
+                # Tell the tool table which tool is loaded from here on. The
+                # Tool Change [INIT] does this too, but INIT only runs when a
+                # feature is built from its cfg or migrates - never on a plain
+                # project load - so anything asking at generation time got
+                # whatever the last GUI edit happened to leave behind, or 0.
+                # Features are processed in order, so by the time a later
+                # feature asks, the nearest preceding tool change has spoken.
+                if f.get_attr('type') == 'tool_change' :
+                    p_dnum = f.get_param('param_dnum')
+                    if p_dnum is not None :
+                        ncam.TOOL_TABLE.save_tool_orient(get_int(p_dnum.get_ngc_value()))
                 f.validate()
                 # never reuse a cached O-word id: the counter restarts every
                 # build, so a stale stored id collides with freshly assigned
