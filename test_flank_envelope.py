@@ -177,6 +177,24 @@ def main():
           abs(at(er, -10.0) - 44.64) < 0.05 and abs(at(er, -60.0) - 40.0) < 0.01,
           'D%.2f at Z-10, D%.2f at Z-60' % (at(er, -10.0), at(er, -60.0)))
 
+    # --- a boss TOP is shadowed too, by whatever stands taller beside it ----
+    # ground D40, a D50 boss at Z-20..-50, then a D70 wall at Z-60. The boss
+    # top is a lower surface like any other: the wall shadows it when the wall
+    # is on the side the tool has already driven past, and not otherwise. This
+    # needs no separate rule - it is the same wedge, which is the point.
+    stepped = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0),
+               (-50.0, 40.0), (-60.0, 40.0), (-60.0, 70.0), (-90.0, 70.0)]
+    ef = ls.flank_envelope(stepped, 75.0, 0)
+    check('front to back, the boss top is reached before the tall wall',
+          all(abs(at(ef, z) - 50.0) < 0.05 for z in (-25.0, -35.0, -45.0)),
+          'D%.2f at Z-35' % at(ef, -35.0))
+    er2 = ls.flank_envelope(stepped, 75.0, 1)
+    check('back to front, the tall wall shadows the boss top',
+          at(er2, -45.0) > 50.0 + 1.0 and abs(at(er2, -21.0) - 50.0) < 0.2,
+          'D%.2f at Z-45, D%.2f at Z-21' % (at(er2, -45.0), at(er2, -21.0)))
+    check('and that shadow never sits inside either feature',
+          not [z for z, x in er2 if (ls._outer_x(stepped, z) or 0) - x > 1e-6])
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
