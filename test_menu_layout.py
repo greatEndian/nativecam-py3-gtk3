@@ -140,6 +140,17 @@ def main():
         check('no primitive is left loose in the Cutting menu', not loose,
               'still loose: %s' % sorted(loose))
 
+    # 8 - menubar entries must carry text, not just an icon. These used to rely
+    # on GTK's stock items for their label; the Py3/GTK3 port replaced
+    # create_menu_item() with a hand-built one and the stock lookup went with
+    # it, leaving Projects and Edit as rows of unlabelled icons.
+
+    src = open(os.path.join(HERE, 'ncam_app_actions.py')).read()
+    import re as _re
+    unlabelled = _re.findall(r"ca\(\"(\w+)\",\s*'[\w-]+',\s*None,", src)
+    check('every stock-icon action still has a text label', not unlabelled,
+          'unlabelled: %s' % unlabelled)
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
