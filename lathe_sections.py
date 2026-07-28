@@ -957,3 +957,114 @@ def band_windows(sections, ordered, points):
             seen.add(key)
             windows.append((s[0], s[1], r_lo, r_hi))
     return windows
+
+
+# --- tool flank shadow -------------------------------------------------------
+#
+# A roughing level cannot drop straight down behind a raised feature: the insert
+# is a wedge, not a point, and the material behind a taller feature is only
+# reachable along a line leaving that feature's corner at the flank angle.
+# Cutting past it drives the tool body into the boss - see
+# photo/spaceBehindIssue_0.png.
+#
+# The two flank directions come from the tool table's I (front angle) and J
+# (back angle), both measured clockwise from a line parallel to Z+, the same
+# convention the orientation figure uses for CL. Their bisector IS the CL angle,
+# which is a useful check on a table: T2 I15 J75 bisects to 45, and tool 2 is
+# orientation 2, CL 45.
+#
+# Travel direction deliberately does not enter into this. The tool body occupies
+# the wedge between BOTH flanks whichever way it drives, so both constrain at
+# once; direction only decides which end of a given level ends up limited, and
+# that falls out. Constraining just the trailing flank would be wrong the moment
+# roughing runs in Both directions.
+
+
+def flank_directions(front_deg, back_deg):
+    """The two flank rays as (dz, dx) unit vectors in the Z/radius plane.
+
+    Only rays with dx > 0 are returned: a flank pointing inward cannot be
+    obstructed by something taller, so it constrains nothing here.
+    """
+    out = []
+    for ang in (front_deg, back_deg):
+        rad = math.radians(ang)
+        dz, dx = math.cos(rad), math.sin(rad)
+        if dx > EPS:
+            out.append((dz, dx))
+    return out
+
+
+def flank_envelope(points, front_deg, back_deg, step=None):
+    """The profile widened into the shape the tool can actually reach.
+
+    A wedge dilation: for a nose at (z0, r) the flank leaving it must clear
+    every profile point, so for a point (zp, rp) further along the flank's own
+    direction the nose radius is bounded below by
+
+        rp - |zp - z0| * (dx / |dz|)
+
+    and the envelope is the largest such bound over every point, never below the
+    profile itself. Reaching the true profile is what the finishing passes are
+    for; this shape is only for the roughing scans, exactly like the mesh copy
+    poly_mesh_lathe builds, which is the only thing that reads it.
+
+    points are (z, x) in the diameter units resolve_points works in. Returns the
+    same form, on a z grid fine enough to hold the wedge corners.
+
+    A flank at or past vertical (dz == 0) constrains nothing beyond the profile,
+    which is the correct answer: a tool with a vertical flank can drop straight
+    down and this returns the profile unchanged.
+    """
+    if not points or len(points) < 2:
+        return list(points)
+
+    rays = flank_directions(front_deg, back_deg)
+    slopes = []
+    for dz, dx in rays:
+        if abs(dz) > EPS:
+            # rise in radius per unit of Z travel away from the nose, and which
+            # side of the nose this flank reaches over
+            slopes.append((1 if dz > 0 else -1, dx / abs(dz)))
+    if not slopes:
+        return list(points)
+
+    zs = sorted({p[0] for p in points})
+    if step is None:
+        span = zs[-1] - zs[0]
+        step = max(span / 400.0, EPS * 10)
+    grid = []
+    z = zs[0]
+    while z < zs[-1]:
+        grid.append(z)
+        z += step
+    grid.append(zs[-1])
+
+    # The envelope is piecewise linear and every corner sits where one point's
+    # flank ray reaches another point's radius. Sampling alone rounds those
+    # corners off, and on a steep flank a 0.1 mm grid is already 0.37 mm of
+    # radius - so put the exact breakpoints in as well.
+    lo, hi = zs[0], zs[-1]
+    for zp, rp in points:
+        for side, k in slopes:
+            for _z2, r2 in points:
+                if r2 < rp - EPS:
+                    zc = zp - side * (rp - r2) / k
+                    if lo <= zc <= hi:
+                        grid.append(zc)
+    grid = sorted(set(grid + zs))
+
+    out = []
+    for z0 in grid:
+        best = _interpolate_x(points, z0)
+        if best is None:
+            best = points[0][1]
+        for zp, rp in points:
+            for side, k in slopes:
+                d = (zp - z0) * side
+                if d > EPS:                      # the peak is on this flank's side
+                    bound = rp - d * k
+                    if bound > best:
+                        best = bound
+        out.append((z0, best))
+    return out

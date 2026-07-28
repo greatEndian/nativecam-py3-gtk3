@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+# coding: utf-8
+"""Checks the tool flank shadow in lathe_sections.py.
+
+Standalone, like the other test_*.py here - run it directly, no pytest. Pure
+geometry, so it needs no rs274 and runs instantly.
+
+The property under test is the one photo/spaceBehindIssue_0.png shows going
+wrong: behind a raised boss the reachable floor is not the profile, it is a
+ramp leaving the boss corner at the tool's flank angle. Getting the sign or the
+trig wrong here does not crash anything - it silently either gouges the boss or
+leaves a step of uncut material - so every case checks a computed number, not
+just that a list came back.
+"""
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import lathe_sections as ls  # noqa: E402
+
+FAILED = []
+
+
+def check(name, cond, detail=''):
+    print(('PASS  ' if cond else 'FAIL  ') + name + (('  ' + detail) if detail else ''))
+    if not cond:
+        FAILED.append(name)
+
+
+def at(env, z):
+    """Envelope radius at a Z, by interpolation."""
+    return ls._interpolate_x(env, z)
+
+
+def main():
+    # --- the angles the tool table actually carries -------------------------
+    # every demo tool's I/J bisect to its CL angle; that is the consistency
+    # check that says the two flanks and the orientation are one set
+    for i, j, cl in ((105, 165, 135), (15, 75, 45), (285, 345, 315), (195, 255, 225)):
+        check('I%d J%d bisects to CL %d' % (i, j, cl), abs((i + j) / 2.0 - cl) < 1e-9)
+
+    # --- flank directions ---------------------------------------------------
+    # T2, I15 J75: both flanks point outward in radius, so both constrain
+    d = ls.flank_directions(15, 75)
+    check('a tool with both flanks facing out gives two rays', len(d) == 2, str(d))
+    # a flank pointing inward cannot be blocked by something taller
+    d2 = ls.flank_directions(195, 255)
+    check('flanks facing inward give none', len(d2) == 0, str(d2))
+
+    # --- the shape itself ---------------------------------------------------
+    # a boss at r20 from Z0 to Z-10, then a valley floor at r10 out to Z-40
+    prof = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 10.0), (-40.0, 10.0)]
+
+    # a 45 degree flank reaching over +Z: behind the boss the floor may only
+    # rise back at 1:1, so 5 mm past the corner it is still 5 mm above the floor
+    env = ls.flank_envelope(prof, 45.0, 90.0)
+    check('at the boss the envelope is the boss', abs(at(env, -10.0) - 20.0) < 0.05,
+          'r%.3f' % at(env, -10.0))
+    for dz, want in ((5.0, 15.0), (8.0, 12.0), (10.0, 10.0), (15.0, 10.0)):
+        got = at(env, -10.0 - dz)
+        check('%4.1f mm behind the boss the 45 deg flank allows r%.1f' % (dz, want),
+              abs(got - want) < 0.06, 'got r%.3f' % got)
+
+    # never below the true profile, anywhere
+    below = [(z, r) for z, r in env
+             if (ls._interpolate_x(prof, z) or 0) - r > 1e-6]
+    check('the envelope never dips below the profile', not below, str(below[:3]))
+
+    # --- the angle actually changes the ramp --------------------------------
+    # a steeper flank gets closer to the boss: 75 degrees rises at tan(75), so
+    # it recovers the floor in 10/tan(75) = 2.68 mm instead of 10
+    env75 = ls.flank_envelope(prof, 75.0, 90.0)
+    reach = 10.0 / math.tan(math.radians(75.0))
+    check('a 75 deg flank recovers the floor in %.2f mm' % reach,
+          abs(at(env75, -10.0 - reach) - 10.0) < 0.06,
+          'r%.3f at Z%.3f' % (at(env75, -10.0 - reach), -10.0 - reach))
+    check('the steeper flank is never more restrictive than the shallow one',
+          all(at(env75, z) <= at(env, z) + 1e-6 for z, _ in env75))
+
+    # --- a vertical flank constrains nothing --------------------------------
+    envv = ls.flank_envelope(prof, 90.0, 90.0)
+    check('a vertical flank leaves the profile alone', envv == prof, str(envv[:3]))
+
+    # --- both sides bind at once, which is why travel direction drops out ---
+    # a valley between two bosses: each wall casts its own ramp inward
+    vee = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 8.0), (-30.0, 8.0),
+           (-30.0, 20.0), (-40.0, 20.0)]
+    envb = ls.flank_envelope(vee, 45.0, 135.0)
+    # 4 mm past a 12 mm wall on a 1:1 flank the tool is still 12 - 4 = 8 above
+    # the floor, i.e. r16 - that is the whole point of the shadow
+    check('the near wall ramps in at the flank angle',
+          abs(at(envb, -14.0) - 16.0) < 0.06, 'r%.3f' % at(envb, -14.0))
+    check('the far wall ramps in from the other side too',
+          abs(at(envb, -26.0) - 16.0) < 0.06, 'r%.3f at Z-26' % at(envb, -26.0))
+    # 12 mm of clearance is needed from each wall, and this valley is only 20
+    # wide, so its floor is never reachable
+    check('a 20 mm valley between 12 mm walls cannot be bottomed',
+          min(r for z, r in envb if -30.0 < z < -10.0) > 8.0 + 0.5,
+          'deepest r%.3f' % min(r for z, r in envb if -30.0 < z < -10.0))
+
+    # widen it to 40 mm and the middle does come clear
+    wide = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 8.0), (-50.0, 8.0),
+            (-50.0, 20.0), (-60.0, 20.0)]
+    envw = ls.flank_envelope(wide, 45.0, 135.0)
+    check('a 40 mm valley reaches its floor in the middle',
+          abs(at(envw, -30.0) - 8.0) < 0.06, 'r%.3f' % at(envw, -30.0))
+
+    # a narrow valley cannot be reached to the bottom at all
+    narrow = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 8.0), (-14.0, 8.0),
+              (-14.0, 20.0), (-24.0, 20.0)]
+    envn = ls.flank_envelope(narrow, 45.0, 135.0)
+    floor = min(r for z, r in envn if -14.0 < z < -10.0)
+    check('a valley narrower than the wedge cannot be bottomed out',
+          floor > 8.0 + 0.5, 'deepest reachable r%.3f against a true floor of r8' % floor)
+
+    # --- degenerate input is handled, not crashed ---------------------------
+    check('an empty profile returns empty', ls.flank_envelope([], 45.0, 135.0) == [])
+    check('a single point is returned unchanged',
+          ls.flank_envelope([(0.0, 10.0)], 45.0, 135.0) == [(0.0, 10.0)])
+
+    print()
+    if FAILED:
+        print('FAILED: %d' % len(FAILED))
+        for f in FAILED:
+            print('   -', f)
+        sys.exit(1)
+    print('All flank envelope tests passed.')
+
+
+if __name__ == '__main__':
+    main()
