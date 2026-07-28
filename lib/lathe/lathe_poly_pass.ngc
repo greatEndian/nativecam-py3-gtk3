@@ -71,7 +71,36 @@ o<lathe_poly_pass> sub
 	(safe approach: retract above stock, rapid back in Z)
 	G0 X[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]
 
-	o<lead_in> if [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
+	(Does the contour trace begin on an ARC? The trace starts at record 2, so)
+	(record 2 is the first move compensation sees - and an arc can neither)
+	(establish compensation nor be programmed from the pre-shifted entry point,)
+	(because its I/K are measured from wherever the machine actually is. Left)
+	(alone this aborts the whole file with "Radius to end of arc differs from)
+	(radius to start" by exactly comp_r. The arc branch below therefore runs the)
+	(lead-in UNDER compensation and lands it on the raw entry point, making the)
+	(straight lead-in itself the compensation entry move - which is what the)
+	(rule actually asks for: a straight feed of at least the nose radius in)
+	(free air. Everything downstream is then identical, and a straight record 2)
+	(never enters this branch at all)
+	(offset side is above the contour: right of travel - 42 - entering from the)
+	(front, left - 41 - entering from the back. The shared o<tip_comp_on> guards)
+	(on a real diameter, so a nose-comp-off pass emits nothing. Resolved here,)
+	(before the approach, because the arc-entry branch turns comp on itself)
+	#<c_side> = 41
+	o<c_sd> if [#<z_dir> GT 0]
+		#<c_side> = 42
+	o<c_sd> endif
+	#<comp_done> = 0
+
+	#<arc_entry> = 0
+	o<ae_chk> if [[#<rec_count> GE 2] AND [#<comp_r> GT 0.0001]]
+		#<_r2_dir> = #[#<pds> + 11]
+		o<ae_dir> if [[#<_r2_dir> EQ 2] OR [#<_r2_dir> EQ 3]]
+			#<arc_entry> = 1
+		o<ae_dir> endif
+	o<ae_chk> endif
+
+	o<lead_in> if [[[#<li_len> GT 0] OR [#<li_rad> GT 0]] AND [#<arc_entry> EQ 0]]
 		(lead-in line direction: unit vector pointing from the entry toward)
 		(the far rapid point - deliberately measured from the fixed Z axis)
 		(here, NOT the local entry-segment direction _line_cos/_line_sin,)
@@ -104,10 +133,17 @@ o<lathe_poly_pass> sub
 
 		G0 Z[#<li_baz> + #<li_len> * #<li_bz>]
 		G0 X[[#<li_bax> + #<li_len> * #<li_bx>] * #<_diameter_mode>]
+		(the lead feed applies to the STRAIGHT lead only - the blend radius is)
+		(already cutting into the part at the contour's own direction, so it)
+		(runs at the pass feed like the rest of the cut. With no lead feed set)
+		(both resolve to the pass feed and the whole approach is one feed)
 		F#<li_feed>
 		o<li_str> if [#<li_len> GT 0]
 			G1 X[#<li_bax> * #<_diameter_mode>] Z#<li_baz>
 		o<li_str> endif
+		o<li_fsw> if [#<li_feed> NE #<pass_feed>]
+			F#<pass_feed>
+		o<li_fsw> endif
 		o<li_arc> if [#<_flt_ok>]
 			(tangent blend from the lead-in line into the toolpath's own)
 			(initial direction, instead of a sharp corner - run raw, before)
@@ -122,6 +158,35 @@ o<lathe_poly_pass> sub
 		o<li_arc> endif
 		F#<pass_feed>
 		#<_cut_current_x> = #<entry_z>
+	o<lead_in> elseif [#<arc_entry>]
+		(the contour starts on an arc - approach along the lead-in line when)
+		(there is one, straight down the Z clearance when there is not, and cut)
+		(that approach with compensation already ON so it becomes the entry)
+		(move. It lands on the RAW entry point: compensation applies the offset)
+		(itself, instead of the pre-shift the straight-entry path above needs)
+		o<ae_len> if [#<li_len> GT 0]
+			#<ae_bz>  = [#<z_dir> * COS[#<li_ang>]]
+			#<ae_bx>  = SIN[#<li_ang>]
+			#<ae_dst> = #<li_len>
+		o<ae_len> else
+			#<ae_bz>  = #<z_dir>
+			#<ae_bx>  = 0
+			#<ae_dst> = #<_pl_z_clear>
+		o<ae_len> endif
+		(the entry move has to be at least the nose radius long or compensation)
+		(refuses it - a short clearance must not be allowed to make it shorter)
+		o<ae_min> if [#<ae_dst> LT [#<comp_r> * 2]]
+			#<ae_dst> = [#<comp_r> * 2]
+		o<ae_min> endif
+
+		G0 Z[#<entry_z> + #<ae_dst> * #<ae_bz>]
+		G0 X[[#<entry_x> + #<ae_dst> * #<ae_bx>] * #<_diameter_mode>]
+		o<tip_comp_on> CALL [#<c_side>]
+		#<comp_done> = 1
+		F#<li_feed>
+		G1 X[#<entry_x> * #<_diameter_mode>] Z#<entry_z>
+		F#<pass_feed>
+		#<_cut_current_x> = #<entry_z>
 	o<lead_in> else
 		(plunge approach, landing on the already-compensated entry point)
 		G0 Z[#<comp_ez> + #<z_dir> * #<_pl_z_clear>]
@@ -132,14 +197,9 @@ o<lathe_poly_pass> sub
 	#<_cut_phys_z> = #<entry_z>
 	#<_cut_phys_x> = #<entry_x>
 
-	(offset side is above the contour: right of travel - 42 - entering from the)
-	(front, left - 41 - entering from the back. The shared o<tip_comp_on> guards)
-	(on a real diameter, so a nose-comp-off pass emits nothing)
-	#<c_side> = 41
-	o<c_sd> if [#<z_dir> GT 0]
-		#<c_side> = 42
-	o<c_sd> endif
-	o<tip_comp_on> CALL [#<c_side>]
+	o<co_1> if [#<comp_done> EQ 0]
+		o<tip_comp_on> CALL [#<c_side>]
+	o<co_1> endif
 
 	(compensation now turns on right at the entry point instead of before the)
 	(lead-in, so trace_lathe's own re-visit of record 1 - a zero-length move -)
@@ -151,7 +211,15 @@ o<lathe_poly_pass> sub
 	o<tip_comp_off> CALL
 
 	o<lead_out> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
-		F#<lo_feed>
+		(the blend radius still leaves the part, so it stays at the pass feed;)
+		(only the straight retreat below runs at the lead-out feed - see the)
+		(matching note on the lead-in above. Both branches emit exactly one F,)
+		(so with no lead feed set this is the same line the pass always emitted)
+		o<lo_fsw> if [#<lo_feed> NE #<pass_feed>]
+			F#<pass_feed>
+		o<lo_fsw> else
+			F#<lo_feed>
+		o<lo_fsw> endif
 
 		(g123_lathe only tracks the RAW programmed endpoint in _cut_phys_x/z,)
 		(not where compensation actually left the tool - invisible when shift_r)
@@ -223,6 +291,9 @@ o<lathe_poly_pass> sub
 			#<end_z>  = #<_flt_t1z>
 		o<lo_arc> endif
 		o<lo_str> if [#<lo_len> GT 0]
+			o<lo_fsw2> if [#<lo_feed> NE #<pass_feed>]
+				F#<lo_feed>
+			o<lo_fsw2> endif
 			G1 X[[#<phys_x> + #<lo_len> * #<lo_bx>] * #<_diameter_mode>] Z[#<end_z> + #<lo_len> * #<lo_bz>]
 		o<lo_str> endif
 		F#<pass_feed>

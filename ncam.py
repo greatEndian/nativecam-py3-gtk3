@@ -2207,10 +2207,18 @@ class Preferences(object):
         config.read(self.pref_file)
 
         if self.ngc_init_str is None :
+            # No path-control word here on purpose. It used to be a hard-coded
+            # 'G64 p0.001' that silently won for the whole file, so the Tool
+            # Change feature's own G61/G61.1/G64/G64 P-Q- setting could only
+            # ever be a correction to it rather than the thing in charge.
+            # Leaving it out means LinuxCNC's own default applies until a
+            # feature says otherwise, and a machine that really does want one
+            # at start-up can still set RS274NGC_STARTUP_CODE in its ini or
+            # the init string in Preferences.
             if self.cat_name in ['mill', 'plasma'] :
-                self.ngc_init_str = 'G17 G40 G49 G90 G92.1 G94 G54 G64 p0.001'
+                self.ngc_init_str = 'G17 G40 G49 G90 G92.1 G94 G54'
             elif self.cat_name == 'lathe' :
-                self.ngc_init_str = 'G18 G40 G49 G90 G92.1 G94 G54 G64 p0.001'
+                self.ngc_init_str = 'G18 G40 G49 G90 G92.1 G94 G54'
 
         self.timeout_value = read_int(config, 'general', 'time_out', 0.300) * 1000
         self.autosave = read_boolean(config, 'general', 'autosave', False)

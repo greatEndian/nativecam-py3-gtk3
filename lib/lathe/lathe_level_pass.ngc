@@ -309,10 +309,17 @@ o<lathe_level_pass> sub
 
 		G0 Z[#<li_baz> + #<_li_leff> * #<li_bz>]
 		G0 X[[#<li_bax> + #<_li_leff> * #<li_bx>] * #<_diameter_mode>]
+		(the lead feed applies to the STRAIGHT lead only - the blend radius is)
+		(already cutting into the part at the pass's own direction, so it runs)
+		(at the pass feed like the rest of the cut. With no lead feed set both)
+		(resolve to the pass feed and the whole approach is one feed)
 		F#<li_feed>
 		o<li_str> if [#<_li_leff> GT 0]
 			G1 X[#<li_bax> * #<_diameter_mode>] Z#<li_baz>
 		o<li_str> endif
+		o<li_fsw> if [#<li_feed> NE #<pass_feed>]
+			F#<pass_feed>
+		o<li_fsw> endif
 		o<li_arc> if [#<_flt_ok>]
 			(tangent blend from the lead-in line into the pass's own)
 			(direction, instead of a sharp corner)
@@ -404,7 +411,15 @@ o<lathe_level_pass> sub
 	o<lead_out> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
 		#<phys_x> = #<level>
 		#<end_z>  = #<z_end_cut>
-		F#<lo_feed>
+		(the blend radius still leaves the part, so it stays at the pass feed;)
+		(only the straight retreat below runs at the lead-out feed. Both)
+		(branches emit exactly one F, so with no lead feed set this is the)
+		(same line the pass always emitted)
+		o<lo_fsw> if [#<lo_feed> NE #<pass_feed>]
+			F#<pass_feed>
+		o<lo_fsw> else
+			F#<lo_feed>
+		o<lo_fsw> endif
 
 		#<_flt_ok> = 0
 		o<lo_geom> if [#<lo_rad> GT 0]
@@ -430,6 +445,9 @@ o<lathe_level_pass> sub
 			#<end_z>  = #<_flt_t1z>
 		o<lo_arc> endif
 		o<lo_str> if [#<_lo_leff> GT 0]
+			o<lo_fsw2> if [#<lo_feed> NE #<pass_feed>]
+				F#<lo_feed>
+			o<lo_fsw2> endif
 			G1 X[[#<phys_x> + #<_lo_leff> * #<lo_bx>] * #<_diameter_mode>] Z[#<end_z> + #<_lo_leff> * #<lo_bz>]
 		o<lo_str> endif
 		F#<pass_feed>

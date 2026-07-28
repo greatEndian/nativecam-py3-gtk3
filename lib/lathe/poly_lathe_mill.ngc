@@ -7,7 +7,11 @@
 (prefin_off : pre-finish pass allowance per side - level roughing stops this far above)
 (the semi-final shape and one contour pass removes it; 0 = no pre-finish pass)
 (x_wall_dir : X wall cut direction in contour passes - 0 with pass, 2 outside to inside)
-(sec_len : Z sectioning length for roughing thin parts - 0 disables)
+(sec_len : Z length of an Artificial section. Kept in the signature for the)
+(         call sites, but nothing here reads it any more - Artificial slicing)
+(         happens at generation time in lathe_sections.py and arrives as the)
+(         #3401+ window table. With Sectioning off it must have no effect at)
+(         all, which is the whole point of it no longer being read here)
 (nose_comp : 1 = add the loaded tool's nose diameter to the contour pass compensation)
 (lead in/out : length, angle degrees from the surface, feed - 0 length disables, 0 feed = pass feed)
 (Author: Fernand Veilleux / Adapted for Lathe)
@@ -200,11 +204,14 @@ o<poly_lathe_mill> sub
         o<wzd> else
                 #<z_dirw> = -1
         o<wzd> endif
-        o<wsec> if [#<sec_len> GT 0]
-                #<w_len> = #<sec_len>
-        o<wsec> else
-                #<w_len> = [ABS[#<e_z> - #<l_z>] + 1]
-        o<wsec> endif
+        (Window length with Sectioning OFF is always the whole profile. sec_len)
+        (used to set it here too, which meant a Z section length left in the)
+        (field kept slicing the pass into fixed-length windows even with the)
+        (Sectioning switch off - the switch appeared to do nothing. sec_len is)
+        (an input to the Artificial mode ONLY, and that is consumed at)
+        (generation time by lathe_sections.py, which emits its slices in the)
+        (#3401+ window table; nothing about it belongs in the off path)
+        #<w_len> = [ABS[#<e_z> - #<l_z>] + 1]
 
         (Sectioning: one unsectioned pass across the full length first, for)
         (levels above the highest edge - "violet" - the largest radius)
