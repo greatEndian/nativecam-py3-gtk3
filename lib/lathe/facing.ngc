@@ -174,15 +174,44 @@ o<facing> sub
 		#<f_bx> = [#<begin_x> + #<_tip_off_x> * #<_diameter_mode>]
 		#<f_ex> = [#<end_x> + #<_tip_off_x> * #<_diameter_mode>]
 
+		(A straight lead-in of at least the nose radius, in free air, is EXACTLY)
+		(what compensation needs to establish itself - so when one is configured)
+		(it becomes the entry move and the finish pass keeps its lead, instead of)
+		(being given the bare run-in. Only the blend RADIUS has to go: an arc)
+		(cannot be the establishing move. Requiring the full nose diameter rather)
+		(than the radius leaves margin over the interpreter's own check.)
+		(Without this the comp modes silently dropped both leads, which left the)
+		(finish pass a different length from the roughing passes that kept theirs)
+		#<f_lead_ok> = 0
+		o<f_lok> if [[#<li_len> GT 0] AND [[#<li_len> * #<_diameter_mode>] GE #<_tip_lead_w>]]
+			#<f_lead_ok> = 1
+		o<f_lok> endif
+
 		o22 repeat [#<finishing_passes>]
-			G0 Z[#<f_cz> + #<_z_clear> * #<z_factor>]
-			G0 X[#<f_bx> + #<f_estab>]
-			G0 Z#<f_cz>
-			o<fnc_on> if [#<n_comp> EQ 1]
-				o<tip_comp_on> CALL [#<f_side>]
-			o<fnc_on> endif
+			o<f_lc> if [#<f_lead_ok>]
+				(rapid to the far end of the lead line, then feed down it -)
+				(that feed is the comp entry, and it lands on the face start)
+				G0 Z[#<f_cz> + #<li_len> * #<f_liz>]
+				G0 X[#<f_bx> + #<li_len> * #<f_lix> * #<_diameter_mode>]
+				o<f_lc_on> if [#<n_comp> EQ 1]
+					o<tip_comp_on> CALL [#<f_side>]
+				o<f_lc_on> endif
+				G1 X#<f_bx> Z#<f_cz>
+			o<f_lc> else
+				G0 Z[#<f_cz> + #<_z_clear> * #<z_factor>]
+				G0 X[#<f_bx> + #<f_estab>]
+				G0 Z#<f_cz>
+				o<fnc_on> if [#<n_comp> EQ 1]
+					o<tip_comp_on> CALL [#<f_side>]
+				o<fnc_on> endif
+			o<f_lc> endif
 			G1 X#<f_ex>
 			o<tip_comp_off> CALL
+			(and the matching straight lead-out, so both ends of the finish pass)
+			(span what the roughing passes span)
+			o<f_loc> if [#<lo_len> GT 0]
+				G1 X[#<f_ex> + #<lo_len> * #<f_lox> * #<_diameter_mode>] Z[#<f_cz> + #<lo_len> * #<f_loz>]
+			o<f_loc> endif
 			G0 Z[#<f_cz> + #<_z_clear> * #<z_factor>]
 		o22 endrepeat
 	o<fnc> else
