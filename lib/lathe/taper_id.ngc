@@ -89,16 +89,31 @@ o<taper_id> sub
 		o<t_ap> if [[#<n_comp> GT 0] AND [#<_tip_lead_w> GT #<_ix_clear>]]
 			#<t_appr> = #<_tip_lead_w>
 		o<t_ap> endif
+		(compensating in CAM: one constant vector offsets the whole wall, so the)
+		(interpreter compensates nothing and its entry rules do not apply. dx goes)
+		(in as a radius because the offset is a true geometric normal while the X)
+		(words here are diameters. Cleared first - these are globals, so a)
+		(CAM-mode feature earlier in the program would otherwise shift this wall)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+		o<tv_cam> if [#<n_comp> EQ 2]
+			o<tip_comp_vec> CALL [#<t_side>] [#<end_z> - #<begin_z>] [[#<begin_x> - #<end_x>] / #<_diameter_mode>] [0]
+		o<tv_cam> endif
+		#<t_sz> = [#<begin_z> + #<_tip_off_z>]
+		#<t_sx> = [#<end_x> + #<_tip_off_x> * #<_diameter_mode>]
+		#<t_ez> = [#<end_z> + #<_tip_off_z>]
+		#<t_ex> = [#<begin_x> + #<_tip_off_x> * #<_diameter_mode>]
+
 		o21 repeat [#<fine_finish>]
-			G0 X[#<end_x> - #<t_appr>] Z[#<begin_z>]
-			o<nc21> if [#<n_comp> GT 0]
+			G0 X[#<t_sx> - #<t_appr>] Z[#<t_sz>]
+			o<nc21> if [#<n_comp> EQ 1]
 				o<tip_comp_on> CALL [#<t_side>]
-				G1 X#<end_x> Z#<begin_z>
+				G1 X#<t_sx> Z#<t_sz>
 			o<nc21> else
-				G0 X#<end_x>
-				G0 Z#<begin_z>
+				G0 X#<t_sx>
+				G0 Z#<t_sz>
 			o<nc21> endif
-			G1 X#<begin_x> Z#<end_z>
+			G1 X#<t_ex> Z#<t_ez>
 			o<tip_comp_off> CALL
 			(with comp on, the round nose trails behind the sharp control point;)
 			(a bare _ix_clear radial pull at the deep corner swings that trailing)
@@ -107,7 +122,7 @@ o<taper_id> sub
 			o<idrt> if [#<n_comp> GT 0]
 				#<id_rtr> = [#<_ix_clear> + #<_tip_lead_w>]
 			o<idrt> endif
-			G0 X[#<begin_x> - #<id_rtr>]
+			G0 X[#<t_ex> - #<id_rtr>]
 		o21 endrepeat
 	o20 endif
 

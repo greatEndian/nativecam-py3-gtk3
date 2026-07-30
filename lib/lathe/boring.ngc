@@ -49,12 +49,11 @@ o<boring> sub
 
 	o20 if [#<finishing_passes> AND #<_tool_usage> NE 1]
 		F#<_finish_feed>
-	o<bnc> if [#<n_comp> GT 0]
-		(compensated finish: the bore wall is a straight Z cut, so nose comp sets)
-		(the correct bore DIAMETER. The radial feed from inside the bore out to)
-		(the wall at the mouth is the establishing move - _ix_clear well over the)
-		(nose radius and in free air. Material is outside the bore, so the side)
-		(inverts OD turning and is proven, not trusted, by the tangency verifier)
+	(nose geometry and comp side are resolved for BOTH compensated modes: native)
+	(hands them to G41.1/G42.1, while In CAM needs the same numbers to offset the)
+	(wall itself. Material is outside the bore, so the side inverts OD turning -)
+	(and it is proven, not trusted, by the tangency verifier)
+	o<bnc_pre> if [#<n_comp> GT 0]
 		o<tip_comp_dia> CALL [0] [#<n_comp>]
 		#<b_side> = 41
 		o<b_sd> if [#<begin_z> LT #<end_z>]
@@ -64,6 +63,13 @@ o<boring> sub
 		o<b_es> if [#<_tip_lead_w> GT #<_ix_clear>]
 			#<b_estab> = #<_tip_lead_w>
 		o<b_es> endif
+	o<bnc_pre> endif
+
+	o<bnc> if [#<n_comp> EQ 1]
+		(compensated finish: the bore wall is a straight Z cut, so nose comp sets)
+		(the correct bore DIAMETER. The radial feed from inside the bore out to)
+		(the wall at the mouth is the establishing move - _ix_clear well over the)
+		(nose radius and in free air)
 		o23 repeat [#<finishing_passes>]
 			G0 Z#<begin_z>
 			G0 X[#<end_x> - #<b_estab>]
@@ -73,6 +79,25 @@ o<boring> sub
 			o<tip_comp_off> CALL
 			G0 X[#<end_x> - #<_ix_clear> - #<_tip_lead_w>]
 		o23 endrepeat
+	o<bnc> elseif [#<n_comp> EQ 2]
+		(In CAM: a constant-X wall travelling in Z, so one vector offsets both)
+		(endpoints and the machine compensates nothing. The retract still clears)
+		(by the nose width - the physical round nose trails the control point in)
+		(this mode exactly as it does under native comp, and a bare _ix_clear pull)
+		(at the deep corner would swing it back into the finished wall)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+		o<tip_comp_vec> CALL [#<b_side>] [#<end_z> - #<begin_z>] [0] [0]
+		#<b_x>  = [#<end_x> + #<_tip_off_x> * #<_diameter_mode>]
+		#<b_bz> = [#<begin_z> + #<_tip_off_z>]
+		#<b_ez> = [#<end_z> + #<_tip_off_z>]
+		o24 repeat [#<finishing_passes>]
+			G0 Z#<b_bz>
+			G0 X[#<b_x> - #<b_estab>]
+			G1 X#<b_x>
+			G1 Z#<b_ez>
+			G0 X[#<b_x> - #<_ix_clear> - #<_tip_lead_w>]
+		o24 endrepeat
 	o<bnc> else
 		G0 X[#<end_x> - #<_ix_clear>]
 		o21 repeat [#<finishing_passes>]

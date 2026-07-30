@@ -141,6 +141,67 @@ def main():
     check('and it does touch the profile, rather than hovering off it',
           worst <= R + 1e-6, 'closest approach %.6f' % worst)
 
+    # --- the per-pass allowance schedule -----------------------------------
+    # These have to agree with what poly_lathe_mill.ngc hands NATIVE
+    # compensation as its D word, or the same settings cut a different part in
+    # the two modes. The .ngc arithmetic they mirror:
+    #   pre-finish  shift = rough_target - final_radius, rough_target being
+    #               final_radius + dirsign*fin_off               -> fin_off
+    #   finish i/n  shift = fin_off * (n - i) / n                -> 0 on the last
+    fin_off, pf_off = 0.5, 0.3
+    sched = ls.cam_pass_offsets(fin_off, pf_off, 3)
+    check('there is one allowance per pass, pre-finish first', len(sched) == 4,
+          str(sched))
+    check('the pre-finish allowance is the finish offset, not finish+pre-finish',
+          abs(sched[0] - fin_off) < 1e-12,
+          'got %.4f, and fin_off+pf_off would be %.4f' % (sched[0],
+                                                          fin_off + pf_off))
+    check('the finish passes step down evenly',
+          all(abs(sched[i] - fin_off * (3 - i) / 3.0) < 1e-12
+              for i in (1, 2, 3)), str(sched[1:]))
+    check('the LAST finish pass lands on the profile with no allowance left',
+          abs(sched[-1]) < 1e-12, 'got %.6f' % sched[-1])
+    check('one finish pass gives one zero-allowance pass',
+          ls.cam_pass_offsets(fin_off, pf_off, 1) == [fin_off, 0.0],
+          str(ls.cam_pass_offsets(fin_off, pf_off, 1)))
+    check('zero finish passes still describes the pre-finish pass',
+          ls.cam_pass_offsets(fin_off, pf_off, 0) == [fin_off])
+
+    # --- refusing is not the same as emitting nothing -----------------------
+    # In CAM mode the machine compensates nothing, so an empty table would mean
+    # tracing the raw profile and cutting undersize by the nose radius with a
+    # backplot that looks right. Every early return must therefore SAY so - the
+    # runtime turns a table-less CAM pass into an (ABORT,).
+    class _StubParam(object):
+        def __init__(self, v):
+            self.v = v
+
+        def get_ngc_value(self):
+            return self.v
+
+    class _StubFeature(object):
+        """Enough of a Feature for build_cam_comp_gcode, with no ncam import."""
+
+        def __init__(self, params):
+            self.params = params
+
+        def get_param(self, name):
+            return self.params.get(name)
+
+    feat = _StubFeature({'param_side': _StubParam('0'),
+                         'param_f_off': _StubParam('0.5'),
+                         'param_f_pass': _StubParam('1'),
+                         'param_pf_on': _StubParam('1'),
+                         'param_pf_off': _StubParam('0.3')})
+    for why, args in (('no nose radius', (0.0, 2)),
+                      ('a nose radius of None', (None, 2)),
+                      ('an out-of-range orientation', (0.4, 0)),
+                      ('orientation 10', (0.4, 10))):
+        out = ls.build_cam_comp_gcode(feat, *args)
+        check('%s is refused out loud, not silently' % why,
+              out.startswith('(WARNING') and '_pl_cam_n' not in out,
+              repr(out[:60]))
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))

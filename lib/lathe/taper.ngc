@@ -87,21 +87,40 @@ o<taper> sub
 		o<t_ap> if [[#<n_comp> GT 0] AND [#<_tip_lead_w> GT #<_x_clear>]]
 			#<t_appr> = #<_tip_lead_w>
 		o<t_ap> endif
-		G0 X[#<end_x> + #<t_appr> + #<finishcut>] Z[#<begin_z>]
+		(compensating in CAM: the wall is a single straight segment, so its)
+		(compensated path is the wall shifted by one constant vector - no)
+		(interpreter comp, and so none of its entry rules either. The wall runs)
+		(from begin_z / end_x to end_z / begin_x; dx is converted to radius)
+		(because the offset is a true geometric normal and X words here are)
+		(diameters. Both offsets are 0 in every other mode, so the same two)
+		(expressions below reproduce the original coordinates exactly)
+		(cleared first: these are globals, so a CAM-mode feature earlier in the)
+		(program would otherwise shift this one's wall as well)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+		o<tv_cam> if [#<n_comp> EQ 2]
+			o<tip_comp_vec> CALL [#<t_side>] [#<end_z> - #<begin_z>] [[#<begin_x> - #<end_x>] / #<_diameter_mode>] [0]
+		o<tv_cam> endif
+		#<t_sz> = [#<begin_z> + #<_tip_off_z>]
+		#<t_sx> = [#<end_x> + #<_tip_off_x> * #<_diameter_mode>]
+		#<t_ez> = [#<end_z> + #<_tip_off_z>]
+		#<t_ex> = [#<begin_x> + #<_tip_off_x> * #<_diameter_mode>]
+
+		G0 X[#<t_sx> + #<t_appr> + #<finishcut>] Z[#<t_sz>]
 		o21 repeat [#<finishing_passes>]
-			G0 X[#<end_x> + #<t_appr>] Z[#<begin_z>]
-			o<nc21> if [#<n_comp> GT 0]
+			G0 X[#<t_sx> + #<t_appr>] Z[#<t_sz>]
+			o<nc21> if [#<n_comp> EQ 1]
 				(comp on above the OD; the radial feed down to the taper start)
 				(is the establishing move, so the wall itself is fully compensated)
 				o<tip_comp_on> CALL [#<t_side>]
-				G1 X#<end_x> Z#<begin_z>
+				G1 X#<t_sx> Z#<t_sz>
 			o<nc21> else
-				G0 X#<end_x>
-				G0 Z#<begin_z>
+				G0 X#<t_sx>
+				G0 Z#<t_sz>
 			o<nc21> endif
-			G1 X#<begin_x> Z#<end_z>
+			G1 X#<t_ex> Z#<t_ez>
 			o<tip_comp_off> CALL
-			G0 X[#<begin_x> + #<_x_clear>]
+			G0 X[#<t_ex> + #<_x_clear>]
 		o21 endrepeat
 	o20 endif
 	

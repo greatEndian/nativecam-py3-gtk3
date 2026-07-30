@@ -158,14 +158,32 @@ o<facing> sub
 		o<f_es> if [[#<_tip_lead_w> * #<_diameter_mode>] GT #<_x_clear>]
 			#<f_estab> = [#<_tip_lead_w> * #<_diameter_mode>]
 		o<f_es> endif
+		(In CAM: the face is one straight radial segment, so a single constant)
+		(vector offsets it and the machine compensates nothing. Cleared first -)
+		(these are globals and a CAM feature earlier in the program would)
+		(otherwise shift this face too. The lead-in/out arcs stay skipped in this)
+		(mode as well: nothing forces that here, since there is no comp entry to)
+		(establish, but offsetting an arc means moving its I/K centre too and)
+		(that is a separate job from offsetting a straight face)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+		o<f_cam> if [#<n_comp> EQ 2]
+			o<tip_comp_vec> CALL [#<f_side>] [0] [[#<end_x> - #<begin_x>] / #<_diameter_mode>] [0]
+		o<f_cam> endif
+		#<f_cz> = [#<cut_z> + #<_tip_off_z>]
+		#<f_bx> = [#<begin_x> + #<_tip_off_x> * #<_diameter_mode>]
+		#<f_ex> = [#<end_x> + #<_tip_off_x> * #<_diameter_mode>]
+
 		o22 repeat [#<finishing_passes>]
-			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
-			G0 X[#<begin_x> + #<f_estab>]
-			G0 Z#<cut_z>
-			o<tip_comp_on> CALL [#<f_side>]
-			G1 X#<end_x>
+			G0 Z[#<f_cz> + #<_z_clear> * #<z_factor>]
+			G0 X[#<f_bx> + #<f_estab>]
+			G0 Z#<f_cz>
+			o<fnc_on> if [#<n_comp> EQ 1]
+				o<tip_comp_on> CALL [#<f_side>]
+			o<fnc_on> endif
+			G1 X#<f_ex>
 			o<tip_comp_off> CALL
-			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
+			G0 Z[#<f_cz> + #<_z_clear> * #<z_factor>]
 		o22 endrepeat
 	o<fnc> else
 		o21 repeat [#<finishing_passes>]

@@ -48,6 +48,18 @@ o<poly_lathe_mill> sub
         (Lathe always G18)
         G18
 
+        (compensating in CAM means the machine compensates NOTHING - the offset)
+        (lives in the path instead. So a missing offset path is not a fallback)
+        (to an uncompensated cut, it is a part turned undersize by the whole)
+        (nose radius with a backplot that looks correct. lathe_sections emits a)
+        (WARNING comment saying which case it hit; stop here rather than cut it)
+        (one path per contour pass, so the table count must cover the pre-finish)
+        (pass plus every finish pass - a short table would leave a later pass)
+        (reading an unset directory slot and tracing from parameter 0)
+        o<cam_req> if [[#<nose_comp> EQ 2] AND [#<_pl_cam_n> LT [#<fin_passes> + 1]]]
+                (ABORT, In CAM nose compensation produced no offset path - see the WARNING comment above in this file. Fix it or set Tool nose comp to Native LinuxCNC.)
+        o<cam_req> endif
+
         (reversed record array is built by the polyline cfg; without it force front-to-back)
         o<rev_chk> if [#<_mill_data_rev> LE 0]
                 #<rough_dir> = 0
@@ -160,6 +172,29 @@ o<poly_lathe_mill> sub
         #<_depth_reached> = 0 (0 disables mill depth-step logic inside trace_lathe)
         #<_cut_current_z> = 0
 
+        (scratch record array for a CAM-offset contour pass, sized to the)
+        (longest of the passes' paths. Allocated HERE, ahead of the roughing)
+        (block, because a finish-only run - op 2 - skips that block entirely and)
+        (still needs somewhere to build its pass. One array, refilled per pass:)
+        (each pass carries its own offset, and cam_load can walk a table)
+        (backwards, so neither several offsets nor both directions need to be)
+        (resident at once. _pl_cam_max is 0 in every other mode, which makes)
+        (c_top equal to the array end the mesh base used to be computed from -)
+        (so native output is unchanged rather than merely equivalent)
+        o<cam_base> if [#<_mill_data_rev> GT 0]
+                #<c_pds> = [#<_mill_data_rev> + #[#<_mill_data_rev>] * 8 + 1]
+        o<cam_base> else
+                #<c_pds> = [#<pds> + #[#<pds>] * 8 + 1]
+        o<cam_base> endif
+        (a record array of N records occupies its count slot plus 8 per record.)
+        (With no CAM pass there is no array at all, so c_top must be c_pds)
+        (exactly - not c_pds + 1 - or the mesh lands one slot further along than)
+        (it used to and native output is no longer the same code)
+        #<c_top> = #<c_pds>
+        o<cam_alloc> if [#<_pl_cam_max> GT 0]
+                #<c_top> = [#<c_pds> + #<_pl_cam_max> * 8 + 1]
+        o<cam_alloc> endif
+
         (roughing: straight level passes stopped at the offset profile,)
         (optionally repeated per Z section window for thin-part rigidity)
         o<rough_00> if [#<op> NE 2]
@@ -189,11 +224,10 @@ o<poly_lathe_mill> sub
         (chosen so it matches the roughing direction, and placed past the end of)
         (the reversed array. The contour passes below keep using r_pds itself,)
         (so they still trace true G2/G3 arcs under dynamic compensation)
-        o<mesh_base> if [#<_mill_data_rev> GT 0]
-                #<m_pds> = [#<_mill_data_rev> + #[#<_mill_data_rev>] * 8 + 1]
-        o<mesh_base> else
-                #<m_pds> = [#<pds> + #[#<pds>] * 8 + 1]
-        o<mesh_base> endif
+        (past the CAM scratch array allocated above, which is itself past the)
+        (reversed array - the mesh is the array that grows without bound, so it)
+        (goes last and cannot collide with anything placed after it)
+        #<m_pds> = #<c_top>
         (safe retract diameter for inside work: back down inside the hole the)
         (tool entered through, clearance below it, never past the spindle axis)
         #<_pl_id_ret> = [#<start_radius> * #<_diameter_mode> - #<_ix_clear>]
@@ -522,7 +556,16 @@ o<poly_lathe_mill> sub
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)
         o<prefin> if [#<prefin_off> GT 0]
-                o<lathe_poly_pass> CALL [#<r_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+                (compensating in CAM: trace pass 0's already-offset path with no)
+                (pass offset at all - the allowance rough_target carries is)
+                (folded into that path's own geometry, so asking cutter comp for)
+                (it as well would apply it twice)
+                o<pf_cam> if [#<nose_comp> EQ 2]
+                        o<cam_load> CALL [#<c_pds>] [0] [#<rough_dir> EQ 1]
+                        o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                o<pf_cam> else
+                        o<lathe_poly_pass> CALL [#<r_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+                o<pf_cam> endif
         o<prefin> endif
         o<rough_00> endif
 
@@ -541,19 +584,35 @@ o<poly_lathe_mill> sub
                         #<fin_i> = [#<fin_i> + 1]
                         #<fin_shift> = [#<dirsign> * #<fin_off> * [#<fin_passes> - #<fin_i>] / #<fin_passes>]
 
+                        (f_rev carries the same choice for the CAM branch: there)
+                        (is one stored offset path per pass and cam_load walks)
+                        (it either way round, so direction is a flag here where)
+                        (native mode picks between two prebuilt arrays)
                         o<fpick> if [#<fin_dir> EQ 1]
                                 #<pass_pds> = #<_mill_data_rev>
+                                #<f_rev>    = 1
                         o<fpick> elseif [#<fin_dir> EQ 2]
                                 o<fpick2> if [[#<fin_i> MOD 2] EQ 1]
                                         #<pass_pds> = #<pds>
+                                        #<f_rev>    = 0
                                 o<fpick2> else
                                         #<pass_pds> = #<_mill_data_rev>
+                                        #<f_rev>    = 1
                                 o<fpick2> endif
                         o<fpick> else
                                 #<pass_pds> = #<pds>
+                                #<f_rev>    = 0
                         o<fpick> endif
 
-                        o<lathe_poly_pass> CALL [#<pass_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+                        (pass fin_i's own offset path - the fin_shift step-down)
+                        (is already baked into each one, so this asks cutter comp)
+                        (for no offset and no nose)
+                        o<fn_cam> if [#<nose_comp> EQ 2]
+                                o<cam_load> CALL [#<c_pds>] [#<fin_i>] [#<f_rev>]
+                                o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                        o<fn_cam> else
+                                o<lathe_poly_pass> CALL [#<pass_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
+                        o<fn_cam> endif
                 o<wh_fin> endwhile
                 F#<_rough_feed>
         o<fin_00> endif

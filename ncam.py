@@ -182,6 +182,12 @@ program_metric = True
 # program and the machine agree, which is every existing project.
 TBL_SCALE = 1.0
 
+# Lathe tool-tip compensation global-default overrides, mirrored from the
+# preferences by Preferences.read() so a cfg <exec> can reach them - it runs
+# against ncam's module namespace and cannot see the Preferences instance.
+TIP_NOSE_DIA = 0.0
+TIP_ORIENT = 0
+
 # Decimal places for a value emitted in inches. Six is the metric convention
 # and gives 0.001 mm there, but the same six in inches is only 0.025 mm, and
 # the roughing loop steps level by level so that error accumulates - measured
@@ -777,6 +783,32 @@ class Tools(object):
         already tells TOOL_TABLE via save_tool_orient.
         """
         return self.get_tool_back_angle(getattr(self, 'saved_tool', 0))
+
+
+def tip_comp_inputs():
+    """(nose radius, orientation) as the generated G-code will resolve them.
+
+    Compensating in CAM has to offset the path at generation time, so it needs
+    the same two numbers lib/lathe/tip_comp_dia.ngc resolves at runtime, by the
+    same rules - the tool table's own D/#5410 and Q/#5413 when it carries them,
+    otherwise the preference overrides. Diverging here would offset the path by
+    one radius while the machine believes another.
+
+    D is scaled by TBL_SCALE: tool-table reads are NOT converted by G20/G21, so
+    an inch program reading a metric table needs it, exactly as the .ngc does.
+
+    Returns (0.0, 0) when neither source knows, which callers must refuse on
+    rather than treat as "no compensation needed".
+    """
+    tn = getattr(TOOL_TABLE, 'saved_tool', 0)
+    nose_r = TOOL_TABLE.get_tool_nose_radius(tn) * TBL_SCALE
+    if nose_r <= 0.0:
+        nose_r = TIP_NOSE_DIA / 2.0
+    orient = TOOL_TABLE.get_tool_orient()
+    if orient <= 0:
+        orient = TIP_ORIENT
+    return nose_r, orient
+
 
 class VKB(object):
 
@@ -2316,6 +2348,11 @@ class Preferences(object):
         # own D/#5410 nose diameter and Q/#5413 orientation)
         self.tip_nose_dia = read_str(config, 'lathe', 'tip_nose_dia', '0.0')
         self.tip_orient = read_str(config, 'lathe', 'tip_orient', '0')
+        # also as module globals: compensating in CAM needs these at generation
+        # time, in a cfg <exec> that can only reach ncam's module namespace
+        global TIP_NOSE_DIA, TIP_ORIENT
+        TIP_NOSE_DIA = get_float(self.tip_nose_dia)
+        TIP_ORIENT = get_int(self.tip_orient)
 
         self.plasma_test_mode = read_sbool(config, 'plasma', 'test_mode', True)
 
@@ -2510,6 +2547,9 @@ class Preferences(object):
             self.default += ("#<_pl_resume_z>             = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
+            self.default += ("#<_pl_cam_dir>             = 0.0\n")
+            self.default += ("#<_pl_cam_n>               = 0.0\n")
+            self.default += ("#<_pl_cam_max>             = 0.0\n")
             self.default += ("#<_pl_side>                = 0.0\n")
             self.default += ("#<_pl_env_base>            = 0.0\n")
             self.default += ("#<_pl_env_count>           = 0.0\n")
@@ -2521,6 +2561,10 @@ class Preferences(object):
             self.default += ("#<_pl_sect_top_dia>         = 0.0\n")
             self.default += ("#<_tip_nose_dia>            = " + self.tip_nose_dia + "\n")
             self.default += ("#<_tip_orient>              = " + self.tip_orient + "\n")
+            self.default += ("#<_tip_cam_r>               = 0.0\n")
+            self.default += ("#<_tip_cam_l>               = 0.0\n")
+            self.default += ("#<_tip_off_z>               = 0.0\n")
+            self.default += ("#<_tip_off_x>               = 0.0\n")
             self.default += ("#<_tip_comp_d>              = 0.0\n")
             self.default += ("#<_tip_comp_l>              = 0.0\n")
             self.default += ("#<_tip_lead_w>              = 0.0\n\n")

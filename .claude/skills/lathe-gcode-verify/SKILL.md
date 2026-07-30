@@ -15,6 +15,25 @@ Verify a change to NativeCAM's lathe G-code generation (`cfg/lathe/*.cfg`, `lib/
 /lathe-gcode-verify --marker "retreat lead-out"       # also assert every marker comment is followed by an arc (catch a silently-dropped fillet)
 ```
 
+## Proving nose compensation
+
+Three scripts, and picking the wrong one wastes a run:
+
+- `prove_tip_comp.py` — the parametric ops (`taper`, `taper_id`, `boring`, `facing`, `radius_od`, `turning`). Their target wall is a formula it rebuilds from a few numbers. Needs the correct `--side` to PASS **and** the wrong `--freeside` to FAIL.
+- `prove_cam_comp.py` — a **polyline**, in either compensation mode. Takes the target profile from `lathe_sections.resolve_points` instead of a retyped `--profile`, and runs its own negative control by offsetting to the opposite side and requiring that to fail.
+  ```bash
+  python3 .claude/skills/lathe-gcode-verify/scripts/prove_cam_comp.py \
+      --ini configs/sim/axis/ncam_demo/lathe-mm.ini --project testing_15_0.xml
+  # ID work: the lead-in/out geometry is a separate question - see below
+  ... --project testing_14_inside.xml --lead-margin 2
+  ```
+- `check_flank_clearance.py` — the roughing flank shadow, a different question entirely (tool *body*, not tip).
+
+Two things learned the hard way here:
+
+- **`check_nose_tangent.prove()` is wrong for a polyline.** It measures each point against its nearest single segment's *infinite line* while calling the point interior within 2% of the segment's ends. A nose legitimately rolling `R√2` past a convex corner still falls inside that window, where the distance to the extended line reads as zero — a false gouge of the full nose radius at every convex corner, which no `--tol` can separate from a real one. `prove_cam_comp.prove_region()` judges against the material *region* instead, with distances clamped to the segments.
+- **Lead-in/lead-out must be judged separately from the contour.** Their geometry comes from the lead parameters, not the compensation. On ID work the ends currently gouge — 0.2929 mm in CAM mode and **1.4929 mm under native compensation** on `testing_14_inside`, against 0.0000 on the contour itself in CAM mode. Folding that into the verdict reports a pre-existing lead problem as a compensation fault; `--lead-margin` reports it instead of judging it. That ID lead clearance is a real open bug, not an artifact.
+
 ## What this replaces
 
 Before this skill existed, verifying a lathe G-code change meant hand-writing a throwaway Python script every time: shelling out to `rs274`, parsing `STRAIGHT_FEED`/`STRAIGHT_TRAVERSE`/`ARC_FEED` canon lines, computing tangent dot products, checking arc presence after a comment marker — and re-deriving the "never point rs274 at the live var file" rule from scratch each session. That work is now in `scripts/parse_rs274.py` and `scripts/check_tangent.py`.

@@ -1327,31 +1327,76 @@ def _corner_arc(vertex, start, end, radius):
             for k in range(1, n + 1)]
 
 
-# Two offset tables, because the pre-finish and finish passes carry different
-# offsets and each needs its own already-offset path. Native mode gets the pass
-# offset from cutter comp's D word; in CAM mode it is folded into the geometry,
-# so the two passes cannot share one table.
-CAM_PREFIN_BASE = 3700
-CAM_FINISH_BASE = 3900
+# One offset path per contour pass, because each pass carries a different
+# allowance. Native mode gets that allowance from cutter comp's D word, so every
+# pass can trace one shared record array; in CAM mode the allowance is part of
+# the geometry, so each pass needs its own already-offset path.
+#
+# Laid out as a DIRECTORY rather than at fixed bases per pass: an arc-heavy
+# profile densifies into far more points than any fixed window would hold, and
+# overrunning into the next table is silent - the pass would trace a path made
+# half of one offset and half of another. So the base of each table is computed
+# here, where the point counts are actually known, and published in the
+# directory for the runtime to read.
+#
+#   #[dir + 2k]     pointer to pass k's first point
+#   #[dir + 2k + 1] pass k's point count
+#   #[ptr + 2i]     point i, Z          #[ptr + 2i + 1]  point i, radius
+#
+# Pass 0 is the pre-finish pass; 1..n are the finish passes in order.
+CAM_BASE = 3700
+# Numbered parameters above roughly #5060 are LinuxCNC's own - #5061+ are probe
+# results, #5161+ home positions, #5221+ the coordinate-system offsets, #5401+
+# the tool table. Writing a table through them would corrupt live machine state,
+# so a profile that does not fit under this refuses instead.
+CAM_TOP = 5000
+
+
+def cam_pass_offsets(fin_off, pf_off, fin_passes):
+    """The allowance each contour pass runs at, pass 0 being the pre-finish.
+
+    These must match what poly_lathe_mill.ngc hands native compensation as its
+    D word, or CAM mode cuts a different part from native mode at the same
+    settings:
+
+    - pre-finish: rough_target - final_radius, and rough_target is
+      final_radius + dirsign*fin_off, so the allowance is fin_off. NOT
+      fin_off + pf_off - pf_off is what the roughing LEVELS stop short by
+      (step_target), which the pre-finish pass then cuts away.
+    - finish pass i of n: fin_off * (n - i) / n, stepping down to exactly 0 on
+      the last pass, which is what puts it on the finished profile.
+
+    Signs are not carried here - offset_contour takes the direction as `side`
+    and the allowance as a magnitude.
+    """
+    n = max(int(fin_passes), 0)
+    return [fin_off] + [fin_off * (n - i) / float(n) for i in range(1, n + 1)]
 
 
 def build_cam_comp_gcode(polyline_feature, nose_r, orient):
-    """Literal G-code with the CAM-offset contours, or '' if not applicable.
+    """Literal G-code with the CAM-offset contours, or a warning comment.
 
     Emitted as point tables the same way build_flank_gcode emits the flank
-    envelope. Two of them: the pre-finish pass and the finish pass carry
-    different offsets, and in CAM mode that offset is part of the path rather
-    than a D word, so they cannot share one.
+    envelope, one per contour pass - see the layout note above.
 
-    The runtime gate is _pl_cam_count > 0, so '' leaves every pass exactly as it
-    was. Returns '' when the mode is not In CAM, when there is no nose to
-    compensate, or when the profile cannot be resolved.
+    Never returns a silent '': in CAM mode the machine compensates nothing, so
+    an empty table means the pass would trace the UNCOMPENSATED profile and cut
+    the part undersize by the nose radius, with a backplot that looks right.
+    Every early return therefore emits a warning comment and leaves
+    _pl_cam_n at 0, which poly_lathe_mill turns into an (ABORT,).
     """
+    def _refuse(why):
+        return ('(WARNING - In CAM nose compensation: %s. The pass cannot run '
+                'uncompensated, so the program will abort.)' % why)
+
     if nose_r is None or nose_r <= EPS:
-        return ''
+        return _refuse('no tool nose radius is known - set D in the tool table '
+                       'or the nose diameter override in the Tool Change')
+    if not 0 < int(orient) < len(NOSE_OFFSET):
+        return _refuse('tool orientation %s is not one of 1-9' % orient)
     points = resolve_points(polyline_feature)
     if not points or len(points) < 2:
-        return ''
+        return _refuse('the profile does not resolve to at least two points')
 
     s_param = polyline_feature.get_param('param_side')
     side = -1 if (s_param is not None
@@ -1362,21 +1407,41 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient):
         return _to_float(p.get_ngc_value()) if p is not None else 0.0
 
     fin_off = _off('param_f_off')
-    pf_on = _off('param_pf_on')
-    pf_off = _off('param_pf_off') * (1 if pf_on else 0)
+    pf_off = _off('param_pf_off') * (1 if _off('param_pf_on') else 0)
+    offsets = cam_pass_offsets(fin_off, pf_off, _off('param_f_pass'))
+
+    paths = [offset_contour(points, nose_r + extra, int(orient), side)
+             for extra in offsets]
+    if any(len(p) < 2 for p in paths):
+        return _refuse('the offset path collapsed - the nose radius is too '
+                       'large for this profile')
+
+    # directory first, then the points; the base of each table depends on how
+    # long every table before it turned out to be
+    ptr = CAM_BASE + 2 * len(paths)
+    ptrs = []
+    for p in paths:
+        ptrs.append(ptr)
+        ptr += 2 * len(p)
+    if ptr > CAM_TOP:
+        return _refuse('the offset path needs %d parameter slots and only %d '
+                       'are safe to use - reduce the number of finish passes, '
+                       'or use Native LinuxCNC' % (ptr - CAM_BASE,
+                                                   CAM_TOP - CAM_BASE))
 
     lines = ['(nose compensation done in CAM: these are already-offset control)',
-             '(point paths, so the machine runs uncompensated - see _tip_cam)']
-    for base, extra, tag in ((CAM_PREFIN_BASE, fin_off + pf_off, 'pre-finish'),
-                             (CAM_FINISH_BASE, fin_off, 'finish')):
-        env = offset_contour(points, nose_r + extra, orient, side)
-        lines.append('(%s pass, offset %s + nose %s)'
-                     % (tag, _fmt(extra), _fmt(nose_r)))
-        lines.append('#<_pl_cam_%s> = %d' % ('pf_n' if base == CAM_PREFIN_BASE
-                                             else 'fin_n', len(env)))
-        for i, (z, x) in enumerate(env):
-            slot = base + i * 2
-            lines.append('#%d = %s' % (slot, _fmt(z)))
-            lines.append('#%d = %s' % (slot + 1, _fmt(x / DIAMETER_MODE)))
-    lines.append('#<_pl_cam_count> = %d' % 1)
+             '(point paths, so the machine runs uncompensated - see _tip_cam)',
+             '#<_pl_cam_dir> = %d' % CAM_BASE,
+             '#<_pl_cam_n>   = %d' % len(paths),
+             '#<_pl_cam_max> = %d' % max(len(p) for p in paths)]
+    for k, (p, base) in enumerate(zip(paths, ptrs)):
+        lines.append('#%d = %d' % (CAM_BASE + 2 * k, base))
+        lines.append('#%d = %d' % (CAM_BASE + 2 * k + 1, len(p)))
+    for k, (p, base) in enumerate(zip(paths, ptrs)):
+        lines.append('(%s, allowance %s + nose %s, %d points)'
+                     % ('pre-finish pass' if k == 0 else 'finish pass %d' % k,
+                        _fmt(offsets[k]), _fmt(nose_r), len(p)))
+        for i, (z, x) in enumerate(p):
+            lines.append('#%d = %s' % (base + 2 * i, _fmt(z)))
+            lines.append('#%d = %s' % (base + 2 * i + 1, _fmt(x / DIAMETER_MODE)))
     return '\n'.join(lines)

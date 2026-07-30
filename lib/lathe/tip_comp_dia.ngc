@@ -28,25 +28,39 @@ o<tip_comp_dia> sub
 	(radial distance of the full nose diameter - twice the radius - a safe margin)
 	#<_tip_lead_w> = [#<tc_nd> * #<_diameter_mode>]
 
+	(orientation: table #5413 when known, else the override _tip_orient.)
+	(Resolved before the branch because CAM mode needs it too - it offsets)
+	(the path itself and so needs the very geometry native mode hands to L)
+	o<or_src> if [#5413 GT 0]
+		#<tc_or> = #5413
+	o<or_src> else
+		#<tc_or> = #<_tip_orient>
+	o<or_src> endif
+
 	o<n_on> if [#<nose_on> EQ 2]
 		(compensation done in CAM: the toolpath is already offset, so the)
 		(machine must not compensate at all - not even the pass offset, which)
 		(is folded into that same offset path. tip_comp_on guards on a real)
 		(diameter, so a zero here makes it emit nothing.)
+		(_tip_comp_d MUST stay 0: the polyline reads comp_d back as comp_r and)
+		(relies on it being zero to stop pre-shifting its own entry point onto)
+		(a path that is already offset. The real nose geometry therefore travels)
+		(in its own pair of globals, for the ops that offset a wall analytically)
 		#<_tip_comp_d> = 0
 		#<_tip_comp_l> = 0
 		#<_tip_cam> = 1
+		#<_tip_cam_r> = [#<tc_nd> / 2]
+		#<_tip_cam_l> = #<tc_or>
 	o<n_on> elseif [#<nose_on> GT 0]
 		#<_tip_cam> = 0
+		#<_tip_cam_r> = 0
+		#<_tip_cam_l> = 0
 		#<_tip_comp_d> = [2 * #<extra_r> + #<tc_nd>]
-		(orientation: table #5413 when known, else the override _tip_orient)
-		o<or_src> if [#5413 GT 0]
-			#<_tip_comp_l> = #5413
-		o<or_src> else
-			#<_tip_comp_l> = #<_tip_orient>
-		o<or_src> endif
+		#<_tip_comp_l> = #<tc_or>
 	o<n_on> else
 		#<_tip_cam> = 0
+		#<_tip_cam_r> = 0
+		#<_tip_cam_l> = 0
 		#<_tip_comp_d> = [2 * #<extra_r>]
 		#<_tip_comp_l> = 0
 	o<n_on> endif

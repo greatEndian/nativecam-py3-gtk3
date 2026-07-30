@@ -1,0 +1,98 @@
+(where native compensation WOULD have put the tool - as a vector, for the ops)
+(that compensate in CAM by offsetting a straight wall analytically instead of)
+(asking the interpreter for G41.1/G42.1)
+()
+(A straight wall's compensated path is the wall shifted by a CONSTANT vector, so)
+(one addition to each endpoint reproduces exactly what native comp computes -)
+(which is the definition of correct here, because native comp is already proven)
+(per op by the tangency verifier. For a straight wall the two modes should)
+(therefore land on identical coordinates, and that is the acceptance test.)
+()
+(The convention below was measured with rs274, not derived on paper. With u the)
+(unit travel direction in Z and radius:)
+(   G42 offsets along  u_x, -u_z   and G41 along  -u_x, u_z)
+(Verified two ways: a -Z cut at radius 40 came out at 39.6 under G41.1 and 40.4)
+(under G42.1. A -X face at Z-5 came out at Z-4.6 under G41.1 and Z-5.4 under)
+(G42.1 - both with D0.8 L0, so the shift is the pure normal with no orientation)
+(term. Getting this sign backwards puts the wall a full nose diameter out.)
+()
+(The orientation term is LinuxCNC's own lathe_shapes table, the same one)
+(lathe_sections.NOSE_OFFSET carries. It is a RAW vector: entries 1-4 have)
+(magnitude R*SQRT2 because the imaginary sharp tip of a 90 degree insert)
+(corner sits SQRT2*R from the round nose centre. Normalising it to R would)
+(mis-place the tool - CLAUDE.md flags this specifically.)
+()
+(CALL side[1] dz[2] dx[3] extra_r[4])
+(side    : 41 or 42, the side the op would have compensated on)
+(dz, dx  : travel direction along the wall - any length, normalised here.)
+(          dx in RADIUS units, not as an X word)
+(extra_r : per-side allowance folded in, 0 for a finish wall)
+(Sets #<_tip_off_z> / #<_tip_off_x>, in radius units, to ADD to a programmed)
+(point. Both are 0 when there is no nose to compensate, so a caller can apply)
+(them unconditionally and get its original path back.)
+o<tip_comp_vec> sub
+	#<tv_side>  = #1
+	#<tv_dz>    = #2
+	#<tv_dx>    = #3
+	#<tv_extra> = #4
+
+	#<_tip_off_z> = 0
+	#<_tip_off_x> = 0
+
+	#<tv_len> = SQRT[[#<tv_dz> * #<tv_dz>] + [#<tv_dx> * #<tv_dx>]]
+	o<tv_deg> if [#<tv_len> LT 0.000001]
+		(a zero-length wall has no direction to take a normal from)
+		o<tip_comp_vec> return
+	o<tv_deg> endif
+
+	#<tv_r> = [#<_tip_cam_r> + #<tv_extra>]
+	o<tv_none> if [#<tv_r> LT 0.000001]
+		o<tip_comp_vec> return
+	o<tv_none> endif
+
+	#<tv_uz> = [#<tv_dz> / #<tv_len>]
+	#<tv_ux> = [#<tv_dx> / #<tv_len>]
+
+	(the normal, on the side the op compensates to)
+	o<tv_sd> if [#<tv_side> EQ 42]
+		#<tv_nz> = #<tv_ux>
+		#<tv_nx> = [-#<tv_uz>]
+	o<tv_sd> else
+		#<tv_nz> = [-#<tv_ux>]
+		#<tv_nx> = #<tv_uz>
+	o<tv_sd> endif
+
+	(orientation offset in Z and radius, from LinuxCNC's lathe_shapes. That)
+	(table lists X then Z, so each pair is written the other way round here)
+	#<tv_oz> = 0
+	#<tv_ox> = 0
+	o<tv_or> if [#<_tip_cam_l> EQ 1]
+		#<tv_oz> = -1
+		#<tv_ox> = 1
+	o<tv_or> elseif [#<_tip_cam_l> EQ 2]
+		#<tv_oz> = 1
+		#<tv_ox> = 1
+	o<tv_or> elseif [#<_tip_cam_l> EQ 3]
+		#<tv_oz> = 1
+		#<tv_ox> = -1
+	o<tv_or> elseif [#<_tip_cam_l> EQ 4]
+		#<tv_oz> = -1
+		#<tv_ox> = -1
+	o<tv_or> elseif [#<_tip_cam_l> EQ 5]
+		#<tv_oz> = -1
+		#<tv_ox> = 0
+	o<tv_or> elseif [#<_tip_cam_l> EQ 6]
+		#<tv_oz> = 0
+		#<tv_ox> = 1
+	o<tv_or> elseif [#<_tip_cam_l> EQ 7]
+		#<tv_oz> = 1
+		#<tv_ox> = 0
+	o<tv_or> elseif [#<_tip_cam_l> EQ 8]
+		#<tv_oz> = 0
+		#<tv_ox> = -1
+	o<tv_or> endif
+
+	(control point = wall + half_D*normal - R*orientation, half_D = R + extra)
+	#<_tip_off_z> = [[#<tv_r> * #<tv_nz>] - [#<_tip_cam_r> * #<tv_oz>]]
+	#<_tip_off_x> = [[#<tv_r> * #<tv_nx>] - [#<_tip_cam_r> * #<tv_ox>]]
+o<tip_comp_vec> endsub
