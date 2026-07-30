@@ -327,7 +327,8 @@ def _fit(tp, stock, plane, width, height, margin):
     return s, ox, oy
 
 
-def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10):
+def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
+                  view=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -345,6 +346,16 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10):
         _centre_text(cr, width, height, tp.error or 'nothing to show')
         return
     s, ox, oy = fit
+    if view is not None:
+        # zoom about the widget centre and then translate: the pane keeps
+        # showing whatever was in the middle as the scale changes, which is
+        # what makes scroll-to-zoom feel like it is zooming rather than
+        # sliding the drawing off the edge
+        cxw, cyw = width / 2.0, height / 2.0
+        s2 = s * view.scale
+        ox = cxw + (ox - cxw) * view.scale + view.dx
+        oy = cyw + (oy - cyw) * view.scale + view.dy
+        s = s2
     ia, ib = _plane_indices(plane)
 
     def pt(p):
@@ -394,3 +405,48 @@ def _centre_text(cr, width, height, text):
     ext = cr.text_extents(text)
     cr.move_to(max((width - ext.width) / 2.0, 4), height / 2.0)
     cr.show_text(text)
+
+
+class View(object):
+    """Zoom and pan on top of the fit-to-content transform.
+
+    Kept as a plain object with no GTK in it so the transform can be tested
+    without a display. scale 1.0 with no offset is exactly the fitted view,
+    which is what "reset" restores and what the pane starts in.
+    """
+
+    MIN, MAX = 0.05, 200.0
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.scale = 1.0
+        self.dx = 0.0
+        self.dy = 0.0
+
+    @property
+    def fitted(self):
+        return (abs(self.scale - 1.0) < 1e-9
+                and abs(self.dx) < 1e-9 and abs(self.dy) < 1e-9)
+
+    def zoom_at(self, factor, px, py, width, height):
+        """Zoom by `factor` keeping the point under (px, py) still.
+
+        Anchoring on the pointer is the whole difference between zooming and
+        merely scaling: without it the feature being examined slides away
+        exactly when it is being looked at.
+        """
+        new = max(self.MIN, min(self.MAX, self.scale * factor))
+        if new == self.scale:
+            return
+        f = new / self.scale
+        cx, cy = width / 2.0, height / 2.0
+        # the pointer, expressed relative to the centre, has to map to itself
+        self.dx = px - cx - (px - cx - self.dx) * f
+        self.dy = py - cy - (py - cy - self.dy) * f
+        self.scale = new
+
+    def pan(self, ddx, ddy):
+        self.dx += ddx
+        self.dy += ddy

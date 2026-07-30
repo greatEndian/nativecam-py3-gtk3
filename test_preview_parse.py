@@ -175,6 +175,8 @@ M2
 
     shutil.rmtree(d, ignore_errors=True)
 
+    test_view()
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
@@ -183,6 +185,63 @@ M2
         sys.exit(1)
     print('Preview parser behaves.')
 
+def test_view():
+    """The zoom/pan transform, headlessly.
+
+    Pointer-anchored zoom is the difference between zooming and merely scaling:
+    without the anchor the feature under the cursor slides away exactly when it
+    is being looked at. That is checked here by mapping a point through the
+    same expression draw_toolpath uses and requiring it to stay put.
+    """
+    W, H = 400.0, 300.0
+
+    def screen(v, ox, oy, s, wx, wy):
+        """Where world (wx, wy) lands, mirroring draw_toolpath's transform."""
+        cx, cy = W / 2.0, H / 2.0
+        s2 = s * v.scale
+        ox2 = cx + (ox - cx) * v.scale + v.dx
+        oy2 = cy + (oy - cy) * v.scale + v.dy
+        return wx * s2 + ox2, wy * s2 + oy2
+
+    v = P.View()
+    check('a fresh view is the fitted view', v.fitted)
+
+    # a world point that currently sits under the pointer must stay there
+    ox, oy, s = 40.0, 25.0, 3.0
+    px, py = 275.0, 190.0
+    wx, wy = (px - ox) / s, (py - oy) / s          # world point under (px,py)
+    v.zoom_at(1.15 ** 4, px, py, W, H)
+    sx, sy = screen(v, ox, oy, s, wx, wy)
+    check('zoom keeps the point under the pointer still',
+          abs(sx - px) < 1e-6 and abs(sy - py) < 1e-6,
+          'moved to (%.4f, %.4f) from (%.1f, %.1f)' % (sx, sy, px, py))
+    check('and the scale actually changed', v.scale > 1.0, 'scale %.4f' % v.scale)
+    check('a zoomed view no longer reports as fitted', not v.fitted)
+
+    # zooming out by the same amount returns to the fitted view
+    v2 = P.View()
+    v2.zoom_at(2.0, 111.0, 77.0, W, H)
+    v2.zoom_at(0.5, 111.0, 77.0, W, H)
+    check('zoom in then out about the same point returns to fit',
+          v2.fitted, 'scale %.6f dx %.6f dy %.6f' % (v2.scale, v2.dx, v2.dy))
+
+    # limits, so a stray touchpad gesture cannot lose the drawing entirely
+    v3 = P.View()
+    for _ in range(400):
+        v3.zoom_at(2.0, 200.0, 150.0, W, H)
+    check('zoom is clamped at the top', v3.scale <= P.View.MAX + 1e-9,
+          'scale %.4f' % v3.scale)
+    for _ in range(800):
+        v3.zoom_at(0.5, 200.0, 150.0, W, H)
+    check('zoom is clamped at the bottom', v3.scale >= P.View.MIN - 1e-9,
+          'scale %.6f' % v3.scale)
+
+    # pan then reset
+    v4 = P.View()
+    v4.pan(30.0, -12.0)
+    check('pan moves the view', not v4.fitted)
+    v4.reset()
+    check('reset restores the fitted view', v4.fitted)
 
 if __name__ == '__main__':
     main()

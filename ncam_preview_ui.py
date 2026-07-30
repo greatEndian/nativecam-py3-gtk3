@@ -23,6 +23,7 @@ import threading
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk as gtk      # noqa: E402
+from gi.repository import Gdk            # noqa: E402
 from gi.repository import GLib            # noqa: E402
 
 import ncam_preview                        # noqa: E402
@@ -39,14 +40,28 @@ class PreviewPane(object):
         # a Workpiece the operator has since edited.
         self.stock_cb = stock_cb
         self.toolpath = ncam_preview.Toolpath()
+        self._last_status = ''
         self._busy = False
         self._pending = None
 
         self.widget = gtk.Notebook()
         self.widget.set_scrollable(True)
 
+        self.view = ncam_preview.View()
         self.area = gtk.DrawingArea()
         self.area.connect('draw', self._on_draw)
+        # GTK3 does not deliver these to a DrawingArea unless they are asked
+        # for explicitly - the same omission the treeviews had to fix for the
+        # scroll wheel
+        self.area.add_events(Gdk.EventMask.SCROLL_MASK
+                             | Gdk.EventMask.SMOOTH_SCROLL_MASK
+                             | Gdk.EventMask.BUTTON_PRESS_MASK
+                             | Gdk.EventMask.BUTTON_RELEASE_MASK
+                             | Gdk.EventMask.BUTTON1_MOTION_MASK)
+        self.area.connect('scroll-event', self._on_scroll)
+        self.area.connect('button-press-event', self._on_button)
+        self.area.connect('motion-notify-event', self._on_motion)
+        self._drag = None
         self.widget.append_page(self.area, gtk.Label(label=_('Plot')))
 
         self.buffer = gtk.TextBuffer()
@@ -108,7 +123,60 @@ class PreviewPane(object):
             self.buffer.set_text(str(e))
 
     def _set_status(self, text):
-        self.status.set_markup('<small>%s</small>' % GLib.markup_escape_text(text))
+        # base text and displayed text are kept apart: _show_zoom appends a
+        # zoom suffix, and writing that back would compound it on every scroll
+        self._last_status = text
+        self._render_status()
+
+    def _render_status(self):
+        text = self._last_status
+        if not self.view.fitted:
+            text = '%s  -  zoom %.0f%%, double-click to fit' % (
+                text, self.view.scale * 100.0)
+        self.status.set_markup('<small>%s</small>'
+                               % GLib.markup_escape_text(text))
+
+    # -- zoom and pan -------------------------------------------------------
+    def _on_scroll(self, area, ev):
+        d = ev.direction
+        if d == Gdk.ScrollDirection.SMOOTH:
+            # a touchpad reports fractions; the sign is what matters
+            step = -ev.delta_y
+        elif d == Gdk.ScrollDirection.UP:
+            step = 1.0
+        elif d == Gdk.ScrollDirection.DOWN:
+            step = -1.0
+        else:
+            return False
+        if abs(step) < 1e-6:
+            return False
+        alloc = area.get_allocation()
+        self.view.zoom_at(1.15 ** step, ev.x, ev.y, alloc.width, alloc.height)
+        area.queue_draw()
+        self._show_zoom()
+        return True
+
+    def _on_button(self, area, ev):
+        if ev.type == Gdk.EventType._2BUTTON_PRESS:
+            # double click re-fits, so there is always a way back from a lost
+            # view without hunting for a button
+            self.view.reset()
+            area.queue_draw()
+            self._show_zoom()
+            return True
+        self._drag = (ev.x, ev.y)
+        return True
+
+    def _on_motion(self, area, ev):
+        if self._drag is None:
+            return False
+        self.view.pan(ev.x - self._drag[0], ev.y - self._drag[1])
+        self._drag = (ev.x, ev.y)
+        area.queue_draw()
+        return True
+
+    def _show_zoom(self):
+        self._render_status()
 
     # -- drawing ------------------------------------------------------------
     def _on_draw(self, area, cr):
@@ -120,7 +188,8 @@ class PreviewPane(object):
             except Exception:
                 stock = None
         ncam_preview.draw_toolpath(cr, alloc.width, alloc.height,
-                                   self.toolpath, self.plane, stock)
+                                   self.toolpath, self.plane, stock,
+                                   view=self.view)
         return False
 
 
