@@ -2256,6 +2256,10 @@ class Preferences(object):
             self.sub_hdrs_in_tv1 = read_boolean(config, 'layout', 'subheaders_in_master', False)
             self.hide_value_column = read_boolean(config, 'layout', 'hide_value_column', False)
             self.autorefresh = read_boolean(config, 'layout', 'autorefresh', False)
+            # does the Send button regenerate before loading? Default False -
+            # "send" honestly means "load what is on disk", and Regenerate is
+            # its own button now
+            self.send_regenerates = read_boolean(config, 'layout', 'send_regenerates', False)
             treeview_icon_size = read_int(config, 'icons_size', 'treeview', 28)
             add_menu_icon_size = read_int(config, 'icons_size', 'add_menu', 24)
             menu_icon_size = read_int(config, 'icons_size', 'menu', 4)
@@ -2932,7 +2936,8 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
             tb.set_can_focus(False)
             
             items = [
-                ('Build', 'gtk-execute'),
+                ('Regen', 'gtk-execute'),
+                ('Send', 'gtk-jump-to'),
                 None,
                 ('Add', 'gtk-add'),
                 ('Duplicate', 'gtk-copy'),
@@ -2956,7 +2961,15 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
                 else:
                     name, stock = item
                     act = self._actions.get(name) or self.action_group.get_action(name)
-                    ti = gtk.ToolButton()
+                    if name == 'Send' :
+                        # Send carries the radio that decides whether it
+                        # regenerates first, so it is a MenuToolButton - the
+                        # same widget the Contour/Primitives toolbar menus use.
+                        ti = gtk.MenuToolButton()
+                        ti.set_menu(self.create_send_mode_menu())
+                        self.send_tool_button = ti
+                    else :
+                        ti = gtk.ToolButton()
                     ti.set_action_name("app." + name)
                     ti.set_icon_name(stock)
                     tooltip = getattr(act, '_tooltip', None) or (hasattr(act, 'get_tooltip') and act.get_tooltip())

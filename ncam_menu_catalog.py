@@ -248,6 +248,15 @@ class NCamMenuCatalogMixin:
         self.mi_chunits = self._create_menu_item(self.actionChUnits)
         menu_utils.append(self.mi_chunits)
         menu_utils.append(self._create_menu_item(self.actionAutoRefresh))
+
+        # the same Send radio that hangs off the toolbar button, mirrored here
+        # so it is discoverable from the menus too. One shared group would tie
+        # two menus' lifetimes together, so this builds its own and the two
+        # stay in step through _set_send_mode
+        mi_send = gtk.MenuItem.new_with_label(_('Send button'))
+        mi_send.set_submenu(self.create_send_mode_menu())
+        menu_utils.append(mi_send)
+
         menu_utils.append(gtk.SeparatorMenuItem())
         menu_utils.append(self._create_menu_item(self.actionLoadTools))
         menu_utils.append(gtk.SeparatorMenuItem())

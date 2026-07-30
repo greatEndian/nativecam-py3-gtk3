@@ -141,8 +141,118 @@ class NCamAppActionsMixin:
                              % {'s': tdir, 'd': srcdir, 'c': err})
 
 
-    def action_build(self, *arg) :
-        self.autorefresh_call()
+    def action_regen(self, *arg) :
+        """Regenerate ncam.ngc and nothing else.
+
+        Safe to press while a program is loaded or running: it writes the file
+        and refreshes NativeCAM's own preview, and never calls into
+        linuxcnc.command(), so the machine's loaded program is untouched.
+        """
+        fname = self.write_ngc()
+        if fname is not None :
+            self.refresh_preview(fname)
+        self._restore_focus()
+
+    def action_send(self, *arg) :
+        """Load ncam.ngc into LinuxCNC.
+
+        Whether this regenerates first is the operator's choice - the radio on
+        this button's dropdown. Sending the file on disk is the default because
+        it is the honest reading of "send": what LinuxCNC gets is what you
+        already looked at. The other mode exists so a single press can do both.
+        """
+        fname = None
+        if getattr(self, 'send_regenerates', False) :
+            fname = self.write_ngc()
+            if fname is None :
+                return
+            self.refresh_preview(fname)
+        self.send_to_linuxcnc(fname)
+        self._restore_focus()
+
+    def refresh_preview(self, fname = None) :
+        """Rebuild NativeCAM's own toolpath preview, when there is one.
+
+        A no-op until the preview pane exists, so the button split can land and
+        be used on its own.
+        """
+        pane = getattr(self, 'preview_pane', None)
+        if pane is not None :
+            try :
+                pane.refresh(fname)
+            except Exception as e :
+                print(_('Preview: could not refresh: %s') % str(e))
+
+    def create_send_mode_menu(self) :
+        """The radio group on the Send button's dropdown.
+
+        Two real radio items rather than a checkbox, because the two modes are
+        mutually exclusive and the operator should be able to see which one is
+        armed without pressing anything.
+        """
+        menu = gtk.Menu()
+        cur = getattr(self, 'send_regenerates', False)
+        # this is built once per place it appears - toolbar dropdown and
+        # Utilities menu - and every copy is kept, so selecting in one updates
+        # the other. Keeping only the last would leave the two disagreeing.
+        if not hasattr(self, 'send_mode_groups') :
+            self.send_mode_groups = []
+        items = {}
+        first = None
+        for regen, label in ((False, _('Send the file on disk')),
+                             (True, _('Regenerate, then send'))) :
+            mi = gtk.RadioMenuItem.new_with_label([], label)
+            if first is None :
+                first = mi
+            else :
+                mi.join_group(first)
+            mi.set_active(regen == cur)
+            mi._handler = mi.connect('toggled', self._on_send_mode_toggled, regen)
+            menu.append(mi)
+            items[regen] = mi
+        self.send_mode_groups.append(items)
+        menu.show_all()
+        return menu
+
+    def _on_send_mode_toggled(self, item, regenerates) :
+        if item.get_active() :
+            self._set_send_mode(regenerates)
+
+    def _sync_send_mode_items(self) :
+        """Put every radio copy on the current mode without re-entering."""
+        cur = getattr(self, 'send_regenerates', False)
+        for items in getattr(self, 'send_mode_groups', []) :
+            mi = items.get(cur)
+            if mi is not None and not mi.get_active() :
+                mi.handler_block(mi._handler)
+                mi.set_active(True)
+                mi.handler_unblock(mi._handler)
+
+    def _save_send_mode(self) :
+        cfg_file = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, CONFIG_FILE)
+        parser = ConfigParser.ConfigParser()
+        parser.read(cfg_file)
+        if not parser.has_section('layout'):
+            parser.add_section('layout')
+        parser.set('layout', 'send_regenerates', str(bool(self.send_regenerates)))
+        with open(cfg_file, 'w') as configfile:
+            parser.write(configfile)
+
+    def _set_send_mode(self, regenerates) :
+        """Radio handler: does Send regenerate first?"""
+        if getattr(self, 'send_regenerates', None) == regenerates :
+            return
+        self.send_regenerates = regenerates
+        self._sync_send_mode_items()
+        self._save_send_mode()
+        act = self._actions.get('Send')
+        if act is not None :
+            tip = (_('Regenerate %(filename)s, then load it in LinuxCNC')
+                   if regenerates else
+                   _('Load the current %(filename)s in LinuxCNC without regenerating it'))
+            act._tooltip = tip % {'filename': GENERATED_FILE}
+            if getattr(self, 'send_tool_button', None) is not None :
+                self.send_tool_button.set_tooltip_markup(act._tooltip)
 
 
     def restore_bar_order(self):
@@ -502,8 +612,13 @@ class NCamAppActionsMixin:
         self.actionHideField = ca("HideField", None, _("Hide Selected Field"), None, _("Hide Selected Field"), self.action_hideField)
         self.actionShowF = ca("ShowFields", None, _("Show All Fields"), None, _("Show All Fields"), self.action_showFields)
         self.actionCurrent = ca("Current", 'gtk-save', _("Save Project as Current Work"), '', _('Save Project as Current Work'), self.action_saveCurrent)
-        self.actionBuild = ca("Build", 'gtk-execute', _('Generate %(filename)s') % {'filename':GENERATED_FILE}, None,
-                     _('Generate %(filename)s and load it in LinuxCNC') % {'filename':GENERATED_FILE}, self.action_build)
+        # One gear used to generate AND load in a single press, so there was no
+        # way to rebuild the G-code without also taking over the machine's
+        # loaded program. Two buttons now; Auto-refresh still does both.
+        self.actionRegen = ca("Regen", 'gtk-execute', _('Regenerate %(filename)s') % {'filename':GENERATED_FILE}, None,
+                     _('Generate %(filename)s. Does not touch LinuxCNC, so it is safe while a program is loaded') % {'filename':GENERATED_FILE}, self.action_regen)
+        self.actionSend = ca("Send", 'gtk-jump-to', _('Send %(filename)s to LinuxCNC') % {'filename':GENERATED_FILE}, None,
+                     _('Load the current %(filename)s in LinuxCNC without regenerating it') % {'filename':GENERATED_FILE}, self.action_send)
         self.actionRename = ca("Rename", None, _("Rename Subroutine"), None, _('Rename Subroutine'), self.action_renameF)
         self.actionChngGrp = ca("ChngGrp", None, _("Group <-- --> Sub-group"), None, _('Group <-- --> Sub-group'), self.action_chng_group)
         self.actionDataType = ca("DataType", None, _("Change to GCode"), None, _('Change to GCode'), self.action_gcode)
@@ -527,6 +642,12 @@ class NCamAppActionsMixin:
 
         self.actionSubHdrs.set_active(self.pref.sub_hdrs_in_tv1)
         self.actionHideCol.set_active(self.pref.hide_value_column)
+
+        # the Send radio, from the saved preference. Assigned before syncing so
+        # the sync is a no-op write rather than a change that saves the config
+        # back out on every startup
+        self.send_regenerates = getattr(self.pref, 'send_regenerates', False)
+        self._sync_send_mode_items()
         self.actionTopBottom.set_active(not self.pref.side_by_side)
         self.actionSideSide.set_active(self.pref.side_by_side)
         self.actionSingleView.set_active(not self.pref.use_dual_views)
@@ -577,17 +698,40 @@ class NCamAppActionsMixin:
         self.hint_label.set_max_width_chars(40)
 
 
-    def autorefresh_call(self, *arg) :
+    def write_ngc(self) :
+        """Generate the G-code and write it to ncam.ngc. Returns the path.
+
+        This half touches no LinuxCNC state at all, which is the point of
+        having it separately: it is safe to run while a program is loaded or
+        even running. Returns None when the panel is not in a state to
+        generate - shutting down, or not yet realized - and callers must treat
+        that as "nothing was written" rather than carrying on.
+        """
         if getattr(self, '_ncam_shutting_down', False):
-            return False
+            return None
         try:
             if not self.get_realized():
-                return False
+                return None
         except Exception:
-            return False
+            return None
         fname = os.path.join(ncam.NGC_DIR, GENERATED_FILE)
         with open(fname, "w") as f:
             f.write(self.to_gcode())
+        return fname
+
+    def send_to_linuxcnc(self, fname = None) :
+        """Load an already-written ncam.ngc into LinuxCNC.
+
+        Deliberately does NOT generate - Send and Regenerate are separate
+        buttons, and which of them regenerates is the operator's choice. Pass a
+        path to load something else; the default is the generated file.
+        """
+        if fname is None :
+            fname = os.path.join(ncam.NGC_DIR, GENERATED_FILE)
+        if not os.path.isfile(fname) :
+            mess_dlg(_('%(filename)s has not been generated yet.\n\nPress Regenerate first.')
+                     % {'filename': GENERATED_FILE})
+            return False
 
         try:
             linuxCNC = linuxcnc.command()
@@ -610,7 +754,10 @@ class NCamAppActionsMixin:
             self.actionAutoRefresh.set_active(False)
             if self.show_not_connected :
                 mess_dlg(_('LinuxCNC not running\n\nStart LinuxCNC and\nactivate Auto-refresh menu item'))
+            return False
+        return True
 
+    def _restore_focus(self) :
         if self.focused_widget is not None :
             try:
                 self.focused_widget.grab_focus()
@@ -622,6 +769,18 @@ class NCamAppActionsMixin:
             except Exception:
                 pass
 
+    def autorefresh_call(self, *arg) :
+        """Generate and load, as one step.
+
+        This is what Auto-refresh and every tree edit call, and its behaviour
+        must not change now that the toolbar button has been split in two -
+        the two halves below are exactly the two halves this used to inline.
+        """
+        fname = self.write_ngc()
+        if fname is None :
+            return False
+        self.send_to_linuxcnc(fname)
+        self._restore_focus()
         return False
 
 
