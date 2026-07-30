@@ -28,7 +28,16 @@ o<tip_comp_dia> sub
 	(radial distance of the full nose diameter - twice the radius - a safe margin)
 	#<_tip_lead_w> = [#<tc_nd> * #<_diameter_mode>]
 
-	o<n_on> if [#<nose_on> GT 0]
+	o<n_on> if [#<nose_on> EQ 2]
+		(compensation done in CAM: the toolpath is already offset, so the)
+		(machine must not compensate at all - not even the pass offset, which)
+		(is folded into that same offset path. tip_comp_on guards on a real)
+		(diameter, so a zero here makes it emit nothing.)
+		#<_tip_comp_d> = 0
+		#<_tip_comp_l> = 0
+		#<_tip_cam> = 1
+	o<n_on> elseif [#<nose_on> GT 0]
+		#<_tip_cam> = 0
 		#<_tip_comp_d> = [2 * #<extra_r> + #<tc_nd>]
 		(orientation: table #5413 when known, else the override _tip_orient)
 		o<or_src> if [#5413 GT 0]
@@ -37,6 +46,7 @@ o<tip_comp_dia> sub
 			#<_tip_comp_l> = #<_tip_orient>
 		o<or_src> endif
 	o<n_on> else
+		#<_tip_cam> = 0
 		#<_tip_comp_d> = [2 * #<extra_r>]
 		#<_tip_comp_l> = 0
 	o<n_on> endif

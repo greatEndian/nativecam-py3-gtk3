@@ -1325,3 +1325,58 @@ def _corner_arc(vertex, start, end, radius):
     return [(vz + radius * math.cos(a0 + sweep * k / n),
              vr + radius * math.sin(a0 + sweep * k / n))
             for k in range(1, n + 1)]
+
+
+# Two offset tables, because the pre-finish and finish passes carry different
+# offsets and each needs its own already-offset path. Native mode gets the pass
+# offset from cutter comp's D word; in CAM mode it is folded into the geometry,
+# so the two passes cannot share one table.
+CAM_PREFIN_BASE = 3700
+CAM_FINISH_BASE = 3900
+
+
+def build_cam_comp_gcode(polyline_feature, nose_r, orient):
+    """Literal G-code with the CAM-offset contours, or '' if not applicable.
+
+    Emitted as point tables the same way build_flank_gcode emits the flank
+    envelope. Two of them: the pre-finish pass and the finish pass carry
+    different offsets, and in CAM mode that offset is part of the path rather
+    than a D word, so they cannot share one.
+
+    The runtime gate is _pl_cam_count > 0, so '' leaves every pass exactly as it
+    was. Returns '' when the mode is not In CAM, when there is no nose to
+    compensate, or when the profile cannot be resolved.
+    """
+    if nose_r is None or nose_r <= EPS:
+        return ''
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2:
+        return ''
+
+    s_param = polyline_feature.get_param('param_side')
+    side = -1 if (s_param is not None
+                  and int(_to_float(s_param.get_ngc_value())) == 1) else 1
+
+    def _off(pname):
+        p = polyline_feature.get_param(pname)
+        return _to_float(p.get_ngc_value()) if p is not None else 0.0
+
+    fin_off = _off('param_f_off')
+    pf_on = _off('param_pf_on')
+    pf_off = _off('param_pf_off') * (1 if pf_on else 0)
+
+    lines = ['(nose compensation done in CAM: these are already-offset control)',
+             '(point paths, so the machine runs uncompensated - see _tip_cam)']
+    for base, extra, tag in ((CAM_PREFIN_BASE, fin_off + pf_off, 'pre-finish'),
+                             (CAM_FINISH_BASE, fin_off, 'finish')):
+        env = offset_contour(points, nose_r + extra, orient, side)
+        lines.append('(%s pass, offset %s + nose %s)'
+                     % (tag, _fmt(extra), _fmt(nose_r)))
+        lines.append('#<_pl_cam_%s> = %d' % ('pf_n' if base == CAM_PREFIN_BASE
+                                             else 'fin_n', len(env)))
+        for i, (z, x) in enumerate(env):
+            slot = base + i * 2
+            lines.append('#%d = %s' % (slot, _fmt(z)))
+            lines.append('#%d = %s' % (slot + 1, _fmt(x / DIAMETER_MODE)))
+    lines.append('#<_pl_cam_count> = %d' % 1)
+    return '\n'.join(lines)
