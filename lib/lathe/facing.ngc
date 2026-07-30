@@ -146,12 +146,20 @@ o<facing> sub
 		(compensated finish: a clean face with a straight run-in that establishes)
 		(comp in free air beyond the OD - a nose-comp entry move must be a straight)
 		(feed of at least the nose radius, so the lead-in/out arcs are skipped here.)
-		(face travels -X at Z=cut_z; material is on the +Z*z_factor side, so the comp)
-		(side follows z_factor and is proven, not trusted, by the tangency verifier)
+		(face travels -X at Z=cut_z. The material is BEHIND the finished face - at)
+		(-Z*z_factor, the side the bar continues into - so the nose has to ride on)
+		(the +Z*z_factor side of it. This side was inverted until it was measured:)
+		(the nose circle sat entirely behind the face and every compensated facing)
+		(pass cut a full nose DIAMETER too deep, 2.54 mm on the demo tool. The)
+		(earlier proof passed only because it was given --freeside right, which for)
+		(a face profile written outside-in is the MATERIAL side - the exact trap)
+		(CLAUDE.md warns about, since one line is tangent from both sides.)
+		(The check that cannot be fooled: the nose circle must lie wholly on the)
+		(free side of the face, and comp on must leave the face where comp off does)
 		o<tip_comp_dia> CALL [0] [#<n_comp>]
-		#<f_side> = 41
+		#<f_side> = 42
 		o<f_sd> if [#<z_factor> GT 0]
-			#<f_side> = 42
+			#<f_side> = 41
 		o<f_sd> endif
 		(run-in beyond the OD must clear the face start by at least the nose radius)
 		#<f_estab> = #<_x_clear>
