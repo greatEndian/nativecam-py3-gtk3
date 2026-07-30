@@ -1221,14 +1221,20 @@ def offset_contour(points, nose_r, orient, side=1):
     side is which way the normal points: +1 outward in radius, for outside work,
     -1 for a bore.
 
-    INCOMPLETE - NOT WIRED TO ANY OPERATION YET. Each segment is offset
-    correctly, but the offsets are not JOINED: a convex corner needs rounding
-    and a concave one needs trimming to where the two offset segments cross.
-    Without that the raw output runs backwards in Z at every corner - a D40
-    cylinder into a D50 boss gives ... (-20, 40.8) (-19.6, 40.0) (-19.6, 50.0)
-    (-20, 50.8) ... which is not a toolpath. The per-segment maths below is
-    verified; the joining is the remaining work, and nothing may consume this
-    until it is done.
+    Corners are joined by their sign, which is what makes the result a toolpath
+    rather than a list of disconnected offsets:
+
+    - An INTERNAL corner - the offsets converge - is trimmed to where the two
+      offset lines cross. The nose then stops short of the vertex and leaves a
+      fillet of its own radius, which is physically unavoidable and is exactly
+      what a real nose does in a 90 degree inside corner.
+    - An EXTERNAL corner - the offsets diverge - is rounded. Both offset ends
+      already sit exactly nose_r from the vertex, so the join is an arc of that
+      radius about it, and the nose rolls around the corner. Emitted as chords
+      under a sagitta bound rather than a true arc, the same way
+      poly_mesh_lathe bounds its own subdivision, so the error is knowable and
+      arc emission is not written twice. A miter join here would hold the nose
+      nose_r*(sqrt(2)-1) too far out at a 90 degree corner and leave material.
 
     points are (z, x) in the diameter units resolve_points works in; nose_r is a
     radius. Returns the same (z, diameter) form.
@@ -1244,7 +1250,7 @@ def offset_contour(points, nose_r, orient, side=1):
     # diameters would be wrong by exactly a factor of two
     pts = [(z, x / DIAMETER_MODE) for z, x in points]
 
-    out = []
+    segs = []
     for i in range(len(pts) - 1):
         (z0, r0), (z1, r1) = pts[i], pts[i + 1]
         dz, dr = z1 - z0, r1 - r0
@@ -1258,9 +1264,64 @@ def offset_contour(points, nose_r, orient, side=1):
         # offset to +Z and -Z respectively, each away from its own material.
         # The other rotation gets the cylinder right and both walls backwards.
         nz, nr = ur * side, -uz * side
-        for (pz, pr) in ((z0, r0), (z1, r1)):
-            out.append((pz + nose_r * nz - nose_r * ozd,
-                        pr + nose_r * nr - nose_r * oxd))
-    if not out:
+        segs.append({'v0': (z0, r0), 'v1': (z1, r1), 'u': (uz, ur),
+                     'a': (z0 + nose_r * nz, r0 + nose_r * nr),
+                     'b': (z1 + nose_r * nz, r1 + nose_r * nr)})
+    if not segs:
         return list(points)
-    return [(z, r * DIAMETER_MODE) for z, r in out]
+
+    out = [segs[0]['a']]
+    for i in range(len(segs)):
+        cur = segs[i]
+        nxt = segs[i + 1] if i + 1 < len(segs) else None
+        if nxt is None:
+            out.append(cur['b'])
+            break
+        (uz0, ur0), (uz1, ur1) = cur['u'], nxt['u']
+        cross = (uz0 * ur1 - ur0 * uz1) * side
+        if cross > EPS:
+            # external: roll the nose around the shared vertex
+            out.append(cur['b'])
+            out.extend(_corner_arc(cur['v1'], cur['b'], nxt['a'], nose_r))
+        elif cross < -EPS:
+            # internal: both offsets are trimmed back to where they cross
+            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
+            out.append(hit if hit is not None else cur['b'])
+        else:
+            out.append(cur['b'])          # collinear, nothing to join
+
+    # everything above is the NOSE CENTRE path - which is where the corner
+    # geometry belongs, since it is the nose centre that rolls around a vertex
+    # at exactly nose_r. The control point is that path shifted by the constant
+    # orientation vector, applied once here.
+    res = [(z - nose_r * ozd, (r - nose_r * oxd) * DIAMETER_MODE) for z, r in out]
+    # drop repeats the joins can leave behind
+    dedup = [res[0]]
+    for p in res[1:]:
+        if abs(p[0] - dedup[-1][0]) > EPS or abs(p[1] - dedup[-1][1]) > EPS:
+            dedup.append(p)
+    return dedup
+
+
+def _corner_arc(vertex, start, end, radius):
+    """Chords around an external corner, from start to end about vertex.
+
+    Both ends already lie radius from the vertex; this fills the sweep between
+    them, taking the short way round, subdivided so each chord's sagitta stays
+    under MESH_MAX_SAG.
+    """
+    vz, vr = vertex
+    a0 = math.atan2(start[1] - vr, start[0] - vz)
+    a1 = math.atan2(end[1] - vr, end[0] - vz)
+    sweep = a1 - a0
+    while sweep > math.pi:
+        sweep -= 2 * math.pi
+    while sweep < -math.pi:
+        sweep += 2 * math.pi
+    if abs(sweep) < 1e-9 or radius <= MESH_MAX_SAG:
+        return [end]
+    step = 2.0 * math.acos(max(1.0 - MESH_MAX_SAG / radius, -1.0))
+    n = max(int(math.ceil(abs(sweep) / max(step, 1e-6))), 1)
+    return [(vz + radius * math.cos(a0 + sweep * k / n),
+             vr + radius * math.sin(a0 + sweep * k / n))
+            for k in range(1, n + 1)]

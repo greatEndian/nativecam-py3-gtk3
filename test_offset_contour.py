@@ -90,18 +90,56 @@ def main():
     check('a zero-length segment is dropped, not divided by',
           len(ls.offset_contour([(0.0, 40.0), (0.0, 40.0), (-10.0, 40.0)], R, 9)) == 2)
 
-    # --- what is NOT done yet ----------------------------------------------
-    # corners are unjoined: each segment is offset independently, so the path
-    # doubles back at every corner. Pinned deliberately, so that implementing
-    # the joining breaks this and forces the assertion to be rewritten rather
-    # than leaving a silent gap.
-    boss = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0)]
+    # --- corners are joined, and the result is a toolpath -------------------
+    boss = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0),
+            (-50.0, 40.0), (-80.0, 40.0)]
     eb = ls.offset_contour(boss, R, 9)
+
+    # a path that doubles back is not a toolpath; this is what corner joining
+    # exists to fix, and it was the pinned gap before it was implemented
     zs = [z for z, _x in eb]
-    doubles_back = any(b > a + 1e-9 for a, b in zip(zs, zs[1:]))
-    check('KNOWN GAP: corners are unjoined and the path doubles back',
-          doubles_back,
-          'if this now FAILS the joining works - rewrite this assertion')
+    check('the path never doubles back in Z',
+          all(b <= a + 1e-9 for a, b in zip(zs, zs[1:])),
+          str([round(z, 2) for z in zs]))
+
+    # internal corner: the nose stops R short in Z and stays R clear in radius,
+    # leaving a fillet of its own radius - unavoidable, and what a real nose does
+    check('an internal corner is trimmed, leaving the nose radius as a fillet',
+          any(abs(z - (-20.0 + R)) < 1e-6 and abs(x - (40.0 + 2 * R)) < 1e-6
+              for z, x in eb),
+          'expected a trimmed point at Z%.2f D%.2f' % (-20.0 + R, 40.0 + 2 * R))
+
+    # external corner: every joining point sits exactly R from the vertex, which
+    # is what makes it a roll rather than a miter
+    vertex = (-20.0, 25.0)
+    arc_pts = [(z, x / 2.0) for z, x in eb if -20.01 < z < -19.59 and x > 49.9]
+    check('an external corner is rolled at exactly the nose radius',
+          arc_pts and all(abs(math.hypot(z - vertex[0], r - vertex[1]) - R) < 1e-6
+                          for z, r in arc_pts),
+          '%d arc points' % len(arc_pts))
+    # a miter would hold the nose R*(sqrt(2)-1) too far out at 90 degrees
+    check('and is not a miter join',
+          not any(abs(z - (-19.6)) < 1e-6 and abs(x - (50.0 + 2 * R)) < 1e-6
+                  for z, x in eb))
+
+    # --- the whole point: the nose circle must never enter the material -----
+    def dist_to_profile(pz, pr):
+        best = None
+        for (z0, x0), (z1, x1) in zip(boss, boss[1:]):
+            az, ar = z0, x0 / 2.0
+            bz, br = z1, x1 / 2.0
+            dz, dr = bz - az, br - ar
+            L2 = dz * dz + dr * dr
+            t = 0.0 if L2 < 1e-12 else max(0.0, min(1.0, ((pz - az) * dz + (pr - ar) * dr) / L2))
+            d = math.hypot(pz - (az + dz * t), pr - (ar + dr * t))
+            best = d if best is None else min(best, d)
+        return best
+
+    worst = min(dist_to_profile(z, x / 2.0) for z, x in eb)   # orient 9: nose on the point
+    check('the nose circle never cuts into the profile',
+          worst >= R - 1e-6, 'closest approach %.6f against R %.4f' % (worst, R))
+    check('and it does touch the profile, rather than hovering off it',
+          worst <= R + 1e-6, 'closest approach %.6f' % worst)
 
     print()
     if FAILED:
