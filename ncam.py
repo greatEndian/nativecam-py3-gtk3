@@ -2662,11 +2662,12 @@ from ncam_menu_catalog import NCamMenuCatalogMixin
 from ncam_app_actions import NCamAppActionsMixin
 from ncam_treeview import NCamTreeviewMixin
 from ncam_preferences_actions import NCamPreferencesActionsMixin
+from ncam_preview_ui import NCamPreviewMixin
 
 
 class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
            NCamMenuCatalogMixin, NCamAppActionsMixin, NCamTreeviewMixin,
-           NCamPreferencesActionsMixin, gtk.Box):
+           NCamPreferencesActionsMixin, NCamPreviewMixin, gtk.Box):
     __gtype_name__ = "NCam"
     __gproperties__ = {}
     __gproperties = __gproperties__
@@ -2984,6 +2985,9 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
 
         self.get_toolbar_actions()
         self.create_nc_toolbar()
+
+        # NativeCAM's own toolpath preview, under the tree/params area
+        self.create_preview_pane()
 
         self.create_popups()
 

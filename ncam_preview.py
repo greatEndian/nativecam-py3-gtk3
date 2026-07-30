@@ -282,3 +282,115 @@ def _collinear(a, b, c, tol):
           u[2] * v[0] - u[0] * v[2],
           u[0] * v[1] - u[1] * v[0])
     return all(abs(t) <= tol for t in cx)
+
+
+# ---------------------------------------------------------------------------
+# drawing
+#
+# Cairo only - no GTK - so the renderer can be exercised headlessly onto an
+# ImageSurface, which is how it is tested. The widget that owns a DrawingArea
+# lives in ncam_preview_ui.py.
+# ---------------------------------------------------------------------------
+COL = {
+    'bg':      (0.12, 0.12, 0.14),
+    'stock':   (0.32, 0.30, 0.26),
+    'feed':    (0.36, 0.85, 0.40),
+    'rapid':   (0.45, 0.45, 0.52),
+    'axis':    (0.55, 0.40, 0.40),
+    'text':    (0.80, 0.80, 0.84),
+}
+
+
+def _fit(tp, stock, plane, width, height, margin):
+    """Scale and offset that fit the path - and the stock - in the widget."""
+    ext = tp.extents(plane)
+    if ext is None and not stock:
+        return None
+    a0, a1, b0, b1 = ext if ext else (0.0, 1.0, 0.0, 1.0)
+    if stock:
+        sa0, sa1, sb0, sb1 = stock
+        if ext is None:
+            a0, a1, b0, b1 = sa0, sa1, sb0, sb1
+        else:
+            # Fit the TOOLPATH, and take only the stock's radial extent. Bar
+            # stock is routinely far longer than the part - the demo workpiece
+            # is 254 mm for a 70 mm part - and fitting their union squeezes the
+            # part into a fifth of the pane, which is the one thing the plot
+            # exists to show. The bar simply runs off the edge instead, which
+            # is what it does in reality.
+            b0, b1 = min(b0, sb0), max(b1, sb1)
+    da, db = max(a1 - a0, 1e-6), max(b1 - b0, 1e-6)
+    s = min((width - 2 * margin) / da, (height - 2 * margin) / db)
+    # centre what is left over
+    ox = margin + ((width - 2 * margin) - da * s) / 2.0 - a0 * s
+    oy = margin + ((height - 2 * margin) - db * s) / 2.0 - b0 * s
+    return s, ox, oy
+
+
+def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10):
+    """Render a Toolpath onto a cairo context sized width x height.
+
+    stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
+
+    On a lathe this plots Z across and X DOWNWARD, which is how AXIS draws it
+    and how the tool-orientation figure in this project already draws it. Using
+    the mathematical convention instead would mirror the part vertically and
+    quietly disagree with every other picture the operator sees.
+    """
+    cr.set_source_rgb(*COL['bg'])
+    cr.paint()
+
+    fit = _fit(tp, stock, plane, width, height, margin)
+    if fit is None:
+        _centre_text(cr, width, height, tp.error or 'nothing to show')
+        return
+    s, ox, oy = fit
+    ia, ib = _plane_indices(plane)
+
+    def pt(p):
+        return (p[ia] * s + ox, p[ib] * s + oy)
+
+    if stock:
+        sa0, sa1, sb0, sb1 = stock
+        cr.set_source_rgba(*(COL['stock'] + (0.55,)))
+        cr.rectangle(sa0 * s + ox, sb0 * s + oy,
+                     (sa1 - sa0) * s, (sb1 - sb0) * s)
+        cr.fill()
+
+    # the spindle centre line, so a lathe plot reads as a lathe plot
+    if plane == 'ZX':
+        cr.set_source_rgb(*COL['axis'])
+        cr.set_line_width(1.0)
+        cr.set_dash([6.0, 4.0])
+        cr.move_to(0, oy)
+        cr.line_to(width, oy)
+        cr.stroke()
+        cr.set_dash([])
+
+    cr.set_line_width(1.0)
+    cr.set_source_rgb(*COL['rapid'])
+    cr.set_dash([3.0, 3.0])
+    for _n, a, b in tp.rapids:
+        cr.move_to(*pt(a))
+        cr.line_to(*pt(b))
+    cr.stroke()
+    cr.set_dash([])
+
+    cr.set_line_width(1.6)
+    cr.set_source_rgb(*COL['feed'])
+    for _n, a, b in tp.feeds:
+        cr.move_to(*pt(a))
+        cr.line_to(*pt(b))
+    cr.stroke()
+
+    if tp.error:
+        _centre_text(cr, width, height * 1.85, tp.error)
+
+
+def _centre_text(cr, width, height, text):
+    cr.set_source_rgb(*COL['text'])
+    cr.select_font_face('Sans')
+    cr.set_font_size(11)
+    ext = cr.text_extents(text)
+    cr.move_to(max((width - ext.width) / 2.0, 4), height / 2.0)
+    cr.show_text(text)
