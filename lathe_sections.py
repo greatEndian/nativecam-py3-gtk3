@@ -1184,3 +1184,83 @@ def build_flank_gcode(polyline_feature, back_deg):
         lines.append('#%d = %s' % (slot, _fmt(z)))
         lines.append('#%d = %s' % (slot + 1, _fmt(x / DIAMETER_MODE)))
     return '\n'.join(lines)
+
+
+# --- compensation done in CAM ------------------------------------------------
+#
+# Native LinuxCNC compensation carries real restrictions: a comp entry must be a
+# straight feed of at least the nose radius in free air, an arc cannot establish
+# it, and the interpreter refuses a concave corner smaller than the nose. When
+# the path is offset here instead, none of those apply and the backplot shows
+# what the tool actually does - at the cost of owning the geometry, which is why
+# this is a third option and never a replacement for native.
+#
+# Where the nose sits relative to the programmed control point, as (X, Z)
+# multiples of the nose radius. LinuxCNC's own table, from rs274/glcanon.py
+# StatCanon.lathe_shapes - kept here as well so this module needs no import.
+# 1-4 are the diagonal corners at R*sqrt(2), and that is a RAW vector:
+# normalising it to R mis-places the tool, which CLAUDE.md already flags.
+NOSE_OFFSET = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
+               (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
+
+
+def _unit(dz, dx):
+    n = math.hypot(dz, dx)
+    return (dz / n, dx / n) if n > EPS else (0.0, 0.0)
+
+
+def offset_contour(points, nose_r, orient, side=1):
+    """The control-point path that puts the nose circle tangent to the profile.
+
+    With compensation off the machine positions the tool's CONTROL point, and
+    the nose sits one radius away from it in the direction the orientation
+    names. So for the nose circle to ride the profile:
+
+        control = profile + nose_r * normal - nose_r * (dz, dx)_orient
+
+    side is which way the normal points: +1 outward in radius, for outside work,
+    -1 for a bore.
+
+    INCOMPLETE - NOT WIRED TO ANY OPERATION YET. Each segment is offset
+    correctly, but the offsets are not JOINED: a convex corner needs rounding
+    and a concave one needs trimming to where the two offset segments cross.
+    Without that the raw output runs backwards in Z at every corner - a D40
+    cylinder into a D50 boss gives ... (-20, 40.8) (-19.6, 40.0) (-19.6, 50.0)
+    (-20, 50.8) ... which is not a toolpath. The per-segment maths below is
+    verified; the joining is the remaining work, and nothing may consume this
+    until it is done.
+
+    points are (z, x) in the diameter units resolve_points works in; nose_r is a
+    radius. Returns the same (z, diameter) form.
+    """
+    if not points or len(points) < 2 or nose_r <= EPS:
+        return list(points)
+
+    off = NOSE_OFFSET[orient] if 0 < orient < len(NOSE_OFFSET) else None
+    # the table is (X, Z); this module works in (z, radius)
+    ozd, oxd = (off[1], off[0]) if off else (0.0, 0.0)
+
+    # work in true radius: a normal is not scale invariant, so doing this on
+    # diameters would be wrong by exactly a factor of two
+    pts = [(z, x / DIAMETER_MODE) for z, x in points]
+
+    out = []
+    for i in range(len(pts) - 1):
+        (z0, r0), (z1, r1) = pts[i], pts[i + 1]
+        dz, dr = z1 - z0, r1 - r0
+        if abs(dz) < EPS and abs(dr) < EPS:
+            continue
+        uz, ur = _unit(dz, dr)
+        # The outward normal, rotated -90 from the travel direction. That is
+        # the rotation that points away from the material for a profile drawn
+        # front to back with material below it, which is how the polyline draws
+        # one: an axial run offsets to +radius, and the two faces of a boss
+        # offset to +Z and -Z respectively, each away from its own material.
+        # The other rotation gets the cylinder right and both walls backwards.
+        nz, nr = ur * side, -uz * side
+        for (pz, pr) in ((z0, r0), (z1, r1)):
+            out.append((pz + nose_r * nz - nose_r * ozd,
+                        pr + nose_r * nr - nose_r * oxd))
+    if not out:
+        return list(points)
+    return [(z, r * DIAMETER_MODE) for z, r in out]

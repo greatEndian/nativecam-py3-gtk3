@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+# coding: utf-8
+"""Checks the CAM-side nose offset in lathe_sections.py.
+
+Standalone, like the other test_*.py here - run it directly, no pytest. Pure
+geometry, so it runs instantly.
+
+Covers what is FINISHED: the per-segment offset, and the orientation vector
+being applied as a raw R*sqrt(2) rather than a normalised R. Corner joining is
+not implemented, so there is no test claiming it is - see the last case, which
+pins the known-bad corner output so that finishing the joining has to change it.
+"""
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import lathe_sections as ls  # noqa: E402
+
+FAILED = []
+
+
+def check(name, cond, detail=''):
+    print(('PASS  ' if cond else 'FAIL  ') + name + (('  ' + detail) if detail else ''))
+    if not cond:
+        FAILED.append(name)
+
+
+def main():
+    R = 0.4
+
+    # the table must stay LinuxCNC's own
+    check('the nose table matches rs274/glcanon.py lathe_shapes',
+          ls.NOSE_OFFSET == [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
+                             (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)])
+    # and 1-4 are a RAW diagonal, not a normalised one - normalising mis-places
+    # the tool, which is why CLAUDE.md calls it out
+    for n in (1, 2, 3, 4):
+        dx, dz = ls.NOSE_OFFSET[n]
+        check('orientation %d is a raw R*sqrt(2) diagonal' % n,
+              abs(math.hypot(dx, dz) - math.sqrt(2)) < 1e-12)
+
+    # --- a plain cylinder ---------------------------------------------------
+    cyl = [(0.0, 40.0), (-20.0, 40.0)]
+
+    # orientation 9 puts the nose ON the control point, so the control point is
+    # simply the profile lifted by one radius - a diameter rise of 2R
+    e = ls.offset_contour(cyl, R, 9)
+    check('orient 9 lifts the control point by 2R in diameter',
+          all(abs(x - (40.0 + 2 * R)) < 1e-9 for _z, x in e),
+          str([(round(z, 3), round(x, 3)) for z, x in e]))
+    check('orient 9 does not shift Z', all(abs(z - p[0]) < 1e-9
+                                           for (z, _x), p in zip(e, cyl)))
+
+    # orientation 2 sits the nose +X +Z of the control point, so the control
+    # point drops back by R in both: the nose CENTRE must still land on 40+2R
+    e2 = ls.offset_contour(cyl, R, 2)
+    for (z, x), (pz, _px) in zip(e2, cyl):
+        nose_r = x / 2.0 + R          # nose centre radius, from the table's +X
+        check('orient 2 puts the nose centre on the offset surface at Z%.1f' % pz,
+              abs(nose_r - (20.0 + R)) < 1e-9, 'nose centre r%.4f' % nose_r)
+        check('orient 2 pulls the control point back by R in Z',
+              abs(z - (pz - R)) < 1e-9, 'Z%.4f vs %.4f' % (z, pz - R))
+
+    # --- the offset distance is the radius, whatever the segment angle ------
+    for ang in (0.0, 30.0, 45.0, 60.0):
+        dz, dr = -math.cos(math.radians(ang)) * 10, math.sin(math.radians(ang)) * 10
+        seg = [(0.0, 40.0), (dz, 40.0 + 2 * dr)]
+        e3 = ls.offset_contour(seg, R, 9)
+        # perpendicular distance from the original line to the offset one
+        uz, ur = ls._unit(dz, dr)
+        p0 = (seg[0][0], seg[0][1] / 2.0)
+        q0 = (e3[0][0], e3[0][1] / 2.0)
+        dist = abs((q0[0] - p0[0]) * -ur + (q0[1] - p0[1]) * uz)
+        check('a %.0f deg segment is offset by exactly R' % ang,
+              abs(dist - R) < 1e-9, 'measured %.6f' % dist)
+
+    # --- side flips it for a bore ------------------------------------------
+    inner = ls.offset_contour(cyl, R, 9, side=-1)
+    check('side -1 offsets into the bore instead',
+          all(abs(x - (40.0 - 2 * R)) < 1e-9 for _z, x in inner),
+          str([(round(x, 3)) for _z, x in inner]))
+
+    # --- degenerate input --------------------------------------------------
+    check('a zero nose radius returns the profile', ls.offset_contour(cyl, 0.0, 9) == cyl)
+    check('an empty profile returns empty', ls.offset_contour([], R, 9) == [])
+    check('a single point is returned unchanged',
+          ls.offset_contour([(0.0, 40.0)], R, 9) == [(0.0, 40.0)])
+    check('a zero-length segment is dropped, not divided by',
+          len(ls.offset_contour([(0.0, 40.0), (0.0, 40.0), (-10.0, 40.0)], R, 9)) == 2)
+
+    # --- what is NOT done yet ----------------------------------------------
+    # corners are unjoined: each segment is offset independently, so the path
+    # doubles back at every corner. Pinned deliberately, so that implementing
+    # the joining breaks this and forces the assertion to be rewritten rather
+    # than leaving a silent gap.
+    boss = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0)]
+    eb = ls.offset_contour(boss, R, 9)
+    zs = [z for z, _x in eb]
+    doubles_back = any(b > a + 1e-9 for a, b in zip(zs, zs[1:]))
+    check('KNOWN GAP: corners are unjoined and the path doubles back',
+          doubles_back,
+          'if this now FAILS the joining works - rewrite this assertion')
+
+    print()
+    if FAILED:
+        print('FAILED: %d' % len(FAILED))
+        for f in FAILED:
+            print('   -', f)
+        sys.exit(1)
+    print('All offset contour tests passed.')
+
+
+if __name__ == '__main__':
+    main()
