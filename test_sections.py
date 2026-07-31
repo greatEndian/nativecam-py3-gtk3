@@ -376,6 +376,8 @@ def main():
               Child('poly_arc_to_coords', param_act='1', param_type='5',
                     param_x='60', param_z='-10')])) is None)
 
+    test_table_layout()
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
@@ -383,6 +385,33 @@ def main():
             print('   -', f)
         sys.exit(1)
     print('All section resolution tests passed.')
+
+
+
+def test_table_layout():
+    """The fixed parameter-table regions must not overlap.
+
+    Each table is written in emission order, so a later one silently overwrites
+    an earlier one and the damage shows up only as motion that makes no sense.
+    The finish-contour table was first placed at 3500 with room for 130 slots
+    and ran straight through the flank envelope at 3600: roughing then stopped
+    4 mm above its floor and drove through the boss it was supposed to split
+    around, with no error anywhere.
+    """
+    import lathe_sections as L
+    regions = [('sections', L.SECT_BASE, L.FLANK_BASE),
+               ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
+               ('finish contour', L.FC_BASE, L.FC_TOP),
+               ('In-CAM offsets', L.CAM_BASE, L.CAM_TOP)]
+    for i in range(len(regions) - 1):
+        n0, _b0, t0 = regions[i]
+        n1, b1, _t1 = regions[i + 1]
+        check('%s ends before %s begins' % (n0, n1), t0 <= b1,
+              '%s top %d overlaps %s base %d' % (n0, t0, n1, b1))
+    check('every region is non-empty', all(t > b for _n, b, t in regions))
+    check('nothing runs into LinuxCNC own parameters at 5060',
+          max(t for _n, _b, t in regions) <= 5060,
+          'top is %d' % max(t for _n, _b, t in regions))
 
 
 if __name__ == '__main__':

@@ -1174,7 +1174,11 @@ def build_flank_gcode(polyline_feature, back_deg):
             for a, b in zip(sorted(env), sorted(points))):
         return ''
 
-    base = 3600
+    base = FLANK_BASE
+    if base + 2 * len(env) > FLANK_TOP:
+        return ('(WARNING - the reachable envelope needs %d parameter slots '
+                'and only %d are free, so roughing will use the plain mesh.)'
+                % (2 * len(env), FLANK_TOP - FLANK_BASE))
     lines = ['(reachable envelope: the profile widened by the tool back angle)',
              '(so roughing cannot try to cut where the flank would foul a wall)',
              '#<_pl_env_base>  = %d' % base,
@@ -1344,7 +1348,7 @@ def _corner_arc(vertex, start, end, radius):
 #   #[ptr + 2i]     point i, Z          #[ptr + 2i + 1]  point i, radius
 #
 # Pass 0 is the pre-finish pass; 1..n are the finish passes in order.
-CAM_BASE = 3700
+CAM_BASE = 4400
 # Numbered parameters above roughly #5060 are LinuxCNC's own - #5061+ are probe
 # results, #5161+ home positions, #5221+ the coordinate-system offsets, #5401+
 # the tool table. Writing a table through them would corrupt live machine state,
@@ -1468,7 +1472,24 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None):
 # the finish pass that leaves the surface, so what IT can reach is what the part
 # ends up as; if the two directions differ the two soft contours legitimately
 # differ too.
-FC_BASE = 3500
+# Fixed parameter-space layout. These MUST NOT overlap: the tables are written
+# in emission order, so a later one silently overwrites an earlier one and the
+# damage shows up as motion that makes no sense. The finish-contour table was
+# first placed at 3500 with room for 130 slots, which ran straight through the
+# flank envelope at 3600 - roughing then stopped 4 mm short of the floor and
+# drove through the boss it was supposed to split around.
+#
+#   3400  sections window table   i*4
+#   3600  flank envelope          i*2, capped below
+#   4000  finish soft contour     i*2, capped below
+#   4400  In-CAM offsets          directory + points, capped at CAM_TOP
+#
+# test_table_layout in test_sections.py asserts they stay disjoint.
+SECT_BASE = 3400
+FLANK_BASE = 3600
+FLANK_TOP = 4000
+FC_BASE = 4000
+FC_TOP = 4400
 
 
 def finish_profile(polyline_feature, back_deg):
@@ -1560,11 +1581,11 @@ def build_finish_contour_gcode(polyline_feature, back_deg):
     if not is_soft:
         return ''
     top = FC_BASE + 2 * len(pts)
-    if top > CAM_BASE:
+    if top > FC_TOP:
         return ('(WARNING - the reachable finishing contour needs %d parameter '
                 'slots and only %d are free, so the finishing passes will '
                 'follow the drawn contour instead.)'
-                % (top - FC_BASE, CAM_BASE - FC_BASE))
+                % (top - FC_BASE, FC_TOP - FC_BASE))
     lines = ['(the contour the tool can actually reach: the drawn profile)',
              '(widened where the tool back angle shadows it. The finishing)',
              '(passes follow this, as roughing already does)',
