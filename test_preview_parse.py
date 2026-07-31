@@ -179,6 +179,7 @@ M2
     test_walk()
     test_tool_and_removal()
     test_comparison()
+    test_tagging()
 
     print()
     if FAILED:
@@ -278,11 +279,14 @@ def test_walk():
     gone - so the first check here is that order survives.
     """
     tp = P.Toolpath()
-    tp.moves = [('rapid', (0.0, 0.0, 0.0), (0.0, 0.0, -10.0)),
-                ('feed',  (0.0, 0.0, -10.0), (10.0, 0.0, -10.0)),
-                ('rapid', (10.0, 0.0, -10.0), (10.0, 0.0, 0.0))]
+    tp.moves = [P.Move('rapid', (0.0, 0.0, 0.0), (0.0, 0.0, -10.0),
+                       'Op', 1, None),
+                P.Move('feed', (0.0, 0.0, -10.0), (10.0, 0.0, -10.0),
+                       'Op', 1, None),
+                P.Move('rapid', (10.0, 0.0, -10.0), (10.0, 0.0, 0.0),
+                       'Op', 1, None)]
     check('program order is preserved through the move list',
-          [k for k, _a, _b in tp.moves] == ['rapid', 'feed', 'rapid'])
+          [m.kind for m in tp.moves] == ['rapid', 'feed', 'rapid'])
     check('feeds/rapids still read back correctly',
           len(tp.feeds) == 1 and len(tp.rapids) == 2)
 
@@ -395,6 +399,72 @@ def test_comparison():
     rem2, _s = P.removed_volume(f3)
     check('turning it down to half radius removes three quarters',
           abs(rem2 / start - 0.75) < 1e-6, 'removed %.4f' % (rem2 / start))
+
+
+def test_tagging():
+    """Operation/tool tags, move categories, and Toolpath Mode."""
+    def mv(kind, z0, z1, op, tool):
+        return P.Move(kind, (20.0, 0.0, z0), (20.0, 0.0, z1), op, tool, None)
+
+    raw = [mv('rapid', 0, -1, 'A', 1),     # into A
+           mv('feed', -1, -2, 'A', 1),     # lead in
+           mv('feed', -2, -3, 'A', 1),     # cut
+           mv('feed', -3, -4, 'A', 1),     # cut
+           mv('feed', -4, -5, 'A', 1),     # lead out
+           mv('rapid', -5, -6, 'A', 1),    # link inside A
+           mv('feed', -6, -7, 'A', 1),
+           mv('rapid', -7, -8, 'B', 2)]    # crosses into B
+    tagged = P.categorise(raw)
+    cats = [m.cat for m in tagged]
+    check('a feed next to a rapid is a lead',
+          cats[1] == P.LEAD and cats[4] == P.LEAD, str(cats))
+    check('feeds between feeds are cutting moves',
+          cats[2] == P.CUT and cats[3] == P.CUT, str(cats))
+    check('a rapid inside one operation is a link', cats[5] == P.LINK,
+          str(cats))
+    check('a rapid crossing operations is a connection', cats[7] == P.CONNECT,
+          str(cats))
+
+    tp = P.Toolpath()
+    tp.moves = tagged
+    check('operations come out in program order', tp.operations == ['A', 'B'],
+          str(tp.operations))
+    check('tools are collected', tp.tools == [1, 2], str(tp.tools))
+
+    # --- Toolpath Mode -----------------------------------------------------
+    n = len(tp.moves)
+    idx = 4
+    beh = P.visible_moves(tp, P.MODE_BEHIND, idx)
+    ahd = P.visible_moves(tp, P.MODE_AHEAD, idx)
+    check('Behind and Ahead together cover the path, overlapping at the tool',
+          len(beh) + len(ahd) == n + 1, '%d + %d vs %d' % (len(beh), len(ahd), n))
+    check('Behind stops at the tool', len(beh) == idx + 1)
+    check('Ahead starts at the tool', len(ahd) == n - idx)
+    check('All shows everything', len(P.visible_moves(tp, P.MODE_ALL, idx)) == n)
+    check('Tail is bounded',
+          len(P.visible_moves(tp, P.MODE_TAIL, idx, tail=2)) == 3)
+    op_only = P.visible_moves(tp, P.MODE_OPERATION, idx)
+    check('Operation shows only the current one',
+          all(m.op == 'A' for m in op_only) and len(op_only) == 7,
+          '%d moves, ops %s' % (len(op_only), {m.op for m in op_only}))
+
+    # without a tool position every mode collapses to All, which is what an
+    # un-played preview should show rather than an empty pane
+    check('no tool position means All',
+          len(P.visible_moves(tp, P.MODE_BEHIND, None)) == n)
+
+    # category filter
+    cuts = P.visible_moves(tp, P.MODE_ALL, idx, show={P.CUT})
+    check('the category filter selects only what is asked for',
+          all(m.cat == P.CUT for m in cuts) and len(cuts) == 2,
+          '%d moves' % len(cuts))
+
+    # palette stability - the same key must keep its colour
+    order = ['A', 'B']
+    check('palette colours are stable for a key',
+          P.palette_colour('A', order) == P.palette_colour('A', order))
+    check('and differ between keys',
+          P.palette_colour('A', order) != P.palette_colour('B', order))
 
 
 def test_view():

@@ -40,12 +40,23 @@ runs standalone, and Regenerate is supposed to work with no machine attached.
 Tools therefore report zero length offsets, which previews the PROGRAMMED path
 in part coordinates - which is what you want to look at when checking a shape.
 """
+import collections
 import math
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+
+
+# One move. `op` and `tool` are GROUND TRUTH - NativeCAM writes the
+# `(begin <Feature>)` markers itself and the tool comes from the interpreter's
+# own tool selection. `cat` is INFERRED, and labelled as such wherever it is
+# shown: nothing in the generated code marks a lead, so it is deduced from
+# where a feed sits relative to the rapids around it.
+Move = collections.namedtuple('Move', 'kind a b op tool cat')
+
+CUT, LEAD, LINK, CONNECT = 'cut', 'lead', 'link', 'connect'
 
 
 class Toolpath(object):
@@ -56,18 +67,31 @@ class Toolpath(object):
         # 'feed' or 'rapid'. Order is what makes a simulation possible at all -
         # feeds and rapids were originally kept in two separate lists, which
         # draws fine and cannot be walked.
-        self.moves = []
+        self.moves = []           # [Move]
         self.error = None      # human-readable, or None
         self.min = None        # (x,y,z) or None when there is no motion
         self.max = None
 
     @property
     def feeds(self):
-        return [(None, a, b) for k, a, b in self.moves if k == 'feed']
+        return [(None, m.a, m.b) for m in self.moves if m.kind == 'feed']
 
     @property
     def rapids(self):
-        return [(None, a, b) for k, a, b in self.moves if k == 'rapid']
+        return [(None, m.a, m.b) for m in self.moves if m.kind == 'rapid']
+
+    @property
+    def operations(self):
+        """Operation names in program order, without repeats."""
+        out = []
+        for m in self.moves:
+            if m.op and (not out or out[-1] != m.op):
+                out.append(m.op)
+        return out
+
+    @property
+    def tools(self):
+        return sorted({m.tool for m in self.moves if m.tool is not None})
 
     @property
     def empty(self):
@@ -163,6 +187,8 @@ _RE = {
     'feed': re.compile(r'STRAIGHT_FEED\(([^)]*)\)'),
     'rapid': re.compile(r'STRAIGHT_TRAVERSE\(([^)]*)\)'),
     'arc': re.compile(r'ARC_FEED\(([^)]*)\)'),
+    'comment': re.compile(r'COMMENT\("(begin|end) ([^"]*)"\)'),
+    'tool': re.compile(r'(?:SELECT_TOOL|CHANGE_TOOL)\(([-0-9.]+)\)'),
 }
 
 
@@ -187,7 +213,27 @@ def parse_program(path, ini_path=None):
             return tp
 
         pos = None
+        stack = []            # nested (begin X) markers; [0] is the operation
+        tool = None
         for line in canon.splitlines():
+            m = _RE['comment'].search(line)
+            if m:
+                # NativeCAM brackets every feature it writes. That makes
+                # operation attribution exact rather than inferred - the one
+                # thing a CAM that only reads G-code cannot do.
+                word, name = m.group(1), m.group(2).strip()
+                if word == 'begin':
+                    stack.append(name)
+                elif stack:
+                    if name in stack:
+                        del stack[stack.index(name):]
+                    else:
+                        stack.pop()
+                continue
+            m = _RE['tool'].search(line)
+            if m:
+                tool = int(float(m.group(1)))
+                continue
             m = _RE['feed'].search(line)
             kind = 'feed'
             if not m:
@@ -197,7 +243,9 @@ def parse_program(path, ini_path=None):
                 v = [float(x) for x in m.group(1).split(',')[:3]]
                 nxt = (v[0], v[1], v[2])
                 if pos is not None:
-                    tp.moves.append((kind, pos, nxt))
+                    tp.moves.append(Move(kind, pos, nxt,
+                                         stack[0] if stack else None, tool,
+                                         None))
                 pos = nxt
                 continue
             m = _RE['arc'].search(line)
@@ -212,12 +260,15 @@ def parse_program(path, ini_path=None):
                 # walked properly.
                 nxt = (v[1], pos[1] if pos else 0.0, v[0])
                 if pos is not None:
-                    tp.moves.extend(('feed', a, b) for _n, a, b
-                                    in _walk_arc(pos, nxt, v[2], v[3], v[4]))
+                    op = stack[0] if stack else None
+                    tp.moves.extend(
+                        Move('feed', a, b, op, tool, None) for _n, a, b
+                        in _walk_arc(pos, nxt, v[2], v[3], v[4]))
                 pos = nxt
                 continue
 
-        pts = [p for _k, a, b in tp.moves for p in (a, b)]
+        tp.moves = categorise(tp.moves)
+        pts = [p for m in tp.moves for p in (m.a, m.b)]
         if pts:
             tp.min = tuple(min(p[i] for p in pts) for i in range(3))
             tp.max = tuple(max(p[i] for p in pts) for i in range(3))
@@ -341,7 +392,8 @@ def _fit(tp, stock, plane, width, height, margin):
 
 
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
-                  view=None, tool=None, field=None, classes=None):
+                  view=None, tool=None, field=None, classes=None,
+                  moves=None, move_colour=None, points=False):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -394,21 +446,36 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
         cr.stroke()
         cr.set_dash([])
 
+    draw = tp.moves if moves is None else moves
+
+    # rapids first and dashed, so a cut is never hidden under a traverse
     cr.set_line_width(1.0)
-    cr.set_source_rgb(*COL['rapid'])
     cr.set_dash([3.0, 3.0])
-    for _n, a, b in tp.rapids:
-        cr.move_to(*pt(a))
-        cr.line_to(*pt(b))
-    cr.stroke()
+    for m in draw:
+        if m.kind != 'rapid':
+            continue
+        cr.set_source_rgb(*(move_colour(m) if move_colour else COL['rapid']))
+        cr.move_to(*pt(m.a))
+        cr.line_to(*pt(m.b))
+        cr.stroke()
     cr.set_dash([])
 
     cr.set_line_width(1.6)
-    cr.set_source_rgb(*COL['feed'])
-    for _n, a, b in tp.feeds:
-        cr.move_to(*pt(a))
-        cr.line_to(*pt(b))
-    cr.stroke()
+    for m in draw:
+        if m.kind == 'rapid':
+            continue
+        cr.set_source_rgb(*(move_colour(m) if move_colour else COL['feed']))
+        cr.move_to(*pt(m.a))
+        cr.line_to(*pt(m.b))
+        cr.stroke()
+
+    if points:
+        cr.set_source_rgb(*COL['text'])
+        for m in draw:
+            for p in (m.a, m.b):
+                x, y = pt(p)
+                cr.rectangle(x - 1.0, y - 1.0, 2.0, 2.0)
+        cr.fill()
 
     # the tool last, so it is never hidden under the path it is cutting
     if tool is not None and tool.get('pos') is not None:
@@ -487,8 +554,8 @@ def path_lengths(tp):
     seen travelling between cuts rather than teleporting.
     """
     acc, total = [], 0.0
-    for _k, a, b in tp.moves:
-        total += math.sqrt(_dist2(a, b))
+    for m in tp.moves:
+        total += math.sqrt(_dist2(m.a, m.b))
         acc.append(total)
     return acc, total
 
@@ -500,8 +567,8 @@ def position_at(tp, t, acc=None, total=None):
     if acc is None:
         acc, total = path_lengths(tp)
     if not total:
-        k, a, _b = tp.moves[0]
-        return a, 0, k
+        m0 = tp.moves[0]
+        return m0.a, 0, m0.kind
     want = max(0.0, min(1.0, t)) * total
     lo = 0
     for i, c in enumerate(acc):
@@ -510,11 +577,12 @@ def position_at(tp, t, acc=None, total=None):
             break
     else:
         lo = len(tp.moves) - 1
-    k, a, b = tp.moves[lo]
+    mv = tp.moves[lo]
     prev = acc[lo - 1] if lo else 0.0
     seg = acc[lo] - prev
     f = 0.0 if seg <= 1e-12 else (want - prev) / seg
-    return tuple(a[j] + (b[j] - a[j]) * f for j in range(3)), lo, k
+    return (tuple(mv.a[j] + (mv.b[j] - mv.a[j]) * f for j in range(3)),
+            lo, mv.kind)
 
 
 def nose_offset(orient):
@@ -869,3 +937,77 @@ def removed_volume(field):
         start += s
         removed += s - now
     return removed, start
+
+
+def categorise(moves):
+    """Label each move cut / lead / link / connect.
+
+    Unlike the operation and tool tags, this is INFERRED. Nothing in the
+    generated code marks a lead, so the rule is positional: a feed that starts
+    a run of cutting, or ends one, next to a rapid is the lead in or out; the
+    feeds between are the cut. A rapid is a link inside one operation and a
+    connection when it crosses between two.
+
+    Said plainly because the distinction matters when reading the display: the
+    operation colours are what NativeCAM knows, these are what it reckons.
+    """
+    out = []
+    n = len(moves)
+    for i, m in enumerate(moves):
+        if m.kind == 'rapid':
+            prev_op = moves[i - 1].op if i else None
+            nxt_op = moves[i + 1].op if i + 1 < n else None
+            cat = CONNECT if (prev_op != m.op or nxt_op != m.op) else LINK
+        else:
+            before = moves[i - 1].kind if i else 'rapid'
+            after = moves[i + 1].kind if i + 1 < n else 'rapid'
+            cat = LEAD if (before == 'rapid' or after == 'rapid') else CUT
+        out.append(m._replace(cat=cat))
+    return out
+
+
+# Toolpath Mode, as the reference panel names them
+MODE_ALL, MODE_BEHIND, MODE_AHEAD, MODE_OPERATION, MODE_TAIL = (
+    'all', 'behind', 'ahead', 'operation', 'tail')
+TAIL_LEN = 40           # moves shown behind the tool in Tail mode
+
+
+def visible_moves(tp, mode=MODE_ALL, index=None, show=None, tail=TAIL_LEN):
+    """The moves to draw, for a Toolpath Mode and a set of categories.
+
+    `index` is where the tool currently is; without it the mode collapses to
+    All, which is what an un-played preview should show.
+    """
+    moves = tp.moves
+    if show is not None:
+        moves = [(i, m) for i, m in enumerate(moves) if m.cat in show]
+    else:
+        moves = list(enumerate(moves))
+    if index is None or mode == MODE_ALL:
+        return [m for _i, m in moves]
+    if mode == MODE_BEHIND:
+        return [m for i, m in moves if i <= index]
+    if mode == MODE_AHEAD:
+        return [m for i, m in moves if i >= index]
+    if mode == MODE_TAIL:
+        return [m for i, m in moves if index - tail <= i <= index]
+    if mode == MODE_OPERATION:
+        op = tp.moves[index].op if 0 <= index < len(tp.moves) else None
+        return [m for _i, m in moves if m.op == op]
+    return [m for _i, m in moves]
+
+
+# A stable palette for per-operation / per-tool colouring. Stable matters: the
+# same operation must keep its colour between redraws and between regenerates,
+# or the display becomes a kaleidoscope every time anything is edited.
+PALETTE = [(0.36, 0.85, 0.40), (0.35, 0.60, 0.95), (0.95, 0.70, 0.25),
+           (0.85, 0.40, 0.80), (0.40, 0.85, 0.85), (0.90, 0.45, 0.35),
+           (0.70, 0.80, 0.35), (0.60, 0.55, 0.95)]
+
+
+def palette_colour(key, order):
+    """Colour for `key`, by its position in `order`. Unknown keys go grey."""
+    try:
+        return PALETTE[order.index(key) % len(PALETTE)]
+    except (ValueError, AttributeError):
+        return COL['rapid']

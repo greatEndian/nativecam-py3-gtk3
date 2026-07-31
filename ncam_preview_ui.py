@@ -143,6 +143,8 @@ class PreviewPane(object):
         self.color_combo = gtk.ComboBoxText()
         self.color_combo.append('plain', _('Stock'))
         self.color_combo.append('comparison', _('Comparison'))
+        self.color_combo.append('operation', _('By operation'))
+        self.color_combo.append('tool', _('By tool'))
         self.color_combo.set_active_id('plain')
         self.color_combo.set_tooltip_text(
             _('Comparison colours the remaining material against the finished '
@@ -166,6 +168,51 @@ class PreviewPane(object):
               'counts as excess or gouged.'))
         self.tol_entry.connect('changed', self._on_cmp_value)
 
+        # --- toolpath display ---------------------------------------------
+        self.mode = ncam_preview.MODE_ALL
+        self.mode_combo = gtk.ComboBoxText()
+        for mid, label in ((ncam_preview.MODE_ALL, _('All toolpaths')),
+                           (ncam_preview.MODE_BEHIND, _('Behind')),
+                           (ncam_preview.MODE_AHEAD, _('Ahead')),
+                           (ncam_preview.MODE_OPERATION, _('Operation')),
+                           (ncam_preview.MODE_TAIL, _('Tail'))):
+            self.mode_combo.append(mid, label)
+        self.mode_combo.set_active_id(ncam_preview.MODE_ALL)
+        self.mode_combo.set_tooltip_text(
+            _('Which of the toolpath is drawn, relative to where the tool has '
+              'reached: everything, only what is behind it, only what is '
+              'ahead, only the current operation, or a short trail.'))
+        self.mode_combo.connect('changed', self._on_mode)
+
+        # Cutting moves and leads are what you look at; links and connections
+        # are usually noise, so they start hidden - the reference panel makes
+        # the same choice.
+        self.cat_btns = {}
+        self.tp_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=2)
+        self.tp_box.pack_start(self.mode_combo, False, False, 0)
+        for cat, label, on, tip in (
+                (ncam_preview.CUT, _('Cut'), True, _('Cutting moves')),
+                (ncam_preview.LEAD, _('Lead'), True,
+                 _('Lead moves - the entry to, and exit from, a cut. Inferred '
+                   'from where a feed sits next to a rapid, not marked in the '
+                   'G-code.')),
+                (ncam_preview.LINK, _('Link'), False,
+                 _('Link moves - rapids within one operation')),
+                (ncam_preview.CONNECT, _('Conn'), False,
+                 _('Connection moves - rapids between operations'))):
+            b = gtk.ToggleButton(label=label)
+            b.set_active(on)
+            b.set_tooltip_text(tip)
+            b.connect('toggled', self._on_cat)
+            self.cat_btns[cat] = b
+            self.tp_box.pack_start(b, False, False, 0)
+        self.points_btn = gtk.ToggleButton(label=_('Pts'))
+        self.points_btn.set_tooltip_text(
+            _('Mark where each move starts and ends - useful on a path made of '
+              'many small segments.'))
+        self.points_btn.connect('toggled', lambda _b: self.area.queue_draw())
+        self.tp_box.pack_start(self.points_btn, False, False, 0)
+
         self.cmp_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
         self.cmp_box.pack_start(self.color_combo, False, False, 0)
         self.cmp_box.pack_start(gtk.Label(label=_('Leave')), False, False, 0)
@@ -180,6 +227,7 @@ class PreviewPane(object):
         self.box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.box.pack_start(self.widget, True, True, 0)
         self.box.pack_start(self.sim_box, False, False, 0)
+        self.box.pack_start(self.tp_box, False, False, 0)
         self.box.pack_start(self.cmp_box, False, False, 0)
         self.box.pack_start(self.status, False, False, 2)
         self.box.show_all()
@@ -291,9 +339,9 @@ class PreviewPane(object):
             self._field = ncam_preview.StockField(a0, a1, b0, b1, cols)
             self._field_upto = -1
         for i in range(self._field_upto + 1, idx + 1):
-            k, a, b = self.toolpath.moves[i]
-            if k == 'feed':          # rapids do not cut
-                self._field.cut_move(a, b, self.nose_r, self._nose_dir())
+            mv = self.toolpath.moves[i]
+            if mv.kind == 'feed':    # rapids do not cut
+                self._field.cut_move(mv.a, mv.b, self.nose_r, self._nose_dir())
         self._field_upto = idx
         return self._field
 
@@ -316,6 +364,26 @@ class PreviewPane(object):
         self.sim_scale.set_value(0.0)
         self._sync_play_icon()
         self.area.queue_draw()
+
+    def _on_mode(self, combo):
+        self.mode = combo.get_active_id() or ncam_preview.MODE_ALL
+        self.area.queue_draw()
+
+    def _on_cat(self, _btn):
+        self.area.queue_draw()
+
+    def _shown_cats(self):
+        return {c for c, b in self.cat_btns.items() if b.get_active()}
+
+    def _move_colour(self):
+        """Per-move colour for the By operation / By tool modes."""
+        if self.colorize == 'operation':
+            order = self.toolpath.operations
+            return lambda m: ncam_preview.palette_colour(m.op, order)
+        if self.colorize == 'tool':
+            order = self.toolpath.tools
+            return lambda m: ncam_preview.palette_colour(m.tool, order)
+        return None
 
     def _on_colorize(self, combo):
         self.colorize = combo.get_active_id() or 'plain'
@@ -450,10 +518,20 @@ class PreviewPane(object):
             except Exception:
                 stock = None
         fld = self._stock_field()
+        idx = None
+        if self.sim_t > 0.0 and not self.toolpath.empty:
+            if self._acc is None:
+                self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
+            _p, idx, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
+                                                   self._acc, self._total)
+        moves = ncam_preview.visible_moves(self.toolpath, self.mode, idx,
+                                           self._shown_cats())
         ncam_preview.draw_toolpath(cr, alloc.width, alloc.height,
                                    self.toolpath, self.plane, stock,
                                    view=self.view, tool=self._tool_state(),
-                                   field=fld, classes=self._classes(fld))
+                                   field=fld, classes=self._classes(fld),
+                                   moves=moves, move_colour=self._move_colour(),
+                                   points=self.points_btn.get_active())
         return False
 
 
