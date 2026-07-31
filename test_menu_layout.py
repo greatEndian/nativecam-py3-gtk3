@@ -47,6 +47,56 @@ class Stub(NCamMenuCatalogMixin):
         self.added.append(src)
 
 
+def _check_popups():
+    import shutil
+    import tempfile
+    ini_src = os.path.join(HERE, 'configs', 'sim', 'axis', 'ncam_demo')
+    if not os.path.isdir(ini_src):
+        print('SKIP  demo config not present, cannot build a real NCam')
+        return
+    scratch = tempfile.mkdtemp(prefix='popup_test_')
+    dst = os.path.join(scratch, 'ncam_demo')
+    shutil.copytree(ini_src, dst, symlinks=True)
+    sys.argv = ['ncam.py', '-i', os.path.join(dst, 'lathe-mm.ini'), '-c', 'lathe']
+    app = ncam.NCam()
+
+    dead = []
+    total = [0]
+
+    def walk(menu):
+        for it in menu.get_children():
+            sub = it.get_submenu() if hasattr(it, 'get_submenu') else None
+            if sub is not None:
+                walk(sub)
+                continue
+            name = it.get_action_name() if hasattr(it, 'get_action_name') else None
+            if not name or not name.startswith('app.'):
+                continue
+            act = app._actions.get(name[4:])
+            if act is None:
+                dead.append((name, 'no such action'))
+                continue
+            fired = []
+            h = act.connect('activate', lambda *a: fired.append(1))
+            was = act.get_enabled()
+            act.set_enabled(True)
+            it.activate()
+            act.set_enabled(was)
+            act.disconnect(h)
+            total[0] += 1
+            if not fired:
+                dead.append((name, 'clicked, nothing happened'))
+
+    for menu in (app.pop_up, app.pop_up2):
+        walk(menu)
+
+    check('every right-click item fires its action', not dead,
+          '%d of %d dead: %s' % (len(dead), total[0], dead[:5]))
+    check('the popups were actually walked', total[0] > 20,
+          'only %d items checked' % total[0])
+    shutil.rmtree(scratch, ignore_errors=True)
+
+
 def main():
     # the catalog uses NativeCAM's own _( )_ gettext markers, which are not
     # valid XML - strip them exactly the way ncam.py does before parsing
@@ -150,6 +200,14 @@ def main():
     unlabelled = _re.findall(r"ca\(\"(\w+)\",\s*'[\w-]+',\s*None,", src)
     check('every stock-icon action still has a text label', not unlabelled,
           'unlabelled: %s' % unlabelled)
+
+    # 9 - the right-click menus must actually fire their actions.
+    # A Gtk.Menu popped up on its own is not in the widget tree, so it cannot
+    # walk up to the action group inserted on the NCam widget: every `app.*`
+    # item resolves to nothing and clicking does nothing at all. The menubar
+    # hid the problem because it IS packed into main_box. This builds a real
+    # NCam and activates every popup item.
+    _check_popups()
 
     print()
     if FAILED:

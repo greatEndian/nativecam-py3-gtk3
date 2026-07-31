@@ -1565,8 +1565,8 @@ def build_finish_contour_gcode(polyline_feature, back_deg):
                 'slots and only %d are free, so the finishing passes will '
                 'follow the drawn contour instead.)'
                 % (top - FC_BASE, CAM_BASE - FC_BASE))
-    lines = ['(the contour the tool can actually reach: the drawn profile',
-             '(widened where the tool back angle shadows it. The finishing',
+    lines = ['(the contour the tool can actually reach: the drawn profile)',
+             '(widened where the tool back angle shadows it. The finishing)',
              '(passes follow this, as roughing already does)',
              '#<_pl_fc_base> = %d' % FC_BASE,
              '#<_pl_fc_n>    = %d' % len(pts)]

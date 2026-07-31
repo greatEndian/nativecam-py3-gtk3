@@ -115,6 +115,27 @@ def scan(path):
     return nested, unclosed, semi
 
 
+def _generate_one():
+    """A real generated .ngc, or None when the demo config is absent."""
+    import shutil
+    import subprocess
+    import tempfile
+    ini = os.path.join(HERE, 'configs', 'sim', 'axis', 'ncam_demo',
+                       'lathe-mm.ini')
+    gen = os.path.join(HERE, '.claude', 'skills', 'lathe-gcode-verify',
+                       'scripts', 'gen_project.py')
+    if not (os.path.isfile(ini) and os.path.isfile(gen)):
+        return None
+    out = os.path.join(tempfile.mkdtemp(prefix='ngc_lint_'), 'gen.ngc')
+    # a project that exercises the flank shadow, so the generated-only
+    # comments around the reachable contour are actually emitted
+    r = subprocess.run([sys.executable, gen, '--ini', ini, '--project',
+                        'testing_15_2.xml', '--out', out, '--config-copy'],
+                       capture_output=True, text=True)
+    del shutil
+    return out if (r.returncode == 0 and os.path.isfile(out)) else None
+
+
 def main():
     files = []
     for pat in ('lib/**/*.ngc', 'cfg/**/*.cfg'):
@@ -169,6 +190,22 @@ def main():
     os.unlink(tmp3)
     check('the lint ignores Python inside exec/eval blocks', not n3 and not u3,
           str(n3 + u3))
+
+    # --- the GENERATED file, not just the sources -------------------------
+    # Comments composed at generation time from Python strings never appear in
+    # lib/ or cfg/, so nothing above can see them. One such string shipped with
+    # two unclosed comments and stopped rs274 dead: the file generated fine,
+    # rs274 reported no error, and the toolpath simply ended - 220 moves became
+    # 14. Linting the output is the only place that catches it.
+    gen = _generate_one()
+    if gen is None:
+        print('SKIP  no demo config to generate from')
+    else:
+        nested, unclosed, _semi = scan(gen)
+        check('the generated G-code has no nested-paren comment', not nested,
+              str(nested[:3]))
+        check('the generated G-code has no unclosed comment', not unclosed,
+              str(unclosed[:3]))
 
     print()
     if FAILED:

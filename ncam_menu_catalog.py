@@ -88,6 +88,12 @@ class NCamMenuCatalogMixin:
         self.pop_up.append(gtk.SeparatorMenuItem())
         self.pop_up.append(self._create_menu_item(self.actionSaveUser))
         self.pop_up.append(self._create_menu_item(self.actionDeleteUser))
+        # A Gtk.Menu popped up on its own is NOT in the widget tree - its
+        # parent is its own toplevel - so it cannot walk up to the action group
+        # inserted on the NCam widget, and every `app.*` item silently does
+        # nothing when clicked. The menubar works only because it is packed
+        # into main_box. Give the popups the group directly.
+        self.pop_up.insert_action_group("app", self.gaction_group)
         self.pop_up.show_all()
 
         # PopupMenu2
@@ -124,6 +130,7 @@ class NCamMenuCatalogMixin:
         self.pop_up2.append(gtk.SeparatorMenuItem())
         self.pop_up2.append(self._create_menu_item(self.actionSaveUser))
         self.pop_up2.append(self._create_menu_item(self.actionDeleteUser))
+        self.pop_up2.insert_action_group("app", self.gaction_group)
         self.pop_up2.show_all()
 
 
