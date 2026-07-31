@@ -39,13 +39,21 @@ class PreviewPane(object):
     TICK_MS = 40
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
-    def __init__(self, ini_path=None, plane='ZX', stock_cb=None):
+    def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
+                 profile_cb=None):
         self.ini_path = ini_path
         self.plane = plane
         # returns (a_min, a_max, b_min, b_max) for the stock, or None. A
         # callback rather than a value so the pane never holds a stale copy of
         # a Workpiece the operator has since edited.
         self.stock_cb = stock_cb
+        # the finished profile, for Comparison colouring. A callback for the
+        # same reason stock_cb is one: it must never be a stale copy of a
+        # feature the operator has since edited.
+        self.profile_cb = profile_cb
+        self.colorize = 'plain'
+        self.leftover = 0.0
+        self.tolerance = 0.01
         self.toolpath = ncam_preview.Toolpath()
         self._last_status = ''
         self._busy = False
@@ -131,6 +139,40 @@ class PreviewPane(object):
         self.sim_box.pack_start(self.sim_scale, True, True, 0)
         self.sim_box.pack_start(self.speed_combo, False, False, 0)
 
+        # --- stock colouring ----------------------------------------------
+        self.color_combo = gtk.ComboBoxText()
+        self.color_combo.append('plain', _('Stock'))
+        self.color_combo.append('comparison', _('Comparison'))
+        self.color_combo.set_active_id('plain')
+        self.color_combo.set_tooltip_text(
+            _('Comparison colours the remaining material against the finished '
+              'profile: blue where stock is still standing proud, green where '
+              'it is on size, red where it has been cut past the part.'))
+        self.color_combo.connect('changed', self._on_colorize)
+
+        self.leftover_entry = gtk.Entry()
+        self.leftover_entry.set_width_chars(6)
+        self.leftover_entry.set_text('0.00')
+        self.leftover_entry.set_tooltip_text(
+            _('Stock deliberately left ON the part. Excess and gouges are '
+              'measured from that surface; 0 measures from the part itself.'))
+        self.leftover_entry.connect('changed', self._on_cmp_value)
+
+        self.tol_entry = gtk.Entry()
+        self.tol_entry.set_width_chars(6)
+        self.tol_entry.set_text('0.01')
+        self.tol_entry.set_tooltip_text(
+            _('Band either side of the expected surface. Outside it, material '
+              'counts as excess or gouged.'))
+        self.tol_entry.connect('changed', self._on_cmp_value)
+
+        self.cmp_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
+        self.cmp_box.pack_start(self.color_combo, False, False, 0)
+        self.cmp_box.pack_start(gtk.Label(label=_('Leave')), False, False, 0)
+        self.cmp_box.pack_start(self.leftover_entry, False, False, 0)
+        self.cmp_box.pack_start(gtk.Label(label=_('Tol')), False, False, 0)
+        self.cmp_box.pack_start(self.tol_entry, False, False, 0)
+
         self.status = gtk.Label()
         self.status.set_halign(gtk.Align.START)
         self.status.set_ellipsize(3)      # PANGO_ELLIPSIZE_END
@@ -138,6 +180,7 @@ class PreviewPane(object):
         self.box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.box.pack_start(self.widget, True, True, 0)
         self.box.pack_start(self.sim_box, False, False, 0)
+        self.box.pack_start(self.cmp_box, False, False, 0)
         self.box.pack_start(self.status, False, False, 2)
         self.box.show_all()
 
@@ -274,6 +317,41 @@ class PreviewPane(object):
         self._sync_play_icon()
         self.area.queue_draw()
 
+    def _on_colorize(self, combo):
+        self.colorize = combo.get_active_id() or 'plain'
+        self.area.queue_draw()
+
+    def _on_cmp_value(self, _entry):
+        def num(entry, fallback):
+            try:
+                return float(entry.get_text().replace(',', '.'))
+            except ValueError:
+                return fallback          # mid-typing; keep the last good value
+        self.leftover = num(self.leftover_entry, self.leftover)
+        self.tolerance = max(num(self.tol_entry, self.tolerance), 0.0)
+        if self.colorize == 'comparison':
+            self.area.queue_draw()
+
+    def _classes(self, field):
+        """Per-column comparison classes, or None for a plain fill."""
+        if field is None or self.colorize != 'comparison':
+            return None
+        pts = None
+        if self.profile_cb is not None:
+            try:
+                pts = self.profile_cb()
+            except Exception:
+                pts = None
+        if not pts or len(pts) < 2:
+            # nothing to compare against - a project with no profile feature.
+            # Say so rather than silently drawing a plain fill that looks like
+            # a part which is entirely in tolerance.
+            self._set_status(_('Comparison needs a profile feature '
+                               '(a Lathe Polyline) to compare against'))
+            return None
+        return ncam_preview.compare_field(field, pts, self.leftover,
+                                          self.tolerance)
+
     def _on_speed(self, combo):
         sid = combo.get_active_id()
         if sid:
@@ -371,10 +449,11 @@ class PreviewPane(object):
                 stock = self.stock_cb()
             except Exception:
                 stock = None
+        fld = self._stock_field()
         ncam_preview.draw_toolpath(cr, alloc.width, alloc.height,
                                    self.toolpath, self.plane, stock,
                                    view=self.view, tool=self._tool_state(),
-                                   field=self._stock_field())
+                                   field=fld, classes=self._classes(fld))
         return False
 
 
@@ -398,7 +477,8 @@ class NCamPreviewMixin(object):
 
         ini = getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME')
         plane = 'ZX' if getattr(self, 'catalog_dir', '') == 'lathe' else 'XY'
-        self.preview_pane = PreviewPane(ini, plane, self._preview_stock)
+        self.preview_pane = PreviewPane(ini, plane, self._preview_stock,
+                                       self._preview_profile)
 
         paned = gtk.Paned(orientation=gtk.Orientation.VERTICAL)
         self.preview_paned = paned
@@ -416,6 +496,28 @@ class NCamPreviewMixin(object):
             parent.add(paned)
         paned.show_all()
         return paned
+
+    def _preview_profile(self):
+        """The finished profile as (z, diameter), or None.
+
+        Straight from lathe_sections.resolve_points on the polyline feature -
+        the very function the G-code is generated from - so the surface the
+        simulation is judged against is the part itself, not a second
+        description of it that could drift.
+
+        Only a polyline defines a whole profile; the parametric ops each cut one
+        wall. Returning None for those is honest, and the caller says so rather
+        than drawing everything as in-tolerance.
+        """
+        try:
+            f = self._find_feature('polyline')
+            if f is None:
+                return None
+            import lathe_sections
+            pts = lathe_sections.resolve_points(f)
+            return pts if pts and len(pts) >= 2 else None
+        except Exception:
+            return None
 
     def _preview_stock(self):
         """The Workpiece extents in the plotted axes, or None.

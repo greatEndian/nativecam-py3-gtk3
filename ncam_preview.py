@@ -341,7 +341,7 @@ def _fit(tp, stock, plane, width, height, margin):
 
 
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
-                  view=None, tool=None, field=None):
+                  view=None, tool=None, field=None, classes=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -376,7 +376,7 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
 
     if field is not None:
         # what is LEFT of the material, once the simulation has cut into it
-        draw_stock_field(cr, field, plane, s, ox, oy)
+        draw_stock_field(cr, field, plane, s, ox, oy, classes)
     elif stock:
         sa0, sa1, sb0, sb1 = stock
         cr.set_source_rgba(*(COL['stock'] + (0.55,)))
@@ -737,22 +737,135 @@ class StockField(object):
         return pts
 
 
-def draw_stock_field(cr, field, plane, s, ox, oy):
-    """Fill what is left of the material."""
-    pts = field.polygon()
-    if not pts:
+def draw_stock_field(cr, field, plane, s, ox, oy, classes=None):
+    """Fill what is left of the material.
+
+    With `classes` from compare_field the fill is banded by classification;
+    without it the whole silhouette is one colour. Consecutive columns of the
+    same class are merged into runs before filling - a field is several
+    thousand columns wide, and one Cairo path per column would make every
+    redraw a slideshow.
+    """
+    if field.n <= 0:
         return
     ia, ib = _plane_indices(plane)
 
-    def scr(p):
-        # the field stores (z, radius); map onto the plotted axes
+    def scr(z, r):
         v = [0.0, 0.0, 0.0]
-        v[2], v[0] = p[0], p[1]
+        v[2], v[0] = z, r
         return v[ia] * s + ox, v[ib] * s + oy
 
-    cr.set_source_rgba(*(COL['stock'] + (0.85,)))
-    cr.move_to(*scr(pts[0]))
-    for p in pts[1:]:
-        cr.line_to(*scr(p))
-    cr.close_path()
-    cr.fill()
+    def fill_run(i0, i1, colour):
+        # +1 column of overlap so neighbouring runs meet with no seam
+        hi = min(i1 + 1, field.n - 1)
+        cr.set_source_rgba(*(colour + (0.9,)))
+        cr.move_to(*scr(field.z0 + (i0 + 0.5) * field.dz, field.outer[i0]))
+        for i in range(i0, hi + 1):
+            cr.line_to(*scr(field.z0 + (i + 0.5) * field.dz, field.outer[i]))
+        for i in range(hi, i0 - 1, -1):
+            cr.line_to(*scr(field.z0 + (i + 0.5) * field.dz, field.inner[i]))
+        cr.close_path()
+        cr.fill()
+
+    if classes is None:
+        fill_run(0, field.n - 1, COL['stock'])
+        return
+
+    run_start, run_cls = 0, classes[0]
+    for i in range(1, field.n):
+        if classes[i] != run_cls:
+            fill_run(run_start, i - 1, CMP_COL.get(run_cls, COL['stock']))
+            run_start, run_cls = i, classes[i]
+    fill_run(run_start, field.n - 1, CMP_COL.get(run_cls, COL['stock']))
+
+
+# ---------------------------------------------------------------------------
+# comparison: how the remaining material differs from the part
+# ---------------------------------------------------------------------------
+UNCUT, EXCESS, IN_TOL, GOUGE = 0, 1, 2, 3
+
+CMP_COL = {
+    EXCESS:  (0.25, 0.45, 0.85),     # material still standing proud
+    IN_TOL:  (0.30, 0.72, 0.35),     # on size
+    GOUGE:   (0.85, 0.22, 0.22),     # cut past the part - red, as errors are
+    UNCUT:   (0.32, 0.30, 0.26),     # outside the profile: nothing to compare
+}
+
+
+def profile_radius_at(z, points):
+    """Target RADIUS of the finished part at this Z, or None off its ends.
+
+    `points` are (z, diameter) as lathe_sections.resolve_points returns them -
+    the same list the G-code is generated from, so the thing being compared
+    against is the part itself and not a second description of it.
+
+    A vertical wall makes the profile multi-valued at its own Z; the outermost
+    value bounds the material, so that is the one taken.
+    """
+    best = None
+    for (z0, d0), (z1, d1) in zip(points, points[1:]):
+        lo, hi = min(z0, z1), max(z0, z1)
+        if not (lo - 1e-9 <= z <= hi + 1e-9):
+            continue
+        if abs(z1 - z0) < 1e-12:
+            r = max(d0, d1) / 2.0
+        else:
+            t = (z - z0) / (z1 - z0)
+            r = (d0 + (d1 - d0) * t) / 2.0
+        best = r if best is None else max(best, r)
+    return best
+
+
+def compare_field(field, points, leftover=0.0, tol=0.01):
+    """Classify every column of the field against the target profile.
+
+    Mirrors the reference CAM's Comparison colorization:
+      - `leftover` is the stock deliberately left ON the part, so deviations are
+        measured from that surface rather than from the model. 0 compares
+        against the model itself.
+      - `tol` is the band either side of it; outside that the material counts as
+        excess or gouged.
+
+    Returns a list of UNCUT/EXCESS/IN_TOL/GOUGE, one per column. Columns whose Z
+    lies off the ends of the profile are UNCUT rather than being compared
+    against nothing - a bar is usually far longer than the part, and calling all
+    of that "excess" would drown the part in blue.
+    """
+    out = []
+    if not points or len(points) < 2:
+        return [UNCUT] * field.n
+    for i in range(field.n):
+        z = field.z0 + (i + 0.5) * field.dz
+        target = profile_radius_at(z, points)
+        if target is None:
+            out.append(UNCUT)
+            continue
+        dev = field.outer[i] - (target + leftover)
+        if dev > tol:
+            out.append(EXCESS)
+        elif dev < -tol:
+            out.append(GOUGE)
+        else:
+            out.append(IN_TOL)
+    return out
+
+
+def compare_summary(classes):
+    """{class: column count} - what the Info tab reports."""
+    return {c: classes.count(c) for c in (UNCUT, EXCESS, IN_TOL, GOUGE)}
+
+
+def removed_volume(field):
+    """(removed, start) volume in mm^3, by Pappus on each column's ring.
+
+    Each column is an annulus of thickness dz, so its volume is
+    pi*(outer^2 - inner^2)*dz. Summing gives what is left; the difference from
+    the starting cylinder is what the tool took off.
+    """
+    start = removed = 0.0
+    for i in range(field.n):
+        s = math.pi * (field.r_out0 ** 2 - field.r_in0 ** 2) * field.dz
+        now = math.pi * (field.outer[i] ** 2 - field.inner[i] ** 2) * field.dz
+        start += s
+        removed += s - now
+    return removed, start

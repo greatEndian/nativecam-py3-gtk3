@@ -178,6 +178,7 @@ M2
     test_view()
     test_walk()
     test_tool_and_removal()
+    test_comparison()
 
     print()
     if FAILED:
@@ -306,6 +307,94 @@ def test_walk():
     empty = P.Toolpath()
     pe, ie, ke = P.position_at(empty, 0.5)
     check('an empty toolpath yields no position, and does not raise', pe is None)
+
+
+def test_comparison():
+    """Comparison colouring: excess, in tolerance and gouge.
+
+    The classification is a subtraction, so what needs pinning is the DATUM.
+    `leftover` is stock deliberately left on the part, and deviations are
+    measured from that surface rather than from the model - so a part sitting
+    0.5 mm proud is a gouge when nothing was to be left, and exactly on size
+    when 0.5 was.
+    """
+    # r20 flanks with an r25 boss between Z-20 and Z-50, as (z, DIAMETER)
+    pts = [(0.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-50.0, 50.0),
+           (-50.0, 40.0), (-80.0, 40.0)]
+
+    check('target radius on a flank', P.profile_radius_at(-10.0, pts) == 20.0)
+    check('target radius on the boss', P.profile_radius_at(-35.0, pts) == 25.0)
+    check('a vertical wall takes its OUTER radius',
+          P.profile_radius_at(-20.0, pts) == 25.0,
+          'got %s - the inner value would under-report a gouge'
+          % P.profile_radius_at(-20.0, pts))
+    check('off the ends of the profile there is nothing to compare',
+          P.profile_radius_at(-90.0, pts) is None)
+
+    # a field deliberately built 0.5 proud, 0.5 deep, and on size
+    f = P.StockField(-80.0, 0.0, 0.0, 30.0, columns=400)
+    for i in range(f.n):
+        z = f.z0 + (i + 0.5) * f.dz
+        t = P.profile_radius_at(z, pts)
+        if t is None:
+            continue
+        f.outer[i] = t + (0.5 if z > -30 else (-0.5 if z > -60 else 0.0))
+
+    cls = P.compare_field(f, pts, leftover=0.0, tol=0.01)
+    names = {P.UNCUT: 'UNCUT', P.EXCESS: 'EXCESS',
+             P.IN_TOL: 'IN_TOL', P.GOUGE: 'GOUGE'}
+    for z, want in ((-10.0, P.EXCESS), (-45.0, P.GOUGE), (-70.0, P.IN_TOL)):
+        got = cls[f._col(z)]
+        check('Z%.0f classifies as %s' % (z, names[want]), got == want,
+              'got %s' % names.get(got))
+
+    # the datum moves with leftover: 0.5 proud IS on size when 0.5 was to be left
+    cls2 = P.compare_field(f, pts, leftover=0.5, tol=0.01)
+    check('leftover shifts the datum, so proud material reads on-size',
+          cls2[f._col(-10.0)] == P.IN_TOL,
+          'got %s' % names.get(cls2[f._col(-10.0)]))
+    check('and a gouge is still a gouge against the shifted datum',
+          cls2[f._col(-45.0)] == P.GOUGE)
+
+    # tolerance widens the acceptable band
+    f2 = P.StockField(-80.0, 0.0, 0.0, 30.0, columns=400)
+    for i in range(f2.n):
+        z = f2.z0 + (i + 0.5) * f2.dz
+        t = P.profile_radius_at(z, pts)
+        if t is not None:
+            f2.outer[i] = t + 0.03
+    tight = P.compare_field(f2, pts, 0.0, 0.01)
+    loose = P.compare_field(f2, pts, 0.0, 0.05)
+    check('0.03 proud is excess at 0.01 tolerance',
+          tight[f2._col(-10.0)] == P.EXCESS)
+    check('and in tolerance at 0.05',
+          loose[f2._col(-10.0)] == P.IN_TOL)
+
+    # Bar beyond the part must not be reported as excess, or the untouched
+    # length of a long bar drowns the part in colour. The field above spans
+    # exactly the profile, so this needs one that runs past it - which is the
+    # normal case: the demo workpiece is 254 mm for an 80 mm part.
+    long_f = P.StockField(-120.0, 0.0, 0.0, 30.0, columns=600)
+    long_cls = P.compare_field(long_f, pts, 0.0, 0.01)
+    summary = P.compare_summary(long_cls)
+    check('stock off the ends of the profile is UNCUT, not EXCESS',
+          summary[P.UNCUT] > 0 and long_cls[long_f._col(-100.0)] == P.UNCUT,
+          'summary %s' % {names[k]: v for k, v in summary.items()})
+    check('and stock within the profile still compares',
+          long_cls[long_f._col(-10.0)] == P.EXCESS,
+          'got %s' % names.get(long_cls[long_f._col(-10.0)]))
+
+    # volume: an uncut field has removed nothing
+    f3 = P.StockField(-10.0, 0.0, 0.0, 10.0, columns=100)
+    rem, start = P.removed_volume(f3)
+    check('an uncut field has removed no volume', abs(rem) < 1e-9)
+    check('and reports the starting volume', abs(start - math.pi * 100 * 10) < 1.0,
+          'got %.1f, expected %.1f' % (start, math.pi * 100 * 10))
+    for i in range(f3.n):
+        f3.outer[i] = 5.0
+    rem2, _s = P.removed_volume(f3)
+    check('turning it down to half radius removes three quarters',
+          abs(rem2 / start - 0.75) < 1e-6, 'removed %.4f' % (rem2 / start))
 
 
 def test_view():
