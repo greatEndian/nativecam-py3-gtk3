@@ -91,6 +91,17 @@ def main():
     check('the table has asymmetric entries, so a transposition would show',
           len(asym) >= 4, 'asymmetric at %s' % asym)
 
+    # --- 1b. the preview's copy of the same table ---------------------------
+    # ncam_preview draws the tool holder from its own transcription of
+    # lathe_shapes, in (Z, x) order. A third hand-written copy of a table that
+    # has already caused one wrong-side bug gets checked like the others.
+    import ncam_preview
+    for n in range(1, 10):
+        want = (ls.NOSE_OFFSET[n][1], ls.NOSE_OFFSET[n][0])
+        check('preview NOSE_DIR[%d] matches lathe_shapes: %s' % (n, want),
+              ncam_preview.NOSE_DIR[n] == want,
+              'preview has %s' % (ncam_preview.NOSE_DIR[n],))
+
     # --- 2. magnitudes ------------------------------------------------------
     for n in (1, 2, 3, 4):
         oz, ox = got[n]

@@ -40,6 +40,7 @@ runs standalone, and Regenerate is supposed to work with no machine attached.
 Tools therefore report zero length offsets, which previews the PROGRAMMED path
 in part coordinates - which is what you want to look at when checking a shape.
 """
+import math
 import os
 import re
 import shutil
@@ -51,15 +52,26 @@ class Toolpath(object):
     """What came out of one interpreter run."""
 
     def __init__(self):
-        self.feeds = []        # [(lineno, (x,y,z), (x,y,z))]
-        self.rapids = []       # same shape
+        # moves are kept in PROGRAM ORDER as (kind, start, end), kind being
+        # 'feed' or 'rapid'. Order is what makes a simulation possible at all -
+        # feeds and rapids were originally kept in two separate lists, which
+        # draws fine and cannot be walked.
+        self.moves = []
         self.error = None      # human-readable, or None
         self.min = None        # (x,y,z) or None when there is no motion
         self.max = None
 
     @property
+    def feeds(self):
+        return [(None, a, b) for k, a, b in self.moves if k == 'feed']
+
+    @property
+    def rapids(self):
+        return [(None, a, b) for k, a, b in self.moves if k == 'rapid']
+
+    @property
     def empty(self):
-        return not self.feeds and not self.rapids
+        return not self.moves
 
     def extents(self, plane='ZX'):
         """(a_min, a_max, b_min, b_max) in the two plotted axes, or None."""
@@ -185,8 +197,7 @@ def parse_program(path, ini_path=None):
                 v = [float(x) for x in m.group(1).split(',')[:3]]
                 nxt = (v[0], v[1], v[2])
                 if pos is not None:
-                    (tp.feeds if kind == 'feed' else tp.rapids).append(
-                        (None, pos, nxt))
+                    tp.moves.append((kind, pos, nxt))
                 pos = nxt
                 continue
             m = _RE['arc'].search(line)
@@ -201,11 +212,12 @@ def parse_program(path, ini_path=None):
                 # walked properly.
                 nxt = (v[1], pos[1] if pos else 0.0, v[0])
                 if pos is not None:
-                    tp.feeds.extend(_walk_arc(pos, nxt, v[2], v[3], v[4]))
+                    tp.moves.extend(('feed', a, b) for _n, a, b
+                                    in _walk_arc(pos, nxt, v[2], v[3], v[4]))
                 pos = nxt
                 continue
 
-        pts = [p for seg in (tp.feeds + tp.rapids) for p in (seg[1], seg[2])]
+        pts = [p for _k, a, b in tp.moves for p in (a, b)]
         if pts:
             tp.min = tuple(min(p[i] for p in pts) for i in range(3))
             tp.max = tuple(max(p[i] for p in pts) for i in range(3))
@@ -227,7 +239,6 @@ def _walk_arc(start, end, zc, xc, rot, sag=ARC_SAG):
     what decides which way round the circle the tool actually goes - taking the
     short way regardless would flip any arc over 180 degrees.
     """
-    import math
     r = math.hypot(start[0] - xc, start[2] - zc)
     if r < 1e-9:
         return [(None, start, end)]
@@ -298,6 +309,8 @@ COL = {
     'rapid':   (0.45, 0.45, 0.52),
     'axis':    (0.55, 0.40, 0.40),
     'text':    (0.80, 0.80, 0.84),
+    'tool':      (0.95, 0.75, 0.25),
+    'tool_body': (0.42, 0.40, 0.46),
 }
 
 
@@ -328,7 +341,7 @@ def _fit(tp, stock, plane, width, height, margin):
 
 
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
-                  view=None):
+                  view=None, tool=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -394,6 +407,11 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
         cr.line_to(*pt(b))
     cr.stroke()
 
+    # the tool last, so it is never hidden under the path it is cutting
+    if tool is not None and tool.get('pos') is not None:
+        draw_tool(cr, tool['pos'], plane, s, ox, oy,
+                  tool.get('nose_r', 0.0), tool.get('orient', 0))
+
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
 
@@ -450,3 +468,94 @@ class View(object):
     def pan(self, ddx, ddy):
         self.dx += ddx
         self.dy += ddy
+
+
+# ---------------------------------------------------------------------------
+# simulation: where is the tool at a given point along the program
+# ---------------------------------------------------------------------------
+def path_lengths(tp):
+    """Cumulative length along the program, and the total.
+
+    Parameterised by DISTANCE, not time: the canon dump carries no feed rates,
+    so a time-accurate simulation would be inventing them. Distance makes the
+    scrub bar predictable - halfway along the slider is halfway along the path -
+    and it is honest about what it knows. Rapids are included, so the tool is
+    seen travelling between cuts rather than teleporting.
+    """
+    acc, total = [], 0.0
+    for _k, a, b in tp.moves:
+        total += math.sqrt(_dist2(a, b))
+        acc.append(total)
+    return acc, total
+
+
+def position_at(tp, t, acc=None, total=None):
+    """(point, move index, kind) at fraction t in 0..1 along the program."""
+    if not tp.moves:
+        return None, -1, None
+    if acc is None:
+        acc, total = path_lengths(tp)
+    if not total:
+        k, a, _b = tp.moves[0]
+        return a, 0, k
+    want = max(0.0, min(1.0, t)) * total
+    lo = 0
+    for i, c in enumerate(acc):
+        if c >= want:
+            lo = i
+            break
+    else:
+        lo = len(tp.moves) - 1
+    k, a, b = tp.moves[lo]
+    prev = acc[lo - 1] if lo else 0.0
+    seg = acc[lo] - prev
+    f = 0.0 if seg <= 1e-12 else (want - prev) / seg
+    return tuple(a[j] + (b[j] - a[j]) * f for j in range(3)), lo, k
+
+
+def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0, holder=True):
+    """The tool at `pos`: the nose circle, and a schematic holder behind it.
+
+    The nose radius and orientation are the SAME numbers the G-code compensates
+    with - passed in from ncam.tip_comp_inputs() - so the picture cannot claim a
+    tool the program is not cutting with. Orientation decides which way the
+    holder points, which is what makes a wrongly-set Q visible as a tool coming
+    from the wrong side rather than as a number in a table.
+    """
+    ia, ib = _plane_indices(plane)
+    px, py = pos[ia] * s + ox, pos[ib] * s + oy
+    r = max(nose_r * s, 2.0)
+
+    if holder and 0 < orient < len(NOSE_DIR):
+        dz, dx = NOSE_DIR[orient]
+        # the holder trails AWAY from the cut, opposite the nose offset
+        hz, hx = -dz, -dx
+        n = math.hypot(hz, hx) or 1.0
+        hz, hx = hz / n, hx / n
+        L = max(r * 6.0, 26.0)
+        w = max(r * 1.6, 5.0)
+        # a wedge: two points at the tool tip, two out along the holder
+        cr.set_source_rgba(*(COL['tool_body'] + (0.85,)))
+        cr.move_to(px - hx * w * 0.5, py + hz * w * 0.5)
+        cr.line_to(px + hx * w * 0.5, py - hz * w * 0.5)
+        cr.line_to(px + hz * L + hx * w * 1.6, py + hx * L - hz * w * 1.6)
+        cr.line_to(px + hz * L - hx * w * 1.6, py + hx * L + hz * w * 1.6)
+        cr.close_path()
+        cr.fill()
+
+    cr.set_source_rgb(*COL['tool'])
+    cr.set_line_width(1.6)
+    cr.arc(px, py, r, 0, 2 * math.pi)
+    cr.stroke()
+    cr.move_to(px - 4, py)
+    cr.line_to(px + 4, py)
+    cr.move_to(px, py - 4)
+    cr.line_to(px, py + 4)
+    cr.stroke()
+
+
+# which way the nose sits from the control point, as (Z, radius) signs. Same
+# table as lathe_sections.NOSE_OFFSET and lib/lathe/tip_comp_vec.ngc, written
+# here in (Z, x) order because that is the order this module plots in.
+NOSE_DIR = [None, (-1, 1), (1, 1), (1, -1), (-1, -1),
+            (-1, 0), (0, 1), (1, 0), (0, -1), (0, 0)]

@@ -176,6 +176,7 @@ M2
     shutil.rmtree(d, ignore_errors=True)
 
     test_view()
+    test_walk()
 
     print()
     if FAILED:
@@ -184,6 +185,45 @@ M2
             print('   -', f)
         sys.exit(1)
     print('Preview parser behaves.')
+
+def test_walk():
+    """Walking the toolpath, which the simulation is built on.
+
+    The parser originally kept feeds and rapids in two separate lists. That
+    draws perfectly well and cannot be walked at all, because program order is
+    gone - so the first check here is that order survives.
+    """
+    tp = P.Toolpath()
+    tp.moves = [('rapid', (0.0, 0.0, 0.0), (0.0, 0.0, -10.0)),
+                ('feed',  (0.0, 0.0, -10.0), (10.0, 0.0, -10.0)),
+                ('rapid', (10.0, 0.0, -10.0), (10.0, 0.0, 0.0))]
+    check('program order is preserved through the move list',
+          [k for k, _a, _b in tp.moves] == ['rapid', 'feed', 'rapid'])
+    check('feeds/rapids still read back correctly',
+          len(tp.feeds) == 1 and len(tp.rapids) == 2)
+
+    acc, total = P.path_lengths(tp)
+    check('total length is the sum of the segments', abs(total - 30.0) < 1e-9,
+          'got %.6f' % total)
+
+    # the ends, and a point whose answer can be worked out by hand
+    p0, i0, k0 = P.position_at(tp, 0.0, acc, total)
+    p1, i1, k1 = P.position_at(tp, 1.0, acc, total)
+    check('t=0 is the start of the first move', p0 == (0.0, 0.0, 0.0))
+    check('t=1 is the end of the last move', p1 == (10.0, 0.0, 0.0), str(p1))
+    pm, im, km = P.position_at(tp, 0.5, acc, total)
+    check('t=0.5 is halfway along by DISTANCE, in the middle move',
+          km == 'feed' and abs(pm[0] - 5.0) < 1e-9 and abs(pm[2] + 10.0) < 1e-9,
+          'got %s in a %s move' % (pm, km))
+
+    # rapids are included in the walk, or the tool teleports between cuts
+    check('rapids are part of the walk', k0 == 'rapid')
+
+    # an empty path must not raise
+    empty = P.Toolpath()
+    pe, ie, ke = P.position_at(empty, 0.5)
+    check('an empty toolpath yields no position, and does not raise', pe is None)
+
 
 def test_view():
     """The zoom/pan transform, headlessly.

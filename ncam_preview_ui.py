@@ -72,12 +72,40 @@ class PreviewPane(object):
         scroll.add(view)
         self.widget.append_page(scroll, gtk.Label(label=_('G-code')))
 
+        # --- simulation controls ------------------------------------------
+        # Play walks the toolpath; the slider scrubs it. Parameterised by
+        # DISTANCE along the path, because the canon dump carries no feed
+        # rates and a time-accurate run would be inventing them.
+        self.sim_t = 0.0
+        self.sim_running = False
+        self._sim_source = None
+        self._acc = None
+        self._total = 0.0
+        self.nose_r = 0.0
+        self.orient = 0
+
+        self.play_btn = gtk.Button()
+        self.play_btn.set_image(gtk.Image.new_from_icon_name(
+            'media-playback-start', gtk.IconSize.BUTTON))
+        self.play_btn.set_tooltip_text(_('Run the tool along the toolpath'))
+        self.play_btn.connect('clicked', self._on_play)
+
+        self.sim_scale = gtk.Scale.new_with_range(
+            gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.001)
+        self.sim_scale.set_draw_value(False)
+        self.sim_scale.connect('value-changed', self._on_scrub)
+
+        self.sim_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
+        self.sim_box.pack_start(self.play_btn, False, False, 0)
+        self.sim_box.pack_start(self.sim_scale, True, True, 0)
+
         self.status = gtk.Label()
         self.status.set_halign(gtk.Align.START)
         self.status.set_ellipsize(3)      # PANGO_ELLIPSIZE_END
 
         self.box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.box.pack_start(self.widget, True, True, 0)
+        self.box.pack_start(self.sim_box, False, False, 0)
         self.box.pack_start(self.status, False, False, 2)
         self.box.show_all()
 
@@ -103,6 +131,7 @@ class PreviewPane(object):
 
     def _done(self, tp):
         self.toolpath = tp
+        self._acc = None          # lengths belong to the old path
         self._busy = False
         if tp.error:
             self._set_status(_('Preview: %s') % tp.error)
@@ -135,6 +164,66 @@ class PreviewPane(object):
                 text, self.view.scale * 100.0)
         self.status.set_markup('<small>%s</small>'
                                % GLib.markup_escape_text(text))
+
+    # -- simulation ---------------------------------------------------------
+    def set_tool(self, nose_r, orient):
+        """Nose radius and orientation, from ncam.tip_comp_inputs().
+
+        Taken from the same source the G-code compensates with, so the drawn
+        tool cannot claim geometry the program is not cutting with.
+        """
+        self.nose_r, self.orient = nose_r or 0.0, orient or 0
+        self.area.queue_draw()
+
+    def _on_play(self, _btn):
+        self.sim_running = not self.sim_running
+        if self.sim_running:
+            if self.sim_t >= 0.999:
+                self.sim_t = 0.0        # replay rather than sit at the end
+            self._sim_source = GLib.timeout_add(40, self._sim_tick)
+        else:
+            self._stop_sim()
+        self._sync_play_icon()
+
+    def _stop_sim(self):
+        self.sim_running = False
+        if self._sim_source is not None:
+            GLib.source_remove(self._sim_source)
+            self._sim_source = None
+
+    def _sync_play_icon(self):
+        self.play_btn.set_image(gtk.Image.new_from_icon_name(
+            'media-playback-pause' if self.sim_running
+            else 'media-playback-start', gtk.IconSize.BUTTON))
+        self.play_btn.show_all()
+
+    def _sim_tick(self):
+        # ~8 s for the whole path regardless of length, so a long program is
+        # still watchable and a short one is not over before it is seen
+        self.sim_t = min(1.0, self.sim_t + 0.005)
+        self.sim_scale.set_value(self.sim_t)
+        if self.sim_t >= 1.0:
+            self._stop_sim()
+            self._sync_play_icon()
+            return False
+        return True
+
+    def _on_scrub(self, scale):
+        v = scale.get_value()
+        if abs(v - self.sim_t) > 1e-9:
+            self.sim_t = v
+            self.area.queue_draw()
+        else:
+            self.area.queue_draw()
+
+    def _tool_state(self):
+        if self.toolpath.empty or self.sim_t <= 0.0:
+            return None
+        if self._acc is None:
+            self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
+        pos, _i, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
+                                               self._acc, self._total)
+        return {'pos': pos, 'nose_r': self.nose_r, 'orient': self.orient}
 
     # -- zoom and pan -------------------------------------------------------
     def _on_scroll(self, area, ev):
@@ -189,7 +278,7 @@ class PreviewPane(object):
                 stock = None
         ncam_preview.draw_toolpath(cr, alloc.width, alloc.height,
                                    self.toolpath, self.plane, stock,
-                                   view=self.view)
+                                   view=self.view, tool=self._tool_state())
         return False
 
 
