@@ -32,6 +32,13 @@ import ncam_preview                        # noqa: E402
 class PreviewPane(object):
     """Owns the notebook, the drawing area and the last parsed toolpath."""
 
+    # playback multipliers. Slow speeds matter more than fast ones here: the
+    # point of watching is usually one corner or one plunge, not the whole part.
+    SPEEDS = [('0.25x', 0.25), ('0.5x', 0.5), ('1x', 1.0),
+              ('2x', 2.0), ('4x', 4.0), ('8x', 8.0)]
+    TICK_MS = 40
+    BASE_STEP = 0.005          # fraction of the path per tick at 1x
+
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None):
         self.ini_path = ini_path
         self.plane = plane
@@ -94,6 +101,25 @@ class PreviewPane(object):
         self.play_btn.set_tooltip_text(_('Run the tool along the toolpath'))
         self.play_btn.connect('clicked', self._on_play)
 
+        # Stop is not Pause. Pause leaves the tool and the cut material where
+        # they are; Stop rewinds to bar stock, which is the only way back to an
+        # uncut part without regenerating.
+        self.stop_btn = gtk.Button()
+        self.stop_btn.set_image(gtk.Image.new_from_icon_name(
+            'media-playback-stop', gtk.IconSize.BUTTON))
+        self.stop_btn.set_tooltip_text(_('Stop and rewind to uncut stock'))
+        self.stop_btn.connect('clicked', self._on_stop)
+
+        self.speed = 1.0
+        self.speed_combo = gtk.ComboBoxText()
+        for label, mult in self.SPEEDS:
+            self.speed_combo.append(str(mult), label)
+        self.speed_combo.set_active_id('1.0')
+        self.speed_combo.set_tooltip_text(
+            _('Playback speed. The whole path takes about 8 seconds at 1x, '
+              'whatever its length.'))
+        self.speed_combo.connect('changed', self._on_speed)
+
         self.sim_scale = gtk.Scale.new_with_range(
             gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.001)
         self.sim_scale.set_draw_value(False)
@@ -101,7 +127,9 @@ class PreviewPane(object):
 
         self.sim_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
         self.sim_box.pack_start(self.play_btn, False, False, 0)
+        self.sim_box.pack_start(self.stop_btn, False, False, 0)
         self.sim_box.pack_start(self.sim_scale, True, True, 0)
+        self.sim_box.pack_start(self.speed_combo, False, False, 0)
 
         self.status = gtk.Label()
         self.status.set_halign(gtk.Align.START)
@@ -231,10 +259,25 @@ class PreviewPane(object):
         if self.sim_running:
             if self.sim_t >= 0.999:
                 self.sim_t = 0.0        # replay rather than sit at the end
-            self._sim_source = GLib.timeout_add(40, self._sim_tick)
+                self._reset_field()
+            self._sim_source = GLib.timeout_add(self.TICK_MS, self._sim_tick)
         else:
             self._stop_sim()
         self._sync_play_icon()
+
+    def _on_stop(self, _btn):
+        """Rewind to uncut stock."""
+        self._stop_sim()
+        self.sim_t = 0.0
+        self._reset_field()
+        self.sim_scale.set_value(0.0)
+        self._sync_play_icon()
+        self.area.queue_draw()
+
+    def _on_speed(self, combo):
+        sid = combo.get_active_id()
+        if sid:
+            self.speed = float(sid)
 
     def _stop_sim(self):
         self.sim_running = False
@@ -249,9 +292,9 @@ class PreviewPane(object):
         self.play_btn.show_all()
 
     def _sim_tick(self):
-        # ~8 s for the whole path regardless of length, so a long program is
-        # still watchable and a short one is not over before it is seen
-        self.sim_t = min(1.0, self.sim_t + 0.005)
+        # ~8 s for the whole path at 1x regardless of length, so a long program
+        # is still watchable and a short one is not over before it is seen
+        self.sim_t = min(1.0, self.sim_t + self.BASE_STEP * self.speed)
         self.sim_scale.set_value(self.sim_t)
         if self.sim_t >= 1.0:
             self._stop_sim()
