@@ -83,6 +83,10 @@ class PreviewPane(object):
         self._total = 0.0
         self.nose_r = 0.0
         self.orient = 0
+        self.cl_deg = None
+        self.included_deg = None
+        self._field = None
+        self._field_upto = -1
 
         self.play_btn = gtk.Button()
         self.play_btn.set_image(gtk.Image.new_from_icon_name(
@@ -132,6 +136,7 @@ class PreviewPane(object):
     def _done(self, tp):
         self.toolpath = tp
         self._acc = None          # lengths belong to the old path
+        self._reset_field()
         self._busy = False
         if tp.error:
             self._set_status(_('Preview: %s') % tp.error)
@@ -166,14 +171,60 @@ class PreviewPane(object):
                                % GLib.markup_escape_text(text))
 
     # -- simulation ---------------------------------------------------------
-    def set_tool(self, nose_r, orient):
-        """Nose radius and orientation, from ncam.tip_comp_inputs().
+    def set_tool(self, nose_r, orient, cl_deg=None, included_deg=None):
+        """Nose radius, orientation and the real insert angles.
 
-        Taken from the same source the G-code compensates with, so the drawn
-        tool cannot claim geometry the program is not cutting with.
+        nose_r/orient come from ncam.tip_comp_inputs(), the same source the
+        G-code compensates with. cl_deg/included_deg come from the tool table's
+        I and J, so the drawn insert is the one in the turret rather than a
+        generic wedge.
         """
         self.nose_r, self.orient = nose_r or 0.0, orient or 0
+        self.cl_deg, self.included_deg = cl_deg, included_deg
+        self._reset_field()
         self.area.queue_draw()
+
+    def _nose_dir(self):
+        # the RAW lathe_shapes offset, not a unit vector - see nose_offset()
+        return ncam_preview.nose_offset(self.orient)
+
+    def _reset_field(self):
+        self._field = None
+        self._field_upto = -1
+
+    def _stock_field(self):
+        """The material, cut back to wherever the simulation has reached.
+
+        Rebuilt from the stock whenever the scrub goes BACKWARDS, because
+        removal only subtracts - you cannot put metal back by replaying fewer
+        moves. Going forwards just applies the moves not yet applied, so
+        dragging the slider along stays cheap.
+        """
+        if self.toolpath.empty or self.sim_t <= 0.0:
+            return None
+        stock = None
+        if self.stock_cb is not None:
+            try:
+                stock = self.stock_cb()
+            except Exception:
+                stock = None
+        if not stock:
+            return None
+        if self._acc is None:
+            self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
+        _pos, idx, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
+                                                 self._acc, self._total)
+        if self._field is None or idx < self._field_upto:
+            a0, a1, b0, b1 = stock
+            cols = ncam_preview.StockField.columns_for(a0, a1, self.nose_r)
+            self._field = ncam_preview.StockField(a0, a1, b0, b1, cols)
+            self._field_upto = -1
+        for i in range(self._field_upto + 1, idx + 1):
+            k, a, b = self.toolpath.moves[i]
+            if k == 'feed':          # rapids do not cut
+                self._field.cut_move(a, b, self.nose_r, self._nose_dir())
+        self._field_upto = idx
+        return self._field
 
     def _on_play(self, _btn):
         self.sim_running = not self.sim_running
@@ -223,7 +274,8 @@ class PreviewPane(object):
             self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
         pos, _i, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
                                                self._acc, self._total)
-        return {'pos': pos, 'nose_r': self.nose_r, 'orient': self.orient}
+        return {'pos': pos, 'nose_r': self.nose_r, 'orient': self.orient,
+                'cl_deg': self.cl_deg, 'included_deg': self.included_deg}
 
     # -- zoom and pan -------------------------------------------------------
     def _on_scroll(self, area, ev):
@@ -278,7 +330,8 @@ class PreviewPane(object):
                 stock = None
         ncam_preview.draw_toolpath(cr, alloc.width, alloc.height,
                                    self.toolpath, self.plane, stock,
-                                   view=self.view, tool=self._tool_state())
+                                   view=self.view, tool=self._tool_state(),
+                                   field=self._stock_field())
         return False
 
 

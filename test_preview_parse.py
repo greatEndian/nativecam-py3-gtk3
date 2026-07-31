@@ -177,6 +177,7 @@ M2
 
     test_view()
     test_walk()
+    test_tool_and_removal()
 
     print()
     if FAILED:
@@ -185,6 +186,88 @@ M2
             print('   -', f)
         sys.exit(1)
     print('Preview parser behaves.')
+
+def test_tool_and_removal():
+    """The drawn tool's direction, and the material it removes.
+
+    Both had a bug that a picture hides. The tool body was drawn OPPOSITE the
+    nose offset, which reads as a mirror image. And the swept disc was placed
+    using a NORMALISED orientation vector, where lathe_shapes entries 1-4 are
+    raw and sqrt(2) long - so every surface came out R*(1 - 1/sqrt(2)) too
+    deep, a constant 0.117 mm that looks like a compensation fault.
+    """
+    import cairo
+
+    # --- the raw offset, which is the one that matters for geometry --------
+    for n in (1, 2, 3, 4):
+        check('orientation %d offset is raw sqrt(2), not normalised' % n,
+              abs(math.hypot(*P.nose_offset(n)) - math.sqrt(2)) < 1e-12,
+              '|%s| = %.6f' % (P.nose_offset(n),
+                               math.hypot(*P.nose_offset(n))))
+    for n in (5, 6, 7, 8):
+        check('orientation %d offset is unit' % n,
+              abs(math.hypot(*P.nose_offset(n)) - 1.0) < 1e-12)
+
+    # --- the tool body must lie WITH the nose offset, not opposite it ------
+    W = H = 160
+    CL = {1: 135, 2: 45, 3: 315, 4: 225, 5: 180, 6: 90, 7: 0, 8: 270}
+    for n, cl in CL.items():
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
+        cr = cairo.Context(surf)
+        cr.set_source_rgb(0, 0, 0)
+        cr.paint()
+        P.draw_tool(cr, (0.0, 0.0, 0.0), 'ZX', 1.0, W / 2.0, H / 2.0,
+                    5.0, n, cl, 60.0)
+        surf.flush()
+        buf, stride = surf.get_data(), surf.get_stride()
+        sx = sy = cnt = 0
+        for y in range(H):
+            for x in range(W):
+                o = y * stride + x * 4
+                if (abs(buf[o + 2] - 107) < 26 and abs(buf[o + 1] - 102) < 26
+                        and abs(buf[o] - 117) < 26):
+                    sx += x
+                    sy += y
+                    cnt += 1
+        if not cnt:
+            check('orientation %d draws a tool body' % n, False)
+            continue
+        vz, vx = sx / cnt - W / 2.0, sy / cnt - H / 2.0
+        ez, ex = P.tool_direction(n)
+        dot = (vz * ez + vx * ex) / max(math.hypot(vz, vx), 1e-9)
+        check('orientation %d draws the body toward the nose, not mirrored' % n,
+              dot > 0.9, 'body centroid (%+.1f,%+.1f) vs offset (%+.2f,%+.2f)'
+              % (vz, vx, ez, ex))
+
+    # --- removal lands on the programmed surface --------------------------
+    # a straight cut along Z at radius 20, tool nose 0.4 on a corner
+    # orientation. The material left behind must be r20, not r20 - 0.117.
+    R, orient = 0.4, 2
+    fld = P.StockField(-50.0, 0.0, 0.0, 30.0,
+                       P.StockField.columns_for(-50.0, 0.0, R))
+    fld.cut_move((20.0, 0.0, -5.0), (20.0, 0.0, -45.0), R, P.nose_offset(orient))
+    for z in (-10.0, -25.0, -40.0):
+        r = fld.outer[fld._col(z)]
+        check('material at Z%.0f is left at the programmed radius' % z,
+              abs(r - 20.0) < 0.01, 'r %.4f, out by %+.4f' % (r, r - 20.0))
+    check('material beyond the cut is untouched',
+          abs(fld.outer[fld._col(-2.0)] - 30.0) < 1e-9)
+
+    # and the normalised vector - the bug - must be measurably different, or
+    # the check above would pass either way
+    bad = P.StockField(-50.0, 0.0, 0.0, 30.0,
+                       P.StockField.columns_for(-50.0, 0.0, R))
+    u = P.tool_direction(orient)
+    bad.cut_move((20.0, 0.0, -5.0), (20.0, 0.0, -45.0), R, u)
+    err = abs(bad.outer[bad._col(-25.0)] - 20.0)
+    check('the normalised offset really does cut too deep',
+          err > 0.1, 'only %.4f off - the two would be indistinguishable' % err)
+
+    # finer nose -> finer columns, or the circle is quantised into the surface
+    check('column count scales with the nose radius',
+          P.StockField.columns_for(-100.0, 0.0, 0.1)
+          > P.StockField.columns_for(-100.0, 0.0, 0.8))
+
 
 def test_walk():
     """Walking the toolpath, which the simulation is built on.

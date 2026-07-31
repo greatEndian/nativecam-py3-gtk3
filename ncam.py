@@ -810,6 +810,34 @@ def tip_comp_inputs():
     return nose_r, orient
 
 
+def tool_wedge():
+    """(centre-line angle, included angle) of the loaded tool, in degrees.
+
+    Read from the tool table's I and J - the front and back angles of the two
+    cutting edges, measured from Z+ - rather than from the orientation number,
+    which only knows nine directions and nothing at all about how wide the
+    insert is.
+
+        centre line = (I + J) / 2      included angle = |J - I|
+
+    Verified against the demo table: every insert comes out at 60 degrees
+    included, the parting blade at 0, and the centre lines match the CL values
+    written in that table's own comments. (T6 and T7 are the exception - their
+    comments read CL0 and CL90 where the arithmetic gives 90 and 0. The
+    arithmetic agrees with LinuxCNC's orientation table, so those two comments
+    are simply swapped.)
+
+    Returns (None, None) when the tool table carries no angles, so callers can
+    fall back rather than draw a tool that is 0 degrees wide.
+    """
+    tn = getattr(TOOL_TABLE, 'saved_tool', 0)
+    front = TOOL_TABLE.get_tool_front_angle(tn)
+    back = TOOL_TABLE.get_tool_back_angle(tn)
+    if front == 0.0 and back == 0.0:
+        return None, None
+    return (front + back) / 2.0, abs(back - front)
+
+
 class VKB(object):
 
     def __init__(self, toplevel, tooltip, min_value, max_value, data_type, convertible) :

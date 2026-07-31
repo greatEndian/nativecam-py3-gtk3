@@ -14,7 +14,7 @@ from ncam import (
     CATALOGS_DIR, CFG_DIR, CUSTOM_DIR, DEFAULTS_DIR, EXAMPLES_DIR, GRAPHICS_DIR,
     LIB_DIR, PROJECTS_DIR, VALID_CATALOGS, SUPPORTED_DATA_TYPES,
     APP_COMMENTS, APP_LICENCE, DONATE_URL, GENERATED_FILE, HOME_PAGE,
-    ConfigParser, CONFIG_FILE, tip_comp_inputs,
+    ConfigParser, CONFIG_FILE, tip_comp_inputs, tool_wedge,
 )
 
 
@@ -183,7 +183,8 @@ class NCamAppActionsMixin:
                 # G-code compensates with, so the picture cannot show a tool
                 # the program is not using
                 nose_r, orient = tip_comp_inputs()
-                pane.set_tool(nose_r, orient)
+                cl_deg, included_deg = tool_wedge()
+                pane.set_tool(nose_r, orient, cl_deg, included_deg)
                 pane.refresh(fname)
             except Exception as e :
                 print(_('Preview: could not refresh: %s') % str(e))

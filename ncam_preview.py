@@ -341,7 +341,7 @@ def _fit(tp, stock, plane, width, height, margin):
 
 
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
-                  view=None, tool=None):
+                  view=None, tool=None, field=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -374,7 +374,10 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     def pt(p):
         return (p[ia] * s + ox, p[ib] * s + oy)
 
-    if stock:
+    if field is not None:
+        # what is LEFT of the material, once the simulation has cut into it
+        draw_stock_field(cr, field, plane, s, ox, oy)
+    elif stock:
         sa0, sa1, sb0, sb1 = stock
         cr.set_source_rgba(*(COL['stock'] + (0.55,)))
         cr.rectangle(sa0 * s + ox, sb0 * s + oy,
@@ -410,7 +413,8 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     # the tool last, so it is never hidden under the path it is cutting
     if tool is not None and tool.get('pos') is not None:
         draw_tool(cr, tool['pos'], plane, s, ox, oy,
-                  tool.get('nose_r', 0.0), tool.get('orient', 0))
+                  tool.get('nose_r', 0.0), tool.get('orient', 0),
+                  tool.get('cl_deg'), tool.get('included_deg'))
 
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
@@ -513,40 +517,109 @@ def position_at(tp, t, acc=None, total=None):
     return tuple(a[j] + (b[j] - a[j]) * f for j in range(3)), lo, k
 
 
-def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0, holder=True):
-    """The tool at `pos`: the nose circle, and a schematic holder behind it.
+def nose_offset(orient):
+    """RAW (Z, radius) offset from the control point to the nose centre.
 
-    The nose radius and orientation are the SAME numbers the G-code compensates
-    with - passed in from ncam.tip_comp_inputs() - so the picture cannot claim a
-    tool the program is not cutting with. Orientation decides which way the
-    holder points, which is what makes a wrongly-set Q visible as a tool coming
-    from the wrong side rather than as a number in a table.
+    Multiplied by the nose radius, this is where the circle actually sits. It
+    is NOT a unit vector: orientations 1-4 are the diagonal corners and have
+    magnitude sqrt(2), because the imaginary sharp tip of a 90 degree corner
+    sits sqrt(2)*R from the round nose centre.
+
+    Normalising it and scaling by R - which is what the first version of the
+    material removal did - places the nose R short along the diagonal and cuts
+    R*(1 - 1/sqrt(2)) too deep: a constant 0.117 mm with a 0.4 mm nose, on
+    every surface. CLAUDE.md flags this exact trap, and it still caught this
+    code, so the raw table is used directly here and only the DRAWING uses a
+    normalised direction.
+    """
+    if 0 < orient < len(NOSE_DIR):
+        return NOSE_DIR[orient]
+    return (0.0, 0.0)
+
+
+def tool_direction(orient, cl_deg=None):
+    """Unit (Z, radius) direction from the control point toward the tool body.
+
+    Two sources, and they agree: the centre-line angle from the tool table's
+    (I+J)/2, or LinuxCNC's nine-way orientation table. Checked numerically -
+    (cos CL, sin CL) reproduces NOSE_DIR for every orientation, which is what
+    makes it safe to prefer the tool table and fall back to the number.
+
+    CL is measured CLOCKWISE from Z+ as seen on the plot, and the plot draws
+    radius DOWNWARD, so screen-y grows the same way the angle turns. That is
+    why this is a plain (cos, sin) with no negation - and getting that wrong is
+    what mirrored the tool about the Z axis in the first version.
+    """
+    if cl_deg is not None:
+        a = math.radians(cl_deg)
+        return math.cos(a), math.sin(a)
+    if 0 < orient < len(NOSE_DIR):
+        dz, dx = NOSE_DIR[orient]
+        n = math.hypot(dz, dx)
+        if n:
+            return dz / n, dx / n
+    return 0.0, 0.0
+
+
+def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
+              cl_deg=None, included_deg=None):
+    """The tool at `pos`: its nose circle, and the insert behind it.
+
+    The BODY LIES IN THE SAME DIRECTION AS THE NOSE OFFSET, not opposite it.
+    LinuxCNC's lathe_shapes gives the vector from the commanded control point -
+    the imaginary sharp tip - to the centre of the nose circle, and that centre
+    is inside the tool. The first version drew the holder the other way, which
+    put the tool on the far side of its own tip and read as a mirror image.
+
+    With I and J from the tool table the insert is drawn at its true included
+    angle, as a wedge whose two faces are tangent to the nose circle: apex back
+    from the centre by R/sin(half), edges out at CL +/- half. Without them it
+    falls back to a plain schematic, because a wedge drawn at a guessed angle
+    would be a claim about the tool that nothing supports.
     """
     ia, ib = _plane_indices(plane)
     px, py = pos[ia] * s + ox, pos[ib] * s + oy
     r = max(nose_r * s, 2.0)
+    dz, dx = tool_direction(orient, cl_deg)
+    # the CENTRE uses the raw offset - sqrt(2) on a corner orientation - while
+    # the wedge below is aimed with the unit direction
+    rz, rx = nose_offset(orient)
 
-    if holder and 0 < orient < len(NOSE_DIR):
-        dz, dx = NOSE_DIR[orient]
-        # the holder trails AWAY from the cut, opposite the nose offset
-        hz, hx = -dz, -dx
-        n = math.hypot(hz, hx) or 1.0
-        hz, hx = hz / n, hx / n
-        L = max(r * 6.0, 26.0)
-        w = max(r * 1.6, 5.0)
-        # a wedge: two points at the tool tip, two out along the holder
-        cr.set_source_rgba(*(COL['tool_body'] + (0.85,)))
-        cr.move_to(px - hx * w * 0.5, py + hz * w * 0.5)
-        cr.line_to(px + hx * w * 0.5, py - hz * w * 0.5)
-        cr.line_to(px + hz * L + hx * w * 1.6, py + hx * L - hz * w * 1.6)
-        cr.line_to(px + hz * L - hx * w * 1.6, py + hx * L + hz * w * 1.6)
-        cr.close_path()
-        cr.fill()
+    if dz or dx:
+        cx, cy = px + rz * nose_r * s, py + rx * nose_r * s
+        half = None
+        if included_deg is not None and 1.0 < included_deg < 179.0:
+            half = math.radians(included_deg / 2.0)
+        cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
+        if half is not None:
+            # a real wedge, tangent to the nose circle on both faces
+            apex = r / math.sin(half)
+            ax, ay = cx - dz * apex, cy - dx * apex
+            base = math.atan2(dx, dz)
+            L = max(r * 10.0, 34.0)
+            cr.move_to(ax, ay)
+            for sgn in (-1.0, 1.0):
+                a = base + sgn * half
+                cr.line_to(ax + math.cos(a) * L, ay + math.sin(a) * L)
+            cr.close_path()
+            cr.fill()
+        else:
+            L, w = max(r * 6.0, 26.0), max(r * 1.6, 5.0)
+            cr.move_to(px - dx * w, py + dz * w)
+            cr.line_to(px + dx * w, py - dz * w)
+            cr.line_to(cx + dz * L + dx * w * 1.6, cy + dx * L - dz * w * 1.6)
+            cr.line_to(cx + dz * L - dx * w * 1.6, cy + dx * L + dz * w * 1.6)
+            cr.close_path()
+            cr.fill()
 
+        cr.set_source_rgb(*COL['tool'])
+        cr.set_line_width(1.4)
+        cr.arc(cx, cy, r, 0, 2 * math.pi)
+        cr.stroke()
+
+    # the commanded point itself, always drawn: it is what the G-code says
     cr.set_source_rgb(*COL['tool'])
     cr.set_line_width(1.6)
-    cr.arc(px, py, r, 0, 2 * math.pi)
-    cr.stroke()
     cr.move_to(px - 4, py)
     cr.line_to(px + 4, py)
     cr.move_to(px, py - 4)
@@ -559,3 +632,127 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0, holder=True):
 # here in (Z, x) order because that is the order this module plots in.
 NOSE_DIR = [None, (-1, 1), (1, 1), (1, -1), (-1, -1),
             (-1, 0), (0, 1), (1, 0), (0, -1), (0, 0)]
+
+
+# ---------------------------------------------------------------------------
+# material removal
+# ---------------------------------------------------------------------------
+class StockField(object):
+    """The remaining material, as a radial profile sampled along Z.
+
+    A lathe part is a solid of revolution, so at any Z the material is the ring
+    between an inner and an outer radius. That makes removal a 1-D problem
+    rather than a 2-D boolean: columns along Z, each holding [inner, outer],
+    and a cut simply pushes one of those two bounds. This is how lathe
+    simulators do it, and it is fast enough to run per frame.
+
+    The nose is swept as a CIRCLE, not a point: at each Z the disc reaches from
+    cx - sqrt(R^2 - dz^2) to cx + that, which is what puts a real fillet in an
+    inside corner instead of a sharp one.
+
+    KNOWN LIMIT: a cut that lands wholly INSIDE the ring - a plunge into the
+    middle of a wall, touching neither bound - would split the material in two,
+    which one inner/outer pair cannot represent. Such a cut is charged to the
+    outer bound. That is wrong for a deep grooving plunge and right for
+    everything the lathe ops currently generate.
+    """
+
+    @staticmethod
+    def columns_for(z0, z1, nose_r, cap=4000):
+        """Enough columns that the nose circle is not visibly quantised.
+
+        Sampling a disc at column centres biases the result DEEPER by
+        R - sqrt(R^2 - (dz/2)^2). With 0.42 mm columns and a 0.4 mm nose that
+        is 0.06 mm, and the simulated part came out 0.07-0.12 mm under its
+        profile - small, but exactly the sort of error someone would try to
+        explain as a compensation fault. A sixth of the nose radius puts it
+        under a micron.
+        """
+        span = abs(z1 - z0)
+        if span <= 0 or nose_r <= 0:
+            return 600
+        return int(max(200, min(cap, span / (nose_r / 6.0))))
+
+    def __init__(self, z0, z1, inner, outer, columns=600):
+        self.z0, self.z1 = min(z0, z1), max(z0, z1)
+        self.n = max(int(columns), 8)
+        span = self.z1 - self.z0
+        self.dz = span / float(self.n) if span > 0 else 1.0
+        self.inner = [float(inner)] * self.n
+        self.outer = [float(outer)] * self.n
+        self.r_in0, self.r_out0 = float(inner), float(outer)
+
+    def _col(self, z):
+        return int((z - self.z0) / self.dz) if self.dz else 0
+
+    def cut_disc(self, cz, cx, r):
+        """Remove the disc of radius r centred at (cz, cx)."""
+        if r <= 0:
+            return
+        lo, hi = self._col(cz - r), self._col(cz + r)
+        for i in range(max(lo, 0), min(hi + 1, self.n)):
+            zc = self.z0 + (i + 0.5) * self.dz
+            d = r * r - (zc - cz) ** 2
+            if d <= 0:
+                continue
+            h = math.sqrt(d)
+            lo_r, hi_r = cx - h, cx + h
+            if hi_r >= self.outer[i] and lo_r < self.outer[i]:
+                self.outer[i] = max(lo_r, self.inner[i])
+            elif lo_r <= self.inner[i] and hi_r > self.inner[i]:
+                self.inner[i] = min(hi_r, self.outer[i])
+            elif lo_r > self.inner[i] and hi_r < self.outer[i]:
+                # wholly inside the ring - see the note above
+                self.outer[i] = max(lo_r, self.inner[i])
+
+    def cut_move(self, a, b, r, direction=(0.0, 0.0)):
+        """Sweep the nose along a segment, stepping under one column width.
+
+        `direction` is the unit (Z, radius) vector from the commanded control
+        point to the NOSE CENTRE - lathe_shapes' offset. The swept disc has to
+        be centred there, not on the control point: the control point is an
+        imaginary sharp tip that removes no metal. Sweeping at the control
+        point instead cut the demo part to r19.60 where the profile is r20.00,
+        out by exactly the nose radius.
+        """
+        dz = b[2] - a[2]
+        dx = b[0] - a[0]
+        oz, ox = direction[0] * r, direction[1] * r
+        # Stepping is driven by the move's Z EXTENT, not its length. For each
+        # column the deepest reach of the sweep is either at an endpoint or
+        # where the path passes closest in Z, so Z resolution is what has to be
+        # covered. A radial plunge or retract - most of the length in a typical
+        # program - then costs two samples instead of thousands.
+        steps = max(int(abs(dz) / max(self.dz, 1e-9)) + 1, 2)
+        for k in range(steps + 1):
+            f = k / float(steps)
+            self.cut_disc(a[2] + dz * f + oz, a[0] + dx * f + ox, r)
+
+    def polygon(self):
+        """The remaining silhouette as (z, radius) points, outer then inner."""
+        pts = [(self.z0 + (i + 0.5) * self.dz, self.outer[i])
+               for i in range(self.n)]
+        pts += [(self.z0 + (i + 0.5) * self.dz, self.inner[i])
+                for i in range(self.n - 1, -1, -1)]
+        return pts
+
+
+def draw_stock_field(cr, field, plane, s, ox, oy):
+    """Fill what is left of the material."""
+    pts = field.polygon()
+    if not pts:
+        return
+    ia, ib = _plane_indices(plane)
+
+    def scr(p):
+        # the field stores (z, radius); map onto the plotted axes
+        v = [0.0, 0.0, 0.0]
+        v[2], v[0] = p[0], p[1]
+        return v[ia] * s + ox, v[ib] * s + oy
+
+    cr.set_source_rgba(*(COL['stock'] + (0.85,)))
+    cr.move_to(*scr(pts[0]))
+    for p in pts[1:]:
+        cr.line_to(*scr(p))
+    cr.close_path()
+    cr.fill()
