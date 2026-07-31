@@ -34,8 +34,13 @@ class PreviewPane(object):
 
     # playback multipliers. Slow speeds matter more than fast ones here: the
     # point of watching is usually one corner or one plunge, not the whole part.
-    SPEEDS = [('0.25x', 0.25), ('0.5x', 0.5), ('1x', 1.0),
-              ('2x', 2.0), ('4x', 4.0), ('8x', 8.0)]
+    # 0.01x to 10x. The slow end is where the value is: at 0.01x the whole
+    # path takes about 13 minutes, which is what you want when watching one
+    # corner being formed. Stops are spaced roughly 1-2-5 per decade so the
+    # list stays short enough to pick from.
+    SPEEDS = [('0.01x', 0.01), ('0.02x', 0.02), ('0.05x', 0.05),
+              ('0.1x', 0.1), ('0.2x', 0.2), ('0.5x', 0.5),
+              ('1x', 1.0), ('2x', 2.0), ('5x', 5.0), ('10x', 10.0)]
     TICK_MS = 40
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
@@ -333,16 +338,28 @@ class PreviewPane(object):
             self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
         _pos, idx, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
                                                  self._acc, self._total)
-        if self._field is None or idx < self._field_upto:
+        if self._field is None or idx <= self._field_upto:
             a0, a1, b0, b1 = stock
             cols = ncam_preview.StockField.columns_for(a0, a1, self.nose_r)
             self._field = ncam_preview.StockField(a0, a1, b0, b1, cols)
             self._field_upto = -1
-        for i in range(self._field_upto + 1, idx + 1):
+
+        # Moves BEFORE the current one are applied whole, once each.
+        for i in range(self._field_upto + 1, idx):
             mv = self.toolpath.moves[i]
             if mv.kind == 'feed':    # rapids do not cut
                 self._field.cut_move(mv.a, mv.b, self.nose_r, self._nose_dir())
-        self._field_upto = idx
+        self._field_upto = idx - 1
+
+        # The CURRENT move is cut only as far as the tool has actually reached.
+        # Applying it whole made an entire pass of material vanish the instant
+        # the tool arrived at it, instead of being eaten progressively behind
+        # the nose - the tool appeared to be following a cut somebody else had
+        # already made. Re-cutting this partial every frame is safe: removal
+        # takes a minimum, so cutting the same metal twice changes nothing.
+        cur = self.toolpath.moves[idx]
+        if cur.kind == 'feed':
+            self._field.cut_move(cur.a, _pos, self.nose_r, self._nose_dir())
         return self._field
 
     def _on_play(self, _btn):

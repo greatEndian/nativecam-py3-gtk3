@@ -265,6 +265,32 @@ def test_tool_and_removal():
     check('the normalised offset really does cut too deep',
           err > 0.1, 'only %.4f off - the two would be indistinguishable' % err)
 
+    # --- material comes off progressively, not a whole move at a time -----
+    # Cutting a move whole the instant the tool reached it made an entire pass
+    # of material vanish at once, so the tool appeared to follow a cut somebody
+    # else had already made. What is removed must track where the tool IS.
+    part = P.StockField(-50.0, 0.0, 0.0, 30.0,
+                        P.StockField.columns_for(-50.0, 0.0, R))
+    a, b = (20.0, 0.0, -5.0), (20.0, 0.0, -45.0)
+    half = (20.0, 0.0, -25.0)             # halfway along the move
+    part.cut_move(a, half, R, P.nose_offset(orient))
+    cut_r = part.outer[part._col(-15.0)]
+    uncut_r = part.outer[part._col(-35.0)]
+    check('material behind the tool is removed',
+          abs(cut_r - 20.0) < 0.01, 'r %.4f' % cut_r)
+    check('material ahead of the tool is still there',
+          abs(uncut_r - 30.0) < 1e-9,
+          'r %.4f - the whole move was cut at once' % uncut_r)
+    # and finishing the move removes the rest
+    part.cut_move(a, b, R, P.nose_offset(orient))
+    check('completing the move removes the rest',
+          abs(part.outer[part._col(-35.0)] - 20.0) < 0.01)
+    # re-cutting is idempotent, which is what makes re-applying the growing
+    # partial every frame safe
+    before = list(part.outer)
+    part.cut_move(a, b, R, P.nose_offset(orient))
+    check('re-cutting the same metal changes nothing', part.outer == before)
+
     # finer nose -> finer columns, or the circle is quantised into the surface
     check('column count scales with the nose radius',
           P.StockField.columns_for(-100.0, 0.0, 0.1)
