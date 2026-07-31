@@ -190,9 +190,16 @@ o<poly_lathe_mill> sub
         (With no CAM pass there is no array at all, so c_top must be c_pds)
         (exactly - not c_pds + 1 - or the mesh lands one slot further along than)
         (it used to and native output is no longer the same code)
+        (the scratch array serves whichever table feeds the contour passes -)
+        (the In-CAM offset paths, or the reachable soft contour - so it is)
+        (sized for the larger of the two)
+        #<c_need> = #<_pl_cam_max>
+        o<c_fc> if [#<_pl_fc_n> GT #<c_need>]
+                #<c_need> = #<_pl_fc_n>
+        o<c_fc> endif
         #<c_top> = #<c_pds>
-        o<cam_alloc> if [#<_pl_cam_max> GT 0]
-                #<c_top> = [#<c_pds> + #<_pl_cam_max> * 8 + 1]
+        o<cam_alloc> if [#<c_need> GT 0]
+                #<c_top> = [#<c_pds> + #<c_need> * 8 + 1]
         o<cam_alloc> endif
 
         (roughing: straight level passes stopped at the offset profile,)
@@ -561,8 +568,14 @@ o<poly_lathe_mill> sub
                 (folded into that path's own geometry, so asking cutter comp for)
                 (it as well would apply it twice)
                 o<pf_cam> if [#<nose_comp> EQ 2]
-                        o<cam_load> CALL [#<c_pds>] [0] [#<rough_dir> EQ 1]
+                        o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir>]] [#[#<_pl_cam_dir> + 1]] [#<rough_dir> EQ 1]
                         o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                o<pf_cam> elseif [#<_pl_fc_n> GT 0]
+                        (the drawn contour is not wholly reachable, so this)
+                        (pass follows the soft one - the same surface the)
+                        (roughing levels already stop against)
+                        o<cam_load> CALL [#<c_pds>] [#<_pl_fc_base>] [#<_pl_fc_n>] [#<rough_dir> EQ 1]
+                        o<lathe_poly_pass> CALL [#<c_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                 o<pf_cam> else
                         o<lathe_poly_pass> CALL [#<r_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                 o<pf_cam> endif
@@ -608,8 +621,11 @@ o<poly_lathe_mill> sub
                         (is already baked into each one, so this asks cutter comp)
                         (for no offset and no nose)
                         o<fn_cam> if [#<nose_comp> EQ 2]
-                                o<cam_load> CALL [#<c_pds>] [#<fin_i>] [#<f_rev>]
+                                o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir> + #<fin_i> * 2]] [#[#<_pl_cam_dir> + #<fin_i> * 2 + 1]] [#<f_rev>]
                                 o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                        o<fn_cam> elseif [#<_pl_fc_n> GT 0]
+                                o<cam_load> CALL [#<c_pds>] [#<_pl_fc_base>] [#<_pl_fc_n>] [#<f_rev>]
+                                o<lathe_poly_pass> CALL [#<c_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                         o<fn_cam> else
                                 o<lathe_poly_pass> CALL [#<pass_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                         o<fn_cam> endif

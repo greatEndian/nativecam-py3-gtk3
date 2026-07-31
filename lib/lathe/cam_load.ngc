@@ -4,22 +4,24 @@
 (indexed by a directory. This turns the pass'es table into the record array)
 (lathe_poly_pass traces, so a CAM-compensated pass runs through exactly the)
 (same pass code a natively compensated one does)
-(CALL dest[1] pass_idx[2] reverse[3])
-(dest      : base of the record array to fill - overwritten, not appended to)
-(pass_idx  : which contour pass, 0 = pre-finish, 1..n = the finish passes)
-(reverse   : 1 walks the table back to front, so the pass runs the other way)
+(CALL dest[1] ptr[2] count[3] reverse[4])
+(dest    : base of the record array to fill - overwritten, not appended to)
+(ptr     : first slot of the Z/radius point table to read)
+(count   : how many points it holds)
+(reverse : 1 walks the table back to front, so the pass runs the other way)
 (  round the profile without needing a second stored copy of it)
+(Takes the table explicitly rather than a CAM pass index, because two different)
+(things now feed the contour passes: the In-CAM offset paths, and the reachable)
+(soft contour when the tool back angle shadows part of the drawn profile)
 o<cam_load> sub
-	#<dest> = #1
-	#<pidx> = #2
-	#<rev>  = #3
+	#<dest>   = #1
+	#<cl_ptr> = #2
+	#<cl_n>   = #3
+	#<rev>    = #4
 
 	(every point is a straight move: the offset path already carries its own)
 	(corner arcs as chords, subdivided under a sagitta bound in Python, so)
 	(there is no arc record for trace_lathe to reconstruct)
-	#<cl_ptr> = #[#<_pl_cam_dir> + #<pidx> * 2]
-	#<cl_n>   = #[#<_pl_cam_dir> + #<pidx> * 2 + 1]
-
 	#[#<dest>] = 0
 	#<cl_i> = 0
 	o<cl_w> while [#<cl_i> LT #<cl_n>]

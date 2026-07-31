@@ -188,6 +188,12 @@ TBL_SCALE = 1.0
 TIP_NOSE_DIA = 0.0
 TIP_ORIENT = 0
 
+# Whether to warn in the tree when the drawn contour cannot all be reached with
+# the loaded tool. On by default - a part that will not come out to drawing is
+# worth saying out loud - but switchable, because on some jobs the leftover
+# metal is expected and the message is then just noise.
+WARN_UNREACHABLE = True
+
 # Decimal places for a value emitted in inches. Six is the metric convention
 # and gives 0.001 mm there, but the same six in inches is only 0.025 mm, and
 # the roughing loop steps level by level so that error accumulates - measured
@@ -2288,6 +2294,10 @@ class Preferences(object):
             # "send" honestly means "load what is on disk", and Regenerate is
             # its own button now
             self.send_regenerates = read_boolean(config, 'layout', 'send_regenerates', False)
+            global WARN_UNREACHABLE
+            WARN_UNREACHABLE = read_boolean(config, 'layout',
+                                            'warn_unreachable', True)
+            self.warn_unreachable = WARN_UNREACHABLE
             treeview_icon_size = read_int(config, 'icons_size', 'treeview', 28)
             add_menu_icon_size = read_int(config, 'icons_size', 'add_menu', 24)
             menu_icon_size = read_int(config, 'icons_size', 'menu', 4)
@@ -2579,6 +2589,8 @@ class Preferences(object):
             self.default += ("#<_pl_resume_z>             = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
+            self.default += ("#<_pl_fc_base>             = 0.0\n")
+            self.default += ("#<_pl_fc_n>                = 0.0\n")
             self.default += ("#<_pl_cam_dir>             = 0.0\n")
             self.default += ("#<_pl_cam_n>               = 0.0\n")
             self.default += ("#<_pl_cam_max>             = 0.0\n")

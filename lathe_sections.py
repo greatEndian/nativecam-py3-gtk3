@@ -1373,7 +1373,7 @@ def cam_pass_offsets(fin_off, pf_off, fin_passes):
     return [fin_off] + [fin_off * (n - i) / float(n) for i in range(1, n + 1)]
 
 
-def build_cam_comp_gcode(polyline_feature, nose_r, orient):
+def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None):
     """Literal G-code with the CAM-offset contours, or a warning comment.
 
     Emitted as point tables the same way build_flank_gcode emits the flank
@@ -1394,7 +1394,9 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient):
                        'or the nose diameter override in the Tool Change')
     if not 0 < int(orient) < len(NOSE_OFFSET):
         return _refuse('tool orientation %s is not one of 1-9' % orient)
-    points = resolve_points(polyline_feature)
+    # the SOFT contour, for the same reason the native passes now follow it:
+    # offsetting an unreachable profile just produces an unreachable path
+    points, _soft = finish_profile(polyline_feature, back_deg)
     if not points or len(points) < 2:
         return _refuse('the profile does not resolve to at least two points')
 
@@ -1444,4 +1446,131 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient):
         for i, (z, x) in enumerate(p):
             lines.append('#%d = %s' % (base + 2 * i, _fmt(z)))
             lines.append('#%d = %s' % (base + 2 * i + 1, _fmt(x / DIAMETER_MODE)))
+    return '\n'.join(lines)
+
+
+# --- the manufacturable contour ---------------------------------------------
+#
+# The profile the operator draws is the HARD contour: what the part should be.
+# It is not always reachable. A tool with a back angle cannot drop straight down
+# behind a raised feature - its heel fouls the wall it has just driven past - so
+# the surface it can actually leave is the hard contour widened by that shadow.
+# That is the SOFT contour.
+#
+# Roughing has respected this since the flank work: poly_lathe_mill loads the
+# envelope into the mesh the level scans read. The CONTOUR passes did not - they
+# traced the hard contour - so on a part with a shadowed region the finish pass
+# commanded the tool into metal it cannot enter, which is the very gouge the
+# shadow exists to prevent, reintroduced on the last pass. Measured on
+# testing_15_2: the two disagreed by up to 9.75 mm of radius.
+#
+# The finishing passes use the FINISHING direction, not the roughing one. It is
+# the finish pass that leaves the surface, so what IT can reach is what the part
+# ends up as; if the two directions differ the two soft contours legitimately
+# differ too.
+FC_BASE = 3500
+
+
+def finish_profile(polyline_feature, back_deg):
+    """(points, soft) - the contour the finishing passes should follow.
+
+    Returns the hard contour and soft=False when nothing constrains it: no back
+    angle, the flank switch off, or an envelope that comes out identical.
+    """
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2:
+        return points, False
+    if back_deg is None or back_deg <= 0:
+        return points, False
+
+    p = polyline_feature.get_param('param_flank')
+    if p is not None and _to_float(p.get_ngc_value()) < 1:
+        return points, False
+
+    d = polyline_feature.get_param('param_f_dir')
+    fin_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    lp = polyline_feature.get_param('param_flank_len')
+    flank_len = _to_float(lp.get_ngc_value()) if lp is not None else 0.0
+
+    env = flank_envelope(points, back_deg, fin_dir, flank_len)
+    if not env or len(env) < 2:
+        return points, False
+    if points[0][0] > points[-1][0]:
+        env = list(reversed(env))
+    same = (len(env) == len(points)
+            and all(abs(a[0] - b[0]) < EPS and abs(a[1] - b[1]) < EPS
+                    for a, b in zip(env, points)))
+    return (points, False) if same else (env, True)
+
+
+def unreachable_spans(polyline_feature, back_deg, tol=0.01):
+    """[(z_from, z_to, worst_radius_gap)] where the part cannot be made.
+
+    What the validation message reports, and what the preview colours.
+    """
+    hard = resolve_points(polyline_feature)
+    soft, is_soft = finish_profile(polyline_feature, back_deg)
+    if not is_soft:
+        return []
+    zs = sorted({z for z, _x in hard} | {z for z, _x in soft})
+    if len(zs) < 2:
+        return []
+    spans, cur = [], None
+    step = max((zs[-1] - zs[0]) / 400.0, 1e-6)
+    z = zs[0]
+    while z <= zs[-1] + 1e-9:
+        h, s = _profile_x_at(z, hard), _profile_x_at(z, soft)
+        gap = 0.0 if (h is None or s is None) else (s - h) / DIAMETER_MODE
+        if gap > tol:
+            if cur is None:
+                cur = [z, z, gap]
+            else:
+                cur[1], cur[2] = z, max(cur[2], gap)
+        elif cur is not None:
+            spans.append(tuple(cur))
+            cur = None
+        z += step
+    if cur is not None:
+        spans.append(tuple(cur))
+    return spans
+
+
+def _profile_x_at(z, points):
+    """Outermost profile X - diameter units - at this Z, or None off the ends."""
+    best = None
+    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+        lo, hi = min(z0, z1), max(z0, z1)
+        if not (lo - 1e-9 <= z <= hi + 1e-9):
+            continue
+        if abs(z1 - z0) < 1e-12:
+            x = max(x0, x1)
+        else:
+            x = x0 + (x1 - x0) * ((z - z0) / (z1 - z0))
+        best = x if best is None else max(best, x)
+    return best
+
+
+def build_finish_contour_gcode(polyline_feature, back_deg):
+    """The soft contour as a point table, or '' when the hard one will do.
+
+    Runtime gate is _pl_fc_n > 0, so '' leaves the contour passes exactly as
+    they were.
+    """
+    pts, is_soft = finish_profile(polyline_feature, back_deg)
+    if not is_soft:
+        return ''
+    top = FC_BASE + 2 * len(pts)
+    if top > CAM_BASE:
+        return ('(WARNING - the reachable finishing contour needs %d parameter '
+                'slots and only %d are free, so the finishing passes will '
+                'follow the drawn contour instead.)'
+                % (top - FC_BASE, CAM_BASE - FC_BASE))
+    lines = ['(the contour the tool can actually reach: the drawn profile',
+             '(widened where the tool back angle shadows it. The finishing',
+             '(passes follow this, as roughing already does)',
+             '#<_pl_fc_base> = %d' % FC_BASE,
+             '#<_pl_fc_n>    = %d' % len(pts)]
+    for i, (z, x) in enumerate(pts):
+        lines.append('#%d = %s' % (FC_BASE + 2 * i, _fmt(z)))
+        lines.append('#%d = %s' % (FC_BASE + 2 * i + 1, _fmt(x / DIAMETER_MODE)))
     return '\n'.join(lines)

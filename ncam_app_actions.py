@@ -234,6 +234,17 @@ class NCamAppActionsMixin:
                 mi.set_active(True)
                 mi.handler_unblock(mi._handler)
 
+    def _warn_unreachable_toggled(self, action) :
+        ncam.WARN_UNREACHABLE = bool(action.get_active())
+        cfg_file = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, CONFIG_FILE)
+        parser = ConfigParser.ConfigParser()
+        parser.read(cfg_file)
+        if not parser.has_section('layout'):
+            parser.add_section('layout')
+        parser.set('layout', 'warn_unreachable', str(ncam.WARN_UNREACHABLE))
+        with open(cfg_file, 'w') as configfile:
+            parser.write(configfile)
+
     def _save_send_mode(self) :
         cfg_file = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, CONFIG_FILE)
         parser = ConfigParser.ConfigParser()
@@ -594,6 +605,13 @@ class NCamAppActionsMixin:
         self.actionAutoRefresh = cta("AutoRefresh", _("Auto-refresh"), _('Auto-refresh LinuxCNC'), self._autorefresh_toggled)
         self.actionAutoRefresh.set_active(False)
 
+        self.actionWarnUnreach = cta("WarnUnreachable",
+                                    _("Warn on unreachable contour"),
+                                    _('Warn when the tool back angle means part '
+                                      'of the drawn profile cannot be reached'),
+                                    self._warn_unreachable_toggled)
+        self.actionWarnUnreach.set_active(True)
+
         self.actionChUnits = ca("ChUnits", None, _("Change Units"), None, _(""), self.action_chUnits)
 
         # actions related to validations
@@ -654,6 +672,9 @@ class NCamAppActionsMixin:
         # back out on every startup
         self.send_regenerates = getattr(self.pref, 'send_regenerates', False)
         self._sync_send_mode_items()
+
+        ncam.WARN_UNREACHABLE = getattr(self.pref, 'warn_unreachable', True)
+        self.actionWarnUnreach.set_active(ncam.WARN_UNREACHABLE)
         self.actionTopBottom.set_active(not self.pref.side_by_side)
         self.actionSideSide.set_active(self.pref.side_by_side)
         self.actionSingleView.set_active(not self.pref.use_dual_views)

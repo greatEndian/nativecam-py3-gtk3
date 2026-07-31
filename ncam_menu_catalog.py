@@ -253,6 +253,8 @@ class NCamMenuCatalogMixin:
         # so it is discoverable from the menus too. One shared group would tie
         # two menus' lifetimes together, so this builds its own and the two
         # stay in step through _set_send_mode
+        menu_utils.append(self._create_menu_item(self.actionWarnUnreach))
+
         mi_send = gtk.MenuItem.new_with_label(_('Send button'))
         mi_send.set_submenu(self.create_send_mode_menu())
         menu_utils.append(mi_send)
