@@ -252,6 +252,98 @@ o<lathe_level_pass> sub
 	(stopped cutting, to search for a further interval past it)
 	#<_pl_level_z_end> = #<z_end>
 
+	(resolve the lead-out radius and the possibly-shortened cut end BEFORE the)
+	(straight cut, so a cut ending near a wall can stop just early enough that)
+	(a full-radius lead-out arc still lands tangent to the pre-finish contour)
+	(instead of the radius being clipped to a constant. z_end - the logical)
+	(floor crossing - is left untouched for the interval/blocking logic and)
+	(the _pl_level_z_end export; only the physical straight-cut endpoint and)
+	(the fillet's own tangent point move)
+	#<z_end_cut> = #<z_end>
+
+	o<lo_res> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
+		(lead-out line direction: unit vector pointing from the exit toward)
+		(the far rapid point - 0 degrees along Z surface, 90 radial)
+		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
+		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
+		#<_lo_cos> = [#<z_dir> * #<lo_bz>]
+		#<_lo_leff> = #<lo_len>
+
+		(mirrors the lead-in's own _li_leff/li_cap_all cap above, and bounds the)
+		(same end of the interval it does. The retreat travels BACKWARD, from)
+		(z_end toward w_from, for either z_dir - lo_bz carries z_dir, so the)
+		(move Z[end_z + _lo_leff * lo_bz] always runs against the cutting)
+		(direction. What it must not reach past is therefore w_from: on a)
+		(multi-crossing continuation interval that is where the boss blocking)
+		(the sweep sits. Measuring toward w_to instead bounded the one direction)
+		(the retreat never travels, which both deleted the lead-out outright)
+		(whenever a pass ran its whole window - z_end clamped to w_to, so zero)
+		(room, which is what left every artificial slice ending bare - and let)
+		(a continuation interval retreat run back over its own start when the)
+		(room ahead happened to be large. Gated on multi-crossing so the)
+		(single-crossing path stays byte-for-byte unchanged)
+		o<lo_cap_all> if [#<_pl_multi_cross> GT 0]
+			#<_lo_room> = ABS[#<z_end> - #<w_from>]
+			o<lo_lcap> if [#<_lo_cos> GT 0.0001]
+				#<_lo_lmax> = [#<_lo_room> / #<_lo_cos>]
+				o<lo_lcap2> if [#<_lo_leff> GT #<_lo_lmax>]
+					#<_lo_leff> = #<_lo_lmax>
+				o<lo_lcap2> endif
+			o<lo_lcap> endif
+		o<lo_cap_all> endif
+
+		(radius is bounded by how much straight lead length there is to blend)
+		(into - a big radius with a short lead would swing wider than lo_len)
+		(can absorb; half-angle from the arrival vs lead-out directions)
+		#<_lo_reff> = #<lo_rad>
+		o<lo_rlen> if [#<lo_len> GT 0]
+			#<_lo_sin> = ABS[#<z_dir> * #<lo_bx>]
+			#<_lo_rmax> = [#<_lo_leff> * #<_lo_sin> / [1 + #<_lo_cos>]]
+			o<lo_rlen2> if [#<_lo_reff> GT #<_lo_rmax>]
+				#<_lo_reff> = #<_lo_rmax>
+			o<lo_rlen2> endif
+		o<lo_rlen> endif
+
+		(pre-finish tangency by POSITION, not by clipping the radius: the arc's)
+		(circle is always centered on the cut end in Z, so its lowest point is)
+		(radius below that - see poly_lathe_mill.ngc lo_rad_cap. To keep the)
+		(user's radius AND land tangent to the pre-finish contour, which sits)
+		(_lo_rad_cap toward the wall from the roughing floor, pull the cut end)
+		(back toward the window start by exactly the excess, so the circle)
+		(bottoms out ON the pre-finish line rather than past it. Guard: a short)
+		(multi-crossing interval with no room to pull back falls back to)
+		(clipping the radius, so it still cannot overflow)
+		o<lo_pull> if [[#<lo_rad> GT 0] AND [#<_lo_reff> GT #<_lo_rad_cap>]]
+			#<z_end_try> = [#<z_end> + #<z_dir> * [#<_lo_reff> - #<_lo_rad_cap>]]
+			o<lo_pull2> if [[#<z_dir> * [#<w_from> - #<z_end_try>]] GT 0.0001]
+				#<z_end_cut> = #<z_end_try>
+			o<lo_pull2> else
+				#<_lo_reff> = #<_lo_rad_cap>
+			o<lo_pull2> endif
+		o<lo_pull> endif
+	o<lo_res> endif
+
+	(Skip a pass too short to be worth making. A level whose cut is only a)
+	(fraction of the tool sits almost entirely inside the pre-finish allowance)
+	(anyway - the contour pass that follows takes the same metal in one go - so)
+	(cutting it costs an approach and a retract to remove almost nothing.)
+	(BEFORE the approach and the lead-in, not after them: returning later still)
+	(left the whole entry behind - retract, rapid to the lead start, then a FEED)
+	(into the workpiece - and then walked away without cutting the pass it had)
+	(just entered for. A skipped pass now emits no motion at all.)
+	(Measured on z_end_cut, which is why the lead-out resolution above it moved)
+	(up here too: that block is pure arithmetic, it emits nothing, and the pull)
+	(back it applies is what decides how long this cut really is. Measuring the)
+	(raw crossing instead read the pass longer than it is and the gate missed)
+	(the passes it exists for.)
+	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
+	(knows where this level reached and carries on past it.)
+	o<shrt> if [#<_pl_min_pass> GT 0]
+		o<shrt2> if [ABS[#<z_end_cut> - #<w_from>] LT #<_pl_min_pass>]
+			o<lathe_level_pass> return
+		o<shrt2> endif
+	o<shrt> endif
+
 
 	(approach: full retract above stock, or minimal retract just above the)
 	(previous pass level - safe because that band is already cut)
@@ -340,90 +432,6 @@ o<lathe_level_pass> sub
 		G0 X[#<level> * #<_diameter_mode>]
 	o<lead_in> endif
 
-	(resolve the lead-out radius and the possibly-shortened cut end BEFORE the)
-	(straight cut, so a cut ending near a wall can stop just early enough that)
-	(a full-radius lead-out arc still lands tangent to the pre-finish contour)
-	(instead of the radius being clipped to a constant. z_end - the logical)
-	(floor crossing - is left untouched for the interval/blocking logic and)
-	(the _pl_level_z_end export; only the physical straight-cut endpoint and)
-	(the fillet's own tangent point move)
-	#<z_end_cut> = #<z_end>
-
-	(Skip a pass too short to be worth making. A level whose cut is only a)
-	(fraction of the tool sits almost entirely inside the pre-finish allowance)
-	(anyway - the contour pass that follows takes the same metal in one go - so)
-	(cutting it costs an approach and a retract to remove almost nothing.)
-	(Measured on z_end_cut, NOT on the raw crossing z_end: the lead-out pulls)
-	(the cut end back, and measuring before that made the pass read ~0.4 mm)
-	(longer than it is, so the gate never fired on the passes it was meant for.)
-	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
-	(knows where this level reached and carries on past it.)
-	o<shrt> if [#<_pl_min_pass> GT 0]
-		o<shrt2> if [ABS[#<z_end_cut> - #<w_from>] LT #<_pl_min_pass>]
-			o<lathe_level_pass> return
-		o<shrt2> endif
-	o<shrt> endif
-	o<lo_res> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
-		(lead-out line direction: unit vector pointing from the exit toward)
-		(the far rapid point - 0 degrees along Z surface, 90 radial)
-		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
-		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
-		#<_lo_cos> = [#<z_dir> * #<lo_bz>]
-		#<_lo_leff> = #<lo_len>
-
-		(mirrors the lead-in's own _li_leff/li_cap_all cap above, and bounds the)
-		(same end of the interval it does. The retreat travels BACKWARD, from)
-		(z_end toward w_from, for either z_dir - lo_bz carries z_dir, so the)
-		(move Z[end_z + _lo_leff * lo_bz] always runs against the cutting)
-		(direction. What it must not reach past is therefore w_from: on a)
-		(multi-crossing continuation interval that is where the boss blocking)
-		(the sweep sits. Measuring toward w_to instead bounded the one direction)
-		(the retreat never travels, which both deleted the lead-out outright)
-		(whenever a pass ran its whole window - z_end clamped to w_to, so zero)
-		(room, which is what left every artificial slice ending bare - and let)
-		(a continuation interval retreat run back over its own start when the)
-		(room ahead happened to be large. Gated on multi-crossing so the)
-		(single-crossing path stays byte-for-byte unchanged)
-		o<lo_cap_all> if [#<_pl_multi_cross> GT 0]
-			#<_lo_room> = ABS[#<z_end> - #<w_from>]
-			o<lo_lcap> if [#<_lo_cos> GT 0.0001]
-				#<_lo_lmax> = [#<_lo_room> / #<_lo_cos>]
-				o<lo_lcap2> if [#<_lo_leff> GT #<_lo_lmax>]
-					#<_lo_leff> = #<_lo_lmax>
-				o<lo_lcap2> endif
-			o<lo_lcap> endif
-		o<lo_cap_all> endif
-
-		(radius is bounded by how much straight lead length there is to blend)
-		(into - a big radius with a short lead would swing wider than lo_len)
-		(can absorb; half-angle from the arrival vs lead-out directions)
-		#<_lo_reff> = #<lo_rad>
-		o<lo_rlen> if [#<lo_len> GT 0]
-			#<_lo_sin> = ABS[#<z_dir> * #<lo_bx>]
-			#<_lo_rmax> = [#<_lo_leff> * #<_lo_sin> / [1 + #<_lo_cos>]]
-			o<lo_rlen2> if [#<_lo_reff> GT #<_lo_rmax>]
-				#<_lo_reff> = #<_lo_rmax>
-			o<lo_rlen2> endif
-		o<lo_rlen> endif
-
-		(pre-finish tangency by POSITION, not by clipping the radius: the arc's)
-		(circle is always centered on the cut end in Z, so its lowest point is)
-		(radius below that - see poly_lathe_mill.ngc lo_rad_cap. To keep the)
-		(user's radius AND land tangent to the pre-finish contour, which sits)
-		(_lo_rad_cap toward the wall from the roughing floor, pull the cut end)
-		(back toward the window start by exactly the excess, so the circle)
-		(bottoms out ON the pre-finish line rather than past it. Guard: a short)
-		(multi-crossing interval with no room to pull back falls back to)
-		(clipping the radius, so it still cannot overflow)
-		o<lo_pull> if [[#<lo_rad> GT 0] AND [#<_lo_reff> GT #<_lo_rad_cap>]]
-			#<z_end_try> = [#<z_end> + #<z_dir> * [#<_lo_reff> - #<_lo_rad_cap>]]
-			o<lo_pull2> if [[#<z_dir> * [#<w_from> - #<z_end_try>]] GT 0.0001]
-				#<z_end_cut> = #<z_end_try>
-			o<lo_pull2> else
-				#<_lo_reff> = #<_lo_rad_cap>
-			o<lo_pull2> endif
-		o<lo_pull> endif
-	o<lo_res> endif
 
 	G1 Z#<z_end_cut>
 
