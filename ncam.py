@@ -821,6 +821,19 @@ class Tools(object):
         """Back-angle clearance of the last tool change, in degrees."""
         return getattr(self, 'saved_back_clear', 0.0)
 
+    def save_rough_cut(self, value):
+        """Remember the roughing depth of cut set at the last Tool Change.
+
+        Generation-time Python needs it to build the entry contour - where a
+        roughing level may begin cutting - and the .ngc's own #<_rough_cut>
+        only exists at runtime, far too late to compute geometry from.
+        """
+        self.saved_rough_cut = max(get_float(value), 0.0)
+
+    def get_rough_cut(self):
+        """Roughing depth of cut of the last tool change, 0 when unset."""
+        return getattr(self, 'saved_rough_cut', 0.0)
+
 
 def tip_comp_inputs():
     """(nose radius, orientation) as the generated G-code will resolve them.
@@ -2622,6 +2635,8 @@ class Preferences(object):
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")
             self.default += ("#<_pl_min_pass>            = 0.0\n")
+            self.default += ("#<_pl_entry_base>          = 0.0\n")
+            self.default += ("#<_pl_entry_n>             = 0.0\n")
             self.default += ("#<_pl_fc_base>             = 0.0\n")
             self.default += ("#<_pl_fc_n>                = 0.0\n")
             self.default += ("#<_pl_cam_dir>             = 0.0\n")

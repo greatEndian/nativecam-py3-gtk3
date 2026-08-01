@@ -164,6 +164,9 @@ class NCamProjectIOMixin:
                     p_bc = f.get_param('param_back_clear')
                     ncam.TOOL_TABLE.save_back_clear(
                         p_bc.get_ngc_value() if p_bc is not None else 0.0)
+                    p_rc = f.get_param('param_c_dpt')
+                    ncam.TOOL_TABLE.save_rough_cut(
+                        p_rc.get_ngc_value() if p_rc is not None else 0.0)
                 f.validate()
                 # never reuse a cached O-word id: the counter restarts every
                 # build, so a stale stored id collides with freshly assigned

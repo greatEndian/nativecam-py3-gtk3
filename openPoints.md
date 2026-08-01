@@ -72,40 +72,39 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   **specification change**: enter at **one roughing depth of cut** (0.508),
   which is 2.258 mm of Z instead of 4.517.
 
-  **Step 2 — design settled, two mechanical blockers left.**
+  **Step 2a — the entry contour, in Python. DONE.** The standing rule
+  redirected this: instead of teaching the subroutine to resolve a second
+  resume point at a second allowance - which needed a 15th CALL argument the
+  interpreter refuses ("Command too long") and a second untestable scan -
+  Python offsets the contour once, at generation time, and emits a table.
 
-  greatEndian, 2026-08-01: **the stop keeps the floor allowance, only the
-  start moves** - by the stop the pass is already down on the floor. And it
-  must work with roughing running **back to front** as well as front to back.
+  - `lathe_sections.entry_contour()` offsets the reachable contour outward by
+    one roughing depth of cut, by **exactly the rule lathe_level_pass uses**
+    (per-segment outward normal, consecutive ends joined by a straight
+    connector), so the entry and the stop are measured off the same
+    construction. Side follows the roughing direction, so front-to-back and
+    back-to-front both come out right.
+  - `build_entry_contour_gcode()` emits it at `_pl_entry_base` / `_pl_entry_n`.
+  - Table space: FC_TOP 4400 → 4200, ENTRY 4200-4400. Both bounded, both refuse
+    rather than run into a neighbour; `test_table_layout` covers it.
+  - The roughing depth of cut reaches generation-time Python by the route the
+    flank length already takes - `TOOL_TABLE.save_rough_cut` from the Tool
+    Change's own cut depth.
+  - On testing_15_2 the table comes out 38 points, and **motion is
+    byte-identical**: 244 calls before and after, because nothing reads it yet.
 
-  Design that satisfies both, and does not disturb the stop at all:
+  **Step 2b — what is left.** `lathe_level_pass` gains `z_start`, used ONLY for
+  the approach, the lead-in geometry and the pass-length tests; its scan, its
+  stop and its block test keep the floor allowance untouched, which is what
+  greatEndian asked for - by the stop the pass is already down on the floor.
+  The entry Z comes from the new table, and travels as a GLOBAL
+  (`#<_pl_entry_z>`), never as a 15th argument. Both traps already hit and
+  recorded: a local first assigned inside a branch reads as "not defined" under
+  LinuxCNC's load-time pre-parse, so it needs initialising at the top of the
+  sub, and the global needs a `create_defaults()` line.
 
-  1. Phase 2 resolves the resume point **twice** from the same search origin -
-     once with the floor allowance (`w_from`, exactly as today, so the scan,
-     the stop and the block test are untouched) and once with the entry
-     allowance (where the cut may begin).
-  2. `lathe_level_pass` gains `z_start`, used **only** for the approach, the
-     lead-in geometry and the pass-length tests. Direction falls out of
-     `z_dir`, so front-to-back and back-to-front need no separate case.
-
-  Measured: the entry resume lands at **Z-49.203** against **Z-51.462** - the
-  2.258 mm wanted.
-
-  Two blockers hit while wiring it, both recorded so the next attempt does not
-  rediscover them:
-
-  - **`Command too long`.** Adding a 15th argument to the `lathe_level_pass`
-    CALL kills the whole program - that line is already at the interpreter's
-    limit, which is why the polyline's other state travels as globals. The
-    entry point must be a global (`#<_pl_entry_z>`), set before the call and
-    cleared after it.
-  - **`Named parameter #<l_entry_z> not defined`.** LinuxCNC pre-parses the
-    whole file at load, so a local first assigned inside a branch is undefined
-    even though the sequence would set it. It needs initialising at the top of
-    `poly_lathe_mill`, beside the other locals, and `#<_pl_entry_z>` needs a
-    line in `create_defaults()` in `ncam.py` for the same reason.
-
-  Both attempts reverted; `lib/lathe` and `ncam.py` are clean.
+  Target, measured: the entry lands at **Z-49.203** against **Z-51.462**, and
+  the eight intervals behind the peak must survive - 243 moves, 147 cutting.
 
   *Method note, paid for three times over in this session: an .ngc generated
   earlier in the session is not a safe baseline, and neither is a toolpath

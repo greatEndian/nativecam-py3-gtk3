@@ -1544,7 +1544,92 @@ SECT_BASE = 3400
 FLANK_BASE = 3600
 FLANK_TOP = 4000
 FC_BASE = 4000
-FC_TOP = 4400
+FC_TOP = 4200
+# the ENTRY contour - see entry_contour(). It shares 4000-4400 with the finish
+# contour, which was given 200 points and has never needed more than 20; both
+# are bounded and both refuse rather than run into their neighbour.
+ENTRY_BASE = 4200
+ENTRY_TOP = 4400
+
+
+def entry_contour(points, dist, rough_dir=0):
+    """The contour offset outward by `dist`, as a (z, radius) polyline.
+
+    This is where a roughing level may BEGIN cutting. The level stops on the
+    floor allowance - by then it is already down on the floor - but it does not
+    have to wait that long to start: against the shallow ramp the back angle
+    leaves behind a peak, the floor allowance costs its own length divided by
+    the sine of the ramp angle before the cut even begins. On testing_15_2 that
+    is 4.51 mm per level and 36.1 mm of metal left standing.
+
+    Computed HERE rather than in the subroutine on purpose. The .ngc already
+    reconstructs an offset profile at runtime - normals, corner connectors,
+    fold-back guards - and doing it a second time at a second allowance needed
+    an extra CALL argument the interpreter refuses to accept ("Command too
+    long") and a second scan nobody can unit-test. Python offsets it once, at
+    generation time, and the subroutine is handed a table to walk.
+
+    The rule is deliberately IDENTICAL to lathe_level_pass's own: each segment
+    is offset along its outward normal, and consecutive offset ends are joined
+    by a straight connector - which is what emitting both endpoints of every
+    segment, in order, produces. Matching it matters: the entry point and the
+    stop are compared against each other, so they have to be measured off the
+    same construction.
+
+    `dist` is a radius, in the same units as the points. `rough_dir` picks the
+    outward side the way flank_sides does, so front-to-back and back-to-front
+    both come out right.
+    """
+    if not points or len(points) < 2 or dist <= 0:
+        return list(points)
+    z_dir = -1 if rough_dir == 1 else 1
+    out = []
+    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+        dz, dx = z1 - z0, x1 - x0
+        n = math.hypot(dz, dx)
+        if n < EPS:
+            continue
+        nz, nx = z_dir * dx / n, -z_dir * dz / n
+        out.append((z0 + dist * nz, x0 + dist * nx))
+        out.append((z1 + dist * nz, x1 + dist * nx))
+    return out
+
+
+def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                              flank_len=0.0, clearance=0.0, entry_off=0.0):
+    """The entry contour as a point table, or '' when there is nothing to say.
+
+    Emitted next to the finishing contour and read the same way. The runtime
+    gate is _pl_entry_n > 0, so '' leaves roughing exactly as it was.
+    """
+    if entry_off is None or _to_float(entry_off) <= 0:
+        return ''
+    pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
+                                clearance)
+    if not pts or len(pts) < 2:
+        return ''
+    d = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    env = entry_contour(pts, _to_float(entry_off), rough_dir)
+    if len(env) < 2:
+        return ''
+    top = ENTRY_BASE + 2 * len(env)
+    if top > ENTRY_TOP:
+        return ('(WARNING - the entry contour needs %d parameter slots and '
+                'only %d are free, so roughing levels will start on the floor '
+                'allowance as before.)' % (top - ENTRY_BASE,
+                                           ENTRY_TOP - ENTRY_BASE))
+    lines = ['(where a roughing level may BEGIN cutting: the reachable)',
+             '(contour offset by one roughing depth of cut. The level still)',
+             '(STOPS on the floor allowance - by then it is already down on)',
+             '(the floor - but it need not wait that long to start)',
+             '#<_pl_entry_base> = %d' % ENTRY_BASE,
+             '#<_pl_entry_n>    = %d' % len(env)]
+    for i, (z, x) in enumerate(env):
+        lines.append('#%d = %s' % (ENTRY_BASE + 2 * i, _fmt(z)))
+        lines.append('#%d = %s' % (ENTRY_BASE + 2 * i + 1,
+                                   _fmt(x / DIAMETER_MODE)))
+    return '\n'.join(lines)
 
 
 def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,

@@ -376,6 +376,7 @@ def main():
               Child('poly_arc_to_coords', param_act='1', param_type='5',
                     param_x='60', param_z='-10')])) is None)
 
+    test_entry_contour()
     test_table_layout()
 
     print()
@@ -386,6 +387,62 @@ def main():
         sys.exit(1)
     print('All section resolution tests passed.')
 
+
+
+def test_entry_contour():
+    """Where a roughing level may BEGIN cutting.
+
+    The level stops on the floor allowance - by then it is already down on the
+    floor - but against the shallow ramp a peak leaves behind, that allowance
+    costs its own length over the sine of the ramp angle before the cut even
+    starts: 4.51 mm per level and 36.1 mm of metal on testing_15_2.
+
+    The offset rule has to be IDENTICAL to lathe_level_pass's own, because the
+    entry and the stop are compared against each other. So it is checked as a
+    perpendicular distance from each segment, which is what that subroutine
+    computes with its own normals.
+    """
+    import lathe_sections as L
+    prof = [(0.0, 40.0), (-10.0, 40.0), (-10.0, 22.0), (-90.0, 22.0)]
+
+    env = L.entry_contour(prof, 1.0, 0)
+    check('every segment contributes both its offset ends',
+          len(env) == 2 * (len(prof) - 1), '%d points' % len(env))
+
+    worst = 0.0
+    for i, (a, b) in enumerate(zip(prof, prof[1:])):
+        dz, dx = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dz, dx)
+        for p in (env[2 * i], env[2 * i + 1]):
+            d = abs((p[0] - a[0]) * dx - (p[1] - a[1]) * dz) / n
+            worst = max(worst, abs(d - 1.0))
+    check('every offset point is exactly the offset from its own segment',
+          worst < 1e-9, 'worst error %.3e' % worst)
+
+    # the side matters: outward means away from the material, and it flips
+    # with the roughing direction exactly as flank_sides does
+    fwd = L.entry_contour(prof, 1.0, 0)
+    rev = L.entry_contour(prof, 1.0, 1)
+    check('the offset side follows the roughing direction',
+          fwd != rev, 'front-to-back and back-to-front came out identical')
+    check('front to back offsets AWAY from the axis',
+          fwd[0][1] > prof[0][1], 'r%.3f against r%.3f' % (fwd[0][1], prof[0][1]))
+    check('back to front offsets the other way',
+          rev[0][1] < prof[0][1], 'r%.3f against r%.3f' % (rev[0][1], prof[0][1]))
+
+    # it scales, rather than being right at one value by luck
+    for d in (0.25, 0.508, 2.0):
+        e = L.entry_contour(prof, d, 0)
+        got = e[0][1] - prof[0][1]
+        check('an offset of %g moves the contour %g' % (d, d),
+              abs(got - d) < 1e-9, 'moved %.6f' % got)
+
+    check('no offset, no contour change', L.entry_contour(prof, 0.0, 0) == prof)
+    check('a degenerate profile comes back untouched',
+          L.entry_contour([(0.0, 1.0)], 1.0, 0) == [(0.0, 1.0)])
+    check('and zero-length segments are dropped, not divided by',
+          len(L.entry_contour([(0.0, 10.0), (0.0, 10.0), (-5.0, 10.0)],
+                              1.0, 0)) == 2)
 
 
 def test_table_layout():
@@ -402,6 +459,7 @@ def test_table_layout():
     regions = [('sections', L.SECT_BASE, L.FLANK_BASE),
                ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
                ('finish contour', L.FC_BASE, L.FC_TOP),
+               ('entry contour', L.ENTRY_BASE, L.ENTRY_TOP),
                ('In-CAM offsets', L.CAM_BASE, L.CAM_TOP)]
     for i in range(len(regions) - 1):
         n0, _b0, t0 = regions[i]
