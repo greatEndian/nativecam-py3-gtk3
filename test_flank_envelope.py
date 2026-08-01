@@ -217,6 +217,8 @@ def main():
               at(e, -50.0 - reach + 0.5) > 45.0,
               'D%.2f inside it' % at(e, -50.0 - reach + 0.5))
 
+    test_preview_agrees()
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
@@ -224,6 +226,78 @@ def main():
             print('   -', f)
         sys.exit(1)
     print('All flank envelope tests passed.')
+
+
+def test_preview_agrees():
+    """The contour DRAWN must be the contour the passes follow.
+
+    These are two calls to the same function from two places - the .cfg that
+    generates the G-code, and the preview's soft-contour callback - and they
+    have to be given the same inputs or the picture is of a different tool from
+    the program. That is exactly what happened when the flank length moved to
+    the Tool Change: the cfg call was updated, the preview call was not, so it
+    kept drawing an INFINITE-flank contour while the passes used the real
+    insert. The passes then appeared to run outside their own reachable
+    surface, which is a convincing-looking bug in something that was correct.
+
+    Nothing here reads the source; it sets two different flank lengths on the
+    Tool Change and checks the drawn contour actually changes.
+    """
+    import shutil
+    import tempfile
+    from lxml import etree
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    ini = os.path.join(here, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
+    if not os.path.isfile(ini):
+        print('SKIP  no demo config to check the preview against')
+        return
+    scratch = tempfile.mkdtemp(prefix='flank_preview_')
+    try:
+        dst = os.path.join(scratch, 'ncam_demo')
+        shutil.copytree(os.path.dirname(ini), dst, symlinks=True)
+        sys.argv = ['ncam.py', '-i', os.path.join(dst, 'lathe-mm.ini'),
+                    '-c', 'lathe']
+        import ncam
+        app = ncam.NCam()
+        proj = os.path.join(dst, 'ncam/catalogs/lathe/projects/testing_15_2.xml')
+        if not os.path.isfile(proj):
+            print('SKIP  no shadowed project to check against')
+            return
+        with open(proj) as f:
+            xml = app.update_features(etree.fromstring(f.read().encode()))
+        app.treestore_from_xml(xml)
+        tc = app._find_feature('tool_change')
+        check('the Tool Change carries the flank length',
+              tc is not None and tc.get_param('param_flank_len') is not None)
+        if tc is None or tc.get_param('param_flank_len') is None:
+            return
+
+        drawn = {}
+        for mm, value in ((0.0, '0.0'), (16.0, '0.6299212598')):
+            tc.get_param('param_flank_len').attr['value'] = value
+            app.to_gcode()          # the hook that publishes it to TOOL_TABLE
+            check('a %g mm flank reaches TOOL_TABLE' % mm,
+                  abs(ncam.TOOL_TABLE.get_flank_len() - mm) < 1e-6,
+                  'got %.4f' % ncam.TOOL_TABLE.get_flank_len())
+            drawn[mm] = app._preview_soft_profile()
+
+        check('the drawn contour exists for both',
+              bool(drawn[0.0]) and bool(drawn[16.0]),
+              '%s and %s points' % (len(drawn[0.0] or []), len(drawn[16.0] or [])))
+        check('and the flank length changes what is DRAWN, not just what is cut',
+              drawn[0.0] != drawn[16.0],
+              'same contour at 0 mm and 16 mm - the preview is not being told '
+              'the length')
+        if drawn[0.0] and drawn[16.0]:
+            # a finite flank releases the shadow, so it can only ever produce a
+            # contour that hugs the drawn profile more closely
+            check('a finite flank shadows LESS than an unbounded one',
+                  len(drawn[16.0]) > len(drawn[0.0]),
+                  '%d points at 16 mm vs %d unbounded'
+                  % (len(drawn[16.0]), len(drawn[0.0])))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 if __name__ == '__main__':

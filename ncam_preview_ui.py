@@ -868,8 +868,14 @@ class NCamPreviewMixin(object):
                 return None
             import lathe_sections
             import ncam
+            # every argument the GENERATED code passes, including the flank
+            # length. Dropping it made the drawn contour an infinite-flank one
+            # while the passes used the real insert, so the picture disagreed
+            # with the program it was drawn from - the two must come out of
+            # the same call with the same inputs or neither can be trusted.
             pts, soft = lathe_sections.finish_profile(
-                f, ncam.TOOL_TABLE.get_back_angle(), ncam.tip_comp_inputs()[0])
+                f, ncam.TOOL_TABLE.get_back_angle(), ncam.tip_comp_inputs()[0],
+                ncam.TOOL_TABLE.get_flank_len())
             return pts if soft else None
         except Exception:
             return None
