@@ -635,6 +635,7 @@ COL = {
     'soft':      (0.95, 0.45, 0.85),     # what the tool can actually reach
     'tool':      (0.95, 0.75, 0.25),
     'tool_body': (0.42, 0.40, 0.46),
+    'tool_holder': (0.78, 0.78, 0.80),   # the block behind the insert
     'prefinish': (0.35, 0.60, 1.00),     # the pre-finish contour pass
     'finish':    (1.00, 0.60, 0.15),     # the finishing pass, in any op
 }
@@ -1036,7 +1037,7 @@ def tool_direction(orient, cl_deg=None):
 
 
 def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
-                    flank_len=0.0, cl_deg=None):
+                    flank_len=0.0, cl_deg=None, parts=None):
     """The tool as a closed (z, radius) outline in MODEL units, or None.
 
     Built the way the insert actually is, from the tool table plus the flank
@@ -1104,6 +1105,9 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     e_f, e_b = to_cap(t_f, d_f), to_cap(t_b, d_b)
     if e_f is None or e_b is None:
         return None
+    if parts is not None:
+        parts.update(centre=(cz, cx), t_f=t_f, t_b=t_b, e_f=e_f, e_b=e_b,
+                     z_lead=z_lead, z_back=z_back, zdir=zdir, r=nose_r)
 
     # the nose arc, from one tangent point round the exposed side to the other
     a_f = math.atan2(t_f[1] - cx, t_f[0] - cz)
@@ -1126,6 +1130,44 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     arc = [(cz + math.cos(a_f + span * t) * nose_r,
             cx + math.sin(a_f + span * t) * nose_r) for t in ts]
     return arc + [e_b, e_f]
+
+
+def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
+                flank_len=0.0, cl_deg=None):
+    """The holder in front of the insert, as a closed (z, radius) outline.
+
+    A third line perpendicular to Z, tangent to the nose circle on its BACK
+    side - the tool tip mirrored through the nose centre. That line is the
+    front face of the holder, and the sliver between it and the insert's back
+    edge is body: metal that is not an edge and must not touch anything.
+
+    Without it the tool stops at its own cutting edge, which is only the front
+    corner of a real tool. The insert is a few millimetres; what actually
+    fouls a shoulder is the block behind it.
+
+    Returned separately from tool_silhouette rather than merged into it, so
+    the two can be drawn in different greys - the insert is the part that is
+    allowed to be in metal, the holder is not.
+    """
+    parts = {}
+    if tool_silhouette(pos, nose_r, orient, front_deg, back_deg, flank_len,
+                       cl_deg, parts) is None:
+        return None
+    cz, cx = parts['centre']
+    t_b, e_b = parts['t_b'], parts['e_b']
+    # The face is the perpendicular-to-Z tangent of the nose circle on the
+    # side the cutting edge does NOT lead with - for a corner tool that line
+    # runs through the control point itself, which is where the red line sits
+    # in photo/toolFlank_0.png. It is the same line the leading cap already
+    # uses; what is new is the surface between it and the insert's edge.
+    z_face = parts['z_lead']
+    del cz
+    # the holder runs from that face back to wherever the insert's back edge
+    # reaches the cap, and down to the same radius
+    if abs(e_b[1] - cx) < 1e-9:
+        return None
+    return [(z_face, cx), (z_face, e_b[1]), (e_b[0], e_b[1]),
+            (t_b[0], t_b[1])]
 
 
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
@@ -1167,6 +1209,18 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         outline = (tool_silhouette(pos, nose_r, orient, front_deg, back_deg,
                                    flank_len, cl_deg)
                    if plane == 'ZX' else None)
+        holder = (tool_holder(pos, nose_r, orient, front_deg, back_deg,
+                              flank_len, cl_deg)
+                  if plane == 'ZX' else None)
+        if holder:
+            # under the insert, so the overlap reads as insert
+            cr.set_source_rgba(*(COL['tool_holder'] + (0.9,)))
+            first = True
+            for pz, prx in holder:
+                (cr.move_to if first else cr.line_to)(pz * s + ox, prx * s + oy)
+                first = False
+            cr.close_path()
+            cr.fill()
         cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
         if outline:
             # model units, so it is drawn through the same transform the

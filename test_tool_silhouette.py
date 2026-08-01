@@ -161,6 +161,36 @@ def main():
               min(p[0] for p in left) < POS[2],
               'both hands of tool point the same way')
 
+    # --- the holder in front of the insert --------------------------------
+    # A third line perpendicular to Z, tangent to the nose, is the holder's
+    # front face; the surface between it and the insert's back edge is the
+    # block behind the cutting corner. photo/toolFlank_0.png is the shape.
+    hold = P.tool_holder(POS, R, ORIENT, FRONT, BACK, FLANK)
+    check('a holder comes back with the insert', hold is not None
+          and len(hold) == 4)
+    if hold:
+        check('its front face is a single line perpendicular to Z',
+              abs(hold[0][0] - hold[1][0]) < 1e-9,
+              'Z%.4f vs Z%.4f' % (hold[0][0], hold[1][0]))
+        check('that face is tangent to the nose circle',
+              abs(hold[0][0] - (centre()[0] - R)) < 1e-9,
+              'face at Z%.4f, tangent at Z%.4f' % (hold[0][0], centre()[0] - R))
+        check('and it starts level with the nose centre, not above it',
+              abs(hold[0][1] - centre()[1]) < 1e-9)
+        check('the far end shares the insert edge, so the two meet flush',
+              any(abs(hold[2][0] - p[0]) < 1e-9 and abs(hold[2][1] - p[1]) < 1e-9
+                  for p in poly),
+              'the holder corner %s is not on the insert' % (hold[2],))
+        check('the holder is behind the face, never in front of it',
+              all(q[0] >= hold[0][0] - 1e-9 for q in hold),
+              'part of the holder is past its own front face')
+        check('it reaches as deep as the insert does',
+              abs(max(q[1] for q in hold) - max(p[1] for p in poly)) < 1e-9)
+    check('no insert, no holder',
+          P.tool_holder(POS, R, ORIENT, None, None, FLANK) is None)
+    check('no flank length, no holder',
+          P.tool_holder(POS, R, ORIENT, FRONT, BACK, 0.0) is None)
+
     # --- and it must reach the canvas ------------------------------------
     # The geometry above can be perfect while draw_tool ignores it. What
     # distinguishes the silhouette from the old wedge on screen is that it is
@@ -171,7 +201,7 @@ def main():
     except ImportError:
         print('SKIP  cairo is not installed - cannot check the drawing')
     else:
-        def drawn_extent(scale):
+        def drawn_extent(scale, want=None):
             W = H = 400
             surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
             cr = cairo.Context(surf)
@@ -179,12 +209,21 @@ def main():
                         45.0, 60.0, FRONT, BACK, FLANK)
             surf.flush()
             data, stride = surf.get_data(), surf.get_stride()
-            body = tuple(int(c * 255) for c in P.COL['tool_body'])
+            # the fills are laid down at 0.9 alpha on a transparent surface,
+            # so cairo stores them PREMULTIPLIED - matching the raw colour
+            # finds nothing and reads as "it was never drawn"
+            body = tuple(int(c * 0.9 * 255) for c in (want or P.COL['tool_body']))
             xs = [x for y in range(H) for x in range(W)
                   if abs(data[y * stride + x * 4 + 2] - body[0]) < 12
                   and abs(data[y * stride + x * 4 + 1] - body[1]) < 12
                   and abs(data[y * stride + x * 4] - body[2]) < 12]
             return (max(xs) - min(xs)) if xs else 0
+
+        holder_px = drawn_extent(6.0, P.COL['tool_holder'])
+        check('the holder is drawn too, in its own grey', holder_px > 2,
+              'nothing in the holder colour reached the canvas')
+        check('and its grey is not the insert grey',
+              P.COL['tool_holder'] != P.COL['tool_body'])
 
         w1, w2 = drawn_extent(6.0), drawn_extent(12.0)
         check('the silhouette is actually drawn', w1 > 4,
