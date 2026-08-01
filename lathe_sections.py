@@ -1142,7 +1142,7 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
     return keep
 
 
-def build_flank_gcode(polyline_feature, back_deg):
+def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0):
     """Literal G-code building the reachable envelope as a record array, or ''.
 
     Emitted as records so poly_lathe_mill can hand it straight to the level
@@ -1173,6 +1173,13 @@ def build_flank_gcode(polyline_feature, back_deg):
             abs(a[0] - b[0]) < EPS and abs(a[1] - b[1]) < EPS
             for a, b in zip(sorted(env), sorted(points))):
         return ''
+
+    # Cleaned exactly as the finishing contour is, and for the same reason.
+    # Roughing stops against THIS surface while the contour passes follow the
+    # cleaned one; if the two differ, roughing eats into the pre-finish
+    # allowance at every sawtooth valley - which is what put the behind-boss
+    # levels inside the pre-finish band. One surface, both users.
+    env = _min_segment(_clean_ramp(env, points), 2.4 * nose_r)
 
     base = FLANK_BASE
     if base + 2 * len(env) > FLANK_TOP:
