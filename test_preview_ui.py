@@ -170,6 +170,41 @@ def main():
     check('a half-typed number keeps the last good value',
           abs(p.leftover - 0.25) < 1e-9, str(p.leftover))
 
+    # --- 6b. the Info and Statistics pages ---------------------------------
+    # Fed a synthetic toolpath rather than a parsed one: what is under test
+    # here is that the pages are wired to it, and 50 mm at 100 mm/min is 30 s
+    # whether or not rs274 is on this machine.
+    tp = ncam_preview.Toolpath()
+    tp.moves = [ncam_preview.Move('feed', (10.0, 0.0, 0.0), (10.0, 0.0, -50.0),
+                                  'Turning', 3, ncam_preview.CUT, (), 100.0,
+                                  'min', None)]
+    p._done(tp)
+    pump()
+    stats = p.stats_buffer.get_text(p.stats_buffer.get_start_iter(),
+                                    p.stats_buffer.get_end_iter(), False)
+    check('the Statistics page fills in', '0:30' in stats,
+          'no hand-computed 30 s in: %s' % stats.splitlines()[:3])
+    check('and names the operation it came from', 'Turning' in stats,
+          stats)
+    check('Info is blank until the tool is somewhere',
+          p.info_rows['pos'].get_text() == '-',
+          p.info_rows['pos'].get_text())
+    p.sim_scale.set_value(0.5)
+    pump()
+    check('Info follows the tool once it moves',
+          p.info_rows['pos'].get_text().startswith('X20'),
+          'X should be a DIAMETER - twice the 10 in the move: %s'
+          % p.info_rows['pos'].get_text())
+    check('and names the operation, tool and feed there',
+          p.info_rows['op'].get_text() == 'Turning'
+          and p.info_rows['tool'].get_text() == 'T3'
+          and 'mm/min' in p.info_rows['feed'].get_text(),
+          '%s / %s / %s' % (p.info_rows['op'].get_text(),
+                            p.info_rows['tool'].get_text(),
+                            p.info_rows['feed'].get_text()))
+    p.sim_scale.set_value(0.0)
+    pump()
+
     # --- 7. the legend names the colours that are on the plot --------------
     # It lives in the status line precisely so it does not become row number
     # two, so it has to be right about which colours are showing.

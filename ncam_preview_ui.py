@@ -48,6 +48,10 @@ class PreviewPane(object):
                  profile_cb=None, soft_cb=None):
         self.ini_path = ini_path
         self.plane = plane
+        # from the ini's own limit, in mm/min. MAX_LINEAR_VELOCITY is per
+        # SECOND there, and taking it for per-minute makes every rapid sixty
+        # times too slow - which is most of the total on a short part.
+        self.rapid = ncam_preview.rapid_rate(ini_path)
         # returns (a_min, a_max, b_min, b_max) for the stock, or None. A
         # callback rather than a value so the pane never holds a stale copy of
         # a Workpiece the operator has since edited.
@@ -106,10 +110,40 @@ class PreviewPane(object):
         flat_scroll.add(flat_view)
         self.widget.append_page(flat_scroll, gtk.Label(label=_('Flat')))
 
+        # Info follows the tool as it plays; Statistics is per program and is
+        # rebuilt only when one is parsed.
+        self.info_rows = {}
+        info_grid = gtk.Grid(row_spacing=2, column_spacing=8, margin=6)
+        for r, (key, label) in enumerate((
+                ('pos', _('Position')), ('move', _('Movement')),
+                ('op', _('Operation')), ('tool', _('Tool')),
+                ('feed', _('Feed')), ('spindle', _('Spindle')),
+                ('rate', _('Actual rate')), ('at', _('At move')))):
+            name = gtk.Label(label=label)
+            name.set_halign(gtk.Align.START)
+            val = gtk.Label(label='-')
+            val.set_halign(gtk.Align.START)
+            val.set_selectable(True)
+            info_grid.attach(name, 0, r, 1, 1)
+            info_grid.attach(val, 1, r, 1, 1)
+            self.info_rows[key] = val
+        info_scroll = gtk.ScrolledWindow()
+        info_scroll.add(info_grid)
+        self.widget.append_page(info_scroll, gtk.Label(label=_('Info')))
+
+        self.stats_buffer = gtk.TextBuffer()
+        stats_view = gtk.TextView.new_with_buffer(self.stats_buffer)
+        stats_view.set_editable(False)
+        stats_view.set_monospace(True)
+        stats_scroll = gtk.ScrolledWindow()
+        stats_scroll.add(stats_view)
+        self.widget.append_page(stats_scroll, gtk.Label(label=_('Stats')))
+
         # --- simulation controls ------------------------------------------
         # Play walks the toolpath; the slider scrubs it. Parameterised by
-        # DISTANCE along the path, because the canon dump carries no feed
-        # rates and a time-accurate run would be inventing them.
+        # DISTANCE along the path rather than by time - the playback is for
+        # watching a corner form, not for running in real time. The Statistics
+        # page does the time arithmetic, where being right matters.
         self.sim_t = 0.0
         self.sim_running = False
         self._sim_source = None
@@ -346,6 +380,8 @@ class PreviewPane(object):
         self._busy = False
         self.flat_buffer.set_text(
             tp.flat or _('(no flattened listing - the interpreter run failed)'))
+        self._render_stats()
+        self._render_info()
         if tp.error:
             self._set_status(_('Preview: %s') % tp.error)
         else:
@@ -363,6 +399,80 @@ class PreviewPane(object):
                 self.buffer.set_text(f.read())
         except OSError as e:
             self.buffer.set_text(str(e))
+
+    def _render_stats(self):
+        """The Statistics page - one program, not one position."""
+        tp = self.toolpath
+        if tp.empty:
+            self.stats_buffer.set_text(_('Nothing parsed yet.'))
+            return
+        st = ncam_preview.statistics(tp, self.rapid)
+        L = []
+        L.append(_('Machining time  %s') % ncam_preview.fmt_time(st['time']))
+        L.append(_('  cutting       %s') % ncam_preview.fmt_time(st['cut_time']))
+        L.append(_('  rapid         %s') % ncam_preview.fmt_time(st['rapid_time']))
+        L.append('')
+        L.append(_('Distance        %.1f mm') % st['dist'])
+        L.append(_('  cutting       %.1f mm') % st['cut_dist'])
+        L.append(_('  rapid         %.1f mm') % st['rapid_dist'])
+        L.append('')
+        L.append(_('Moves           %d') % st['moves'])
+        L.append(_('Operations      %d') % len(st['ops']))
+        L.append(_('Tools           %s')
+                 % (', '.join('T%d' % t for t in st['tools']) or '-'))
+        L.append(_('Rapid rate      %(v).0f mm/min (%(src)s)')
+                 % {'v': self.rapid,
+                    'src': _('from the ini') if self.ini_path
+                    else _('no ini - assumed')})
+        if st['unknown']:
+            # never folded into the total: a time that quietly drops the moves
+            # it could not work out reads exactly like a complete one
+            L.append('')
+            L.append(_('%d move(s) have no workable rate and are NOT in the '
+                       'time above - a feed per revolution with no spindle '
+                       'speed does not give a speed.') % st['unknown'])
+        L.append('')
+        L.append(_('Per operation'))
+        for row in st['per_op']:
+            L.append('  %-22s %9.1f mm  %8s  %5.1f%%'
+                     % (row['name'][:22], row['dist'],
+                        ncam_preview.fmt_time(row['time']), row['share']))
+        self.stats_buffer.set_text('\n'.join(L))
+
+    def _render_info(self):
+        """The Info page - where the tool is now, and under what."""
+        idx, point = None, None
+        if self.sim_t > 0.0 and not self.toolpath.empty:
+            if self._acc is None:
+                self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
+            point, idx, _k = ncam_preview.position_at(
+                self.toolpath, self.sim_t, self._acc, self._total)
+        nfo = ncam_preview.info_at(self.toolpath, idx, point, self.rapid)
+        if nfo is None:
+            for val in self.info_rows.values():
+                val.set_text('-')
+            return
+        move = nfo['kind'] + ((', ' + nfo['cat']) if nfo['cat'] else '')
+        op = nfo['op'] or '-'
+        if nfo['phase']:
+            op = '%s / %s' % (op, nfo['phase'])
+        if nfo['feed']:
+            feed = (_('%.4g mm/rev') if nfo['fmode'] == 'rev'
+                    else _('%.4g mm/min')) % nfo['feed']
+        else:
+            feed = '-'
+        text = {
+            'pos': 'X%.4g  Z%.4g' % (nfo['x'], nfo['z']),
+            'move': move,
+            'op': op,
+            'tool': ('T%d' % nfo['tool']) if nfo['tool'] is not None else '-',
+            'feed': feed,
+            'spindle': ('%.0f rpm' % nfo['rpm']) if nfo['rpm'] else '-',
+            'rate': ('%.0f mm/min' % nfo['rate']) if nfo['rate'] else _('unknown'),
+            'at': '%d / %d' % (nfo['index'] + 1, nfo['moves']),
+        }
+        for key, val in self.info_rows.items():
+            val.set_text(text.get(key, '-'))
 
     def _set_status(self, text):
         # base text and displayed text are kept apart: _show_zoom appends a
@@ -498,6 +608,7 @@ class PreviewPane(object):
         self.sim_scale.set_value(0.0)
         self._sync_play_icon()
         self.area.queue_draw()
+        self._render_info()
 
     def _on_mode(self, item, mid):
         # a radio group fires twice per change - once for the item losing the
@@ -601,7 +712,7 @@ class PreviewPane(object):
         # ~8 s for the whole path at 1x regardless of length, so a long program
         # is still watchable and a short one is not over before it is seen
         self.sim_t = min(1.0, self.sim_t + self.BASE_STEP * self.speed)
-        self.sim_scale.set_value(self.sim_t)
+        self.sim_scale.set_value(self.sim_t)     # which redraws and re-informs
         if self.sim_t >= 1.0:
             self._stop_sim()
             self._sync_play_icon()
@@ -612,9 +723,8 @@ class PreviewPane(object):
         v = scale.get_value()
         if abs(v - self.sim_t) > 1e-9:
             self.sim_t = v
-            self.area.queue_draw()
-        else:
-            self.area.queue_draw()
+        self.area.queue_draw()
+        self._render_info()
 
     def _tool_state(self):
         if self.toolpath.empty or self.sim_t <= 0.0:

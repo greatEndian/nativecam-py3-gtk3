@@ -61,8 +61,13 @@ import tempfile
 # levels and its geometry with the finish pass, so neither feed rate nor move
 # category separates it. Both were measured and both failed. A marker written
 # by the subroutine itself is the only ground truth available.
-Move = collections.namedtuple('Move', 'kind a b op tool cat subs',
-                              defaults=((),))
+# `feed`, `fmode` and `rpm` are the interpreter's own state at that move, which
+# is what makes a time estimate an estimate rather than a guess: on a lathe the
+# feed is usually PER REVOLUTION, so distance alone says nothing about time
+# until the spindle speed is known too - and under G96 that speed depends on
+# the diameter being cut, so it is resolved per move.
+Move = collections.namedtuple('Move', 'kind a b op tool cat subs feed fmode rpm',
+                              defaults=((), None, 'min', None))
 
 CUT, LEAD, LINK, CONNECT = 'cut', 'lead', 'link', 'connect'
 
@@ -231,6 +236,9 @@ _RE = {
     'arc': re.compile(r'ARC_FEED\(([^)]*)\)'),
     'comment': re.compile(r'COMMENT\("(begin|end) ([^"]*)"\)'),
     'tool': re.compile(r'(?:SELECT_TOOL|CHANGE_TOOL)\(([-0-9.]+)\)'),
+    'feed_mode': re.compile(r'SET_FEED_MODE\([^,]*,\s*([-0-9.]+)\)'),
+    # note: SET_SPINDLE_MODE's arguments are SPACE separated, not comma
+    'spindle_mode': re.compile(r'SET_SPINDLE_MODE\(\S*\s+([-0-9.]+)\)'),
 }
 
 
@@ -260,6 +268,22 @@ def parse_program(path, ini_path=None):
         op = None
         subs = ()             # everything below [0], shared by the moves in it
         tool = None
+        feed = None           # as commanded, in the current feed mode
+        fmode = 'min'         # 'min' = G94 units/min, 'rev' = G95 units/rev
+        css = 0.0             # G96 surface speed; 0 means G97 is in force
+        css_cap = 0.0         # the D word on G96 - a ceiling on the rpm
+        rpm = None            # G97 rpm, or None until the spindle is commanded
+
+        def rpm_for(x):
+            """Effective spindle speed at radius `x`."""
+            if css <= 0.0:
+                return rpm
+            d = abs(x) * 2.0
+            if d < 1e-6:
+                return css_cap or None       # on centre, CSS runs to its cap
+            n = css / (math.pi * d)
+            return min(n, css_cap) if css_cap > 0 else n
+
         for line in canon.splitlines():
             m = _RE['comment'].search(line)
             if m:
@@ -283,6 +307,32 @@ def parse_program(path, ini_path=None):
             if m:
                 tool = int(float(m.group(1)))
                 continue
+            m = _FLAT_RE['feed'].search(line)
+            if m:
+                f = float(m.group(1))
+                feed = f if f > 0 else None
+                continue
+            m = _RE['feed_mode'].search(line)
+            if m:
+                fmode = 'rev' if int(float(m.group(1))) == 1 else 'min'
+                continue
+            m = _RE['spindle_mode'].search(line)
+            if m:
+                # SET_SPINDLE_MODE carries the G96 rpm CEILING - the D word -
+                # and 0 when G97 constant-rpm is in force
+                css_cap = float(m.group(1))
+                continue
+            m = _FLAT_RE['speed'].search(line)
+            if m:
+                s = float(m.group(1))
+                # under G96 this is the surface speed, under G97 the rpm, and
+                # nothing in the call says which. The mode that was set
+                # immediately before it does.
+                if css_cap > 0:
+                    css, rpm = s, None
+                else:
+                    css, rpm = 0.0, s
+                continue
             m = _RE['feed'].search(line)
             kind = 'feed'
             if not m:
@@ -292,7 +342,14 @@ def parse_program(path, ini_path=None):
                 v = [float(x) for x in m.group(1).split(',')[:3]]
                 nxt = (v[0], v[1], v[2])
                 if pos is not None:
-                    tp.moves.append(Move(kind, pos, nxt, op, tool, None, subs))
+                    # the MEAN radius of the move: under G96 the spindle
+                    # changes continuously along a facing cut, and one number
+                    # per move has to stand for it. Taking either end instead
+                    # would be worst exactly where it matters - a cut to
+                    # centre, where the end radius sends rpm to the cap.
+                    tp.moves.append(Move(kind, pos, nxt, op, tool, None, subs,
+                                         feed, fmode,
+                                         rpm_for((pos[0] + nxt[0]) / 2.0)))
                 pos = nxt
                 continue
             m = _RE['arc'].search(line)
@@ -308,8 +365,9 @@ def parse_program(path, ini_path=None):
                 nxt = (v[1], pos[1] if pos else 0.0, v[0])
                 if pos is not None:
                     tp.moves.extend(
-                        Move('feed', a, b, op, tool, None, subs) for _n, a, b
-                        in _walk_arc(pos, nxt, v[2], v[3], v[4]))
+                        Move('feed', a, b, op, tool, None, subs, feed, fmode,
+                             rpm_for((a[0] + b[0]) / 2.0))
+                        for _n, a, b in _walk_arc(pos, nxt, v[2], v[3], v[4]))
                 pos = nxt
                 continue
 
@@ -779,6 +837,125 @@ def path_lengths(tp):
         total += math.sqrt(_dist2(m.a, m.b))
         acc.append(total)
     return acc, total
+
+
+DEFAULT_RAPID = 1200.0          # mm/min, if the ini will not say
+
+# moves outside any feature marker - the header, the retract at the end
+NO_OP = 'no operation'
+
+
+def rapid_rate(ini_path):
+    """Rapid traverse in mm/min, from the ini's own limit.
+
+    [TRAJ] MAX_LINEAR_VELOCITY is in units per SECOND, which is the only
+    interesting thing about this function: taking it for a per-minute figure
+    makes every rapid sixty times too slow and the total time meaningless.
+    """
+    v = ini_value(ini_path, 'TRAJ', 'MAX_LINEAR_VELOCITY') if ini_path else None
+    try:
+        return float(v) * 60.0 if v and float(v) > 0 else DEFAULT_RAPID
+    except (TypeError, ValueError):
+        return DEFAULT_RAPID
+
+
+def move_rate(m, rapid=DEFAULT_RAPID):
+    """How fast this move actually runs, in mm/min, or None if unknowable.
+
+    A lathe programmed in G95 feeds per REVOLUTION, so its feed number is not
+    a speed at all until it is multiplied by the spindle. Returning None rather
+    than a plausible number is the point: a time built on an invented spindle
+    speed looks exactly like a real one.
+    """
+    if m.kind == 'rapid':
+        return rapid
+    if not m.feed or m.feed <= 0:
+        return None
+    if m.fmode != 'rev':
+        return m.feed
+    if not m.rpm or m.rpm <= 0:
+        return None
+    return m.feed * m.rpm
+
+
+def move_seconds(m, rapid=DEFAULT_RAPID):
+    """Time for one move in seconds, or None when its rate is unknown."""
+    rate = move_rate(m, rapid)
+    if not rate:
+        return None
+    return math.sqrt(_dist2(m.a, m.b)) / rate * 60.0
+
+
+def statistics(tp, rapid=DEFAULT_RAPID):
+    """Distances, times and counts for a whole program.
+
+    `unknown` is reported rather than folded into the total: moves whose rate
+    could not be worked out are a hole in the estimate, and a total that
+    quietly omits them reads as complete.
+    """
+    st = {'cut_dist': 0.0, 'rapid_dist': 0.0, 'cut_time': 0.0,
+          'rapid_time': 0.0, 'unknown': 0, 'moves': len(tp.moves),
+          'ops': [], 'tools': tp.tools, 'per_op': []}
+    per_op = collections.OrderedDict()
+    for m in tp.moves:
+        d = math.sqrt(_dist2(m.a, m.b))
+        secs = move_seconds(m, rapid)
+        if secs is None:
+            st['unknown'] += 1
+            secs = 0.0
+        if m.kind == 'rapid':
+            st['rapid_dist'] += d
+            st['rapid_time'] += secs
+        else:
+            st['cut_dist'] += d
+            st['cut_time'] += secs
+        key = m.op or NO_OP
+        row = per_op.setdefault(key, {'name': key, 'dist': 0.0, 'time': 0.0})
+        row['dist'] += d
+        row['time'] += secs
+    st['dist'] = st['cut_dist'] + st['rapid_dist']
+    st['time'] = st['cut_time'] + st['rapid_time']
+    st['ops'] = tp.operations
+    st['changes'] = len(tp.tools)
+    for row in per_op.values():
+        row['share'] = (row['time'] / st['time'] * 100.0) if st['time'] else 0.0
+        st['per_op'].append(row)
+    return st
+
+
+def fmt_time(secs):
+    """Seconds as h:mm:ss / m:ss, or '-' when there is nothing to show."""
+    if secs is None:
+        return '-'
+    secs = int(round(secs))
+    h, rem = divmod(secs, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return '%d:%02d:%02d' % (h, m, s)
+    return '%d:%02d' % (m, s)
+
+
+def info_at(tp, index, point, rapid=DEFAULT_RAPID):
+    """Everything the Info panel shows about one point on the path."""
+    if not tp.moves or index is None or index < 0 or index >= len(tp.moves):
+        return None
+    m = tp.moves[index]
+    rate = move_rate(m, rapid)
+    return {
+        'x': (point[0] if point else m.b[0]) * 2.0,      # diameter, as the UI
+        'z': point[2] if point else m.b[2],
+        'kind': m.kind,
+        'cat': m.cat,
+        'op': m.op,
+        'phase': m.subs[-1] if m.subs else None,
+        'tool': m.tool,
+        'feed': m.feed,
+        'fmode': m.fmode,
+        'rpm': m.rpm,
+        'rate': rate,
+        'index': index,
+        'moves': len(tp.moves),
+    }
 
 
 def position_at(tp, t, acc=None, total=None):

@@ -260,6 +260,9 @@ M2
     # --- 8. the flattened listing ------------------------------------------
     test_flatten(d)
 
+    # --- 9. the time estimate ----------------------------------------------
+    test_time(d)
+
     shutil.rmtree(d, ignore_errors=True)
 
     test_view()
@@ -617,6 +620,97 @@ M2
     check('X is written as a diameter, not canon\'s radius',
           any('X40' in ln for ln in body),
           'the X40 of the source is not in the listing: %s' % body[:12])
+
+
+def test_time(d):
+    """Machining time, which is arithmetic and therefore checkable exactly.
+
+    The whole reason this is worth doing rather than guessing: on a lathe the
+    feed is usually per REVOLUTION, so distance says nothing about time until
+    the spindle is known - and under G96 the spindle depends on the diameter
+    being cut. Every case below is hand-computed.
+    """
+    def mv(kind, length, feed, fmode='min', rpm=None):
+        return P.Move(kind, (0.0, 0.0, 0.0), (0.0, 0.0, -length),
+                      'Op', 1, P.CUT, (), feed, fmode, rpm)
+
+    # 50 mm at 100 mm/min is half a minute, whatever else is going on
+    check('a feed per minute is distance over rate',
+          abs(P.move_seconds(mv('feed', 50.0, 100.0)) - 30.0) < 1e-9,
+          str(P.move_seconds(mv('feed', 50.0, 100.0))))
+
+    # 0.2 mm/rev at 500 rpm is 100 mm/min, so the same 50 mm is the same 30 s
+    per_rev = mv('feed', 50.0, 0.2, 'rev', 500.0)
+    check('a feed per revolution is multiplied by the spindle',
+          abs(P.move_seconds(per_rev) - 30.0) < 1e-9,
+          str(P.move_seconds(per_rev)))
+    check('and taking it for a per-minute feed would be 500x wrong',
+          abs(P.move_seconds(mv('feed', 50.0, 0.2)) - 15000.0) < 1e-6,
+          'the two modes are not being told apart')
+
+    # a rapid runs at the machine's rate, not at the programmed feed
+    check('a rapid runs at the traverse rate',
+          abs(P.move_seconds(mv('rapid', 60.0, 5.0), 1200.0) - 3.0) < 1e-9,
+          str(P.move_seconds(mv('rapid', 60.0, 5.0), 1200.0)))
+
+    # the hole in the estimate, reported rather than papered over
+    blind = mv('feed', 50.0, 0.2, 'rev', None)
+    check('a per-rev feed with no spindle speed has no time at all',
+          P.move_seconds(blind) is None)
+    tp = P.Toolpath()
+    tp.moves = [mv('feed', 50.0, 100.0), blind]
+    st = P.statistics(tp)
+    check('an unknown move is counted, not silently dropped',
+          st['unknown'] == 1, str(st['unknown']))
+    check('and is left out of the total rather than guessed at',
+          abs(st['time'] - 30.0) < 1e-9, str(st['time']))
+    check('while its distance still counts',
+          abs(st['cut_dist'] - 100.0) < 1e-9, str(st['cut_dist']))
+
+    # the ini's rapid rate is per SECOND; using it as-is is 60x too slow
+    rate = P.rapid_rate(INI)
+    ini_v = float(P.ini_value(INI, 'TRAJ', 'MAX_LINEAR_VELOCITY'))
+    check('the rapid rate is converted from units/s to units/min',
+          abs(rate - ini_v * 60.0) < 1e-9,
+          'ini says %g, rate is %g' % (ini_v, rate))
+    check('and is not the ini number taken at face value', abs(rate - ini_v) > 1,
+          '%g' % rate)
+
+    # --- G96, where the spindle depends on the diameter --------------------
+    # 100 mm/min of surface speed at 40 mm diameter is 100/(pi*40) rpm. The D
+    # word caps it, and the cap is what stops the number running away as the
+    # tool approaches centre - so both halves are checked.
+    css = write(d, 'css.ngc', HEADER + """G96 D1 S100
+M3
+G95
+G0 X40 Z2
+G1 X40 Z-10 F0.2
+G1 X0.4 Z-10
+M2
+""")
+    tpc = P.parse_program(css, INI)
+    check('the CSS program parses', tpc.error is None and tpc.moves,
+          str(tpc.error))
+    cuts = [m for m in tpc.moves if m.kind == 'feed']
+    if cuts:
+        m = cuts[0]                       # the straight cut at 40 dia
+        want = 100.0 / (math.pi * 40.0)
+        check('under G96 the spindle is worked out from the diameter',
+              m.rpm and abs(m.rpm - want) < 1e-6,
+              'rpm %s, expected %.6f' % (m.rpm, want))
+        check('and the feed is carried as per-revolution',
+              m.fmode == 'rev' and abs(m.feed - 0.2) < 1e-9,
+              '%s %s' % (m.fmode, m.feed))
+        last = cuts[-1]                   # the face-off, running in to centre
+        # D1 is an absurd cap, chosen so this program actually reaches it:
+        # a cap check that is never exercised passes against code that has no
+        # cap at all
+        check('the D word caps the spindle', last.rpm and last.rpm <= 1.0 + 1e-9,
+              'rpm %s at X%.3f - the cap is not being applied'
+              % (last.rpm, last.b[0]))
+        check('and the uncapped value really was above it',
+              100.0 / (math.pi * abs(last.a[0] + last.b[0])) > 1.0,
+              'nothing here got near the cap')
 
 
 def test_tagging():
