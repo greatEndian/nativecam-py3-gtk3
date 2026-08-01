@@ -55,11 +55,36 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   | … | … | … | 4.512 mm |
   | 26.096 | -66.865 | -62.352 | 4.512 mm |
 
-  **36.1 mm of uncut metal in total.** 4.512 mm along Z at 13° is 1.042 mm
-  measured perpendicular to the ramp, which is very close to twice the
-  0.508 mm floor allowance (2 × 0.508 / sin 13° = 4.516) - so the first thing
-  to check is whether the level stop is applying that allowance twice, or
-  applying it normal to the ramp where it should be radial.
+  **36.1 mm of uncut metal in total.** Applies **only where a boss is present
+  and the level is reaching the volume behind it** - greatEndian, 2026-08-01.
+  A level meeting a vertical wall stands off correctly; it is only the shallow
+  ramp behind a boss that turns a small radial allowance into a long gap in Z.
+
+  **Step 1 done — where the constant comes from.** Instrumented the subroutine
+  and read the value rather than deriving it, after two derivations that both
+  came out wrong (3.387 mm and 6.775 mm against a measured 4.512):
+
+      LVLIN  level=29.652  cross_t=1.016000
+      LVLD   lvl_d=1.016  step_target=21.016  final_radius=20.000
+             fin_off=0.508  prefin=0.254  rough_cut=0.508
+
+  `cross_t` is **1.016 mm**, and 1.016 / sin 13° = 4.516 mm - the measured gap.
+  It decomposes as the finish offset 0.508 **plus one whole roughing depth of
+  cut 0.508**, the second coming from *Space passes from = Final contour*
+  rounding the configured 0.254 pre-finish allowance up to a whole depth of
+  cut (`step_target` 20.762 → 21.016).
+
+  **So the levels are not stopping short by accident.** They stop exactly on
+  the roughing floor, as designed - the metal in the orange segments is what
+  the pre-finish and finish passes are there to remove. The change wanted is
+  therefore a **specification change**, not a bug fix, and needs one more
+  answer before step 2:
+
+  | standoff from the contour | radial | along the ramp |
+  |---|---|---|
+  | floor allowance — today | 1.016 mm | 4.52 mm |
+  | one roughing depth of cut | 0.508 mm | 2.26 mm |
+  | finish + pre-finish as configured | 0.762 mm | 3.39 mm |
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
