@@ -69,31 +69,40 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   **specification change**: enter at **one roughing depth of cut** (0.508),
   which is 2.258 mm of Z instead of 4.517.
 
-  **Step 2 — the entry point is right; the plumbing behind it is not.**
-  Instrumented run with the entry allowance at one roughing depth of cut:
+  **Step 2 — both halves tried, and the blocking mechanism is now proven.**
 
-      LP  level=29.652  w_from=1.000  zc=-22.882  blocked=0
-      NS  in  level=29.652  off=0.508  from=-22.882  to=-70.400
-      NS  out level=29.652  found=1  z=-49.203
-      NS  in  level=29.652  off=0.508  from=-49.203  to=-70.400
-      NS  out level=29.652  found=0
+  The resume point itself is correct. With the entry allowance at one roughing
+  depth of cut, `lathe_level_next_start` returns **Z-49.203** against the old
+  **Z-51.462** - exactly the 2.258 mm the specification asks for.
 
-  **The resume point lands exactly where it should** - Z-49.203 against the
-  old Z-51.462, which is the 2.258 mm the specification asks for. But no
-  `LP` line follows it: no pass is ever run from there, and the eight
-  intervals disappear (243 moves → 189, 147 cutting → 120).
+      NS out level=29.652  found=1  z=-49.203      <- wanted
+      NS in  level=29.652  from=-49.203            <- searched again
+      NS out level=29.652  found=0                 <- and gave up
 
-  The reason is the roughing flow, not the geometry. In **phase 1**
-  `lathe_level_next_start` is only a *detector* - finding a resume point means
-  "a genuine obstruction blocks a continuous sweep", and the loop breaks out
-  to **phase 2**, which is what actually cuts behind the peak. Phase 2 has its
-  own `lathe_level_next_start` calls (`poly_lathe_mill.ngc` ~558 and ~573) and
-  its own pass calls. Changing the allowance in one place moves the detector
-  without moving the cutter.
+  Two attempts, both reverted, both leaving 189 moves / 120 cutting against
+  243 / 147 - every interval behind the peak gone:
 
-  **So step 2 is: give the entry allowance to phase 2's own resume-and-cut
-  path**, and check `lathe_level_pass`'s block test agrees with it, rather
-  than changing the shared constant. Next session starts there.
+  1. Changing the shared allowance moved **phase 1's detector**. There
+     `lathe_level_next_start` only answers "does an obstruction exist", and
+     finding one breaks out to phase 2; moving it does not move the cutter.
+  2. Changing **phase 2's own resume calls** (`poly_lathe_mill.ngc`, the
+     `o<ph1_chk> else` branch) puts `l_fr` at Z-49.203 and re-runs the pass
+     from there - and `lathe_level_pass` then **rejects it as blocked**,
+     because its own scan still offsets the profile by the 1.016 floor
+     allowance, under which the profile is still above the level at Z-49.203.
+     It only drops below at Z-51.462. Hence the second search and the give-up.
+
+  **So `lathe_level_pass` has to be told both numbers.** Its stop crossing must
+  keep the floor allowance - those intervals end 1.016 mm off the end wall and
+  that is correct against a vertical - while its *blocked* verdict uses the
+  entry allowance. That is a two-offset change inside one scan, and it carries
+  a decision worth taking deliberately rather than in passing:
+
+  - [ ] **NEEDS A CALL** — if the pass simply re-scans with the entry
+    allowance when the floor-allowance scan says blocked, the interval also
+    **ends 0.508 mm from the end wall instead of 1.016 mm**, cutting into the
+    finish allowance there. Acceptable, or must the stop keep the floor
+    allowance while only the start moves?
 
   *Method note, paid for three times over in this session: an .ngc generated
   earlier in the session is not a safe baseline, and neither is a toolpath
