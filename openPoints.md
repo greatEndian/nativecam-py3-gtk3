@@ -18,14 +18,51 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
 
 ## Next — before anything else
 
-- [ ] **Lead-in shape after a boss segment is wrong.** The lead-in shaping
-  added last week produces the wrong shape where a pass starts after a boss.
-  greatEndian's call: **repair this first**, ahead of the tool-shape question
-  and everything queued behind it. *Needs the case pinned down before code:
-  which project, and a screenshot of the shape it makes against the shape it
-  should make.* Likely area: `lib/lathe/lathe_level_pass.ngc`, the
-  `o<li_cap_all>` / `_li_leff` capping on multi-crossing continuation
-  intervals, and `o<fillet_lead>` for the blend.
+- [ ] **Lead-in shape after a boss segment is wrong.** greatEndian's call:
+  **repair this first**, ahead of the tool-shape question and everything
+  queued behind it. Case: `photo/leadInPresent_0.png` (now) against
+  `photo/leadInNewAndRight_1.png` (wanted), on testing_15_2 with lead-in
+  length and radius both 0.
+
+  **Agreed specification** — confirmed 2026-08-01, applies to **ROUGHING
+  passes only** (check the pre-finish and finish passes later, see below).
+  Roughing runs Front to back, so the RIGHT-hand end of each level is where
+  it starts.
+
+  1. **Each level starts ON the contour, not short of it.** Today every level
+     stops short and leaves a staircase of uncut steps; the orange segments in
+     the picture are that missing metal. The level continues at its own
+     diameter until it meets the offset contour below.
+  2. **The offset contour** is the pre-finish contour copied outward by the
+     **roughing depth of cut** — the yellow line in the picture.
+  3. **The entry is three pieces**, outside inwards: a straight *real lead-in*
+     through air, a tangent *lead-in radius* arc, then a straight segment that
+     copies the profile at the **profile's own angle** and meets the contour
+     tangentially, so the tool is already travelling parallel to the surface
+     when it arrives instead of driving in at 45°.
+  4. That copied segment has a **constant length**.
+
+  **Measured on testing_15_2, current build.** Every one of the eight levels
+  behind the boss starts exactly **4.512 mm short in Z** of the ramp - the
+  same figure on all eight, so this is one wrong constant and not an
+  accumulating geometry error. Roughing depth of cut is 0.508 mm; the levels
+  step 2.2007 mm in Z, which is 0.508 / tan(13°) and correct for the ramp.
+
+  | radius | starts Z | ramp at Z | uncut |
+  |---|---|---|---|
+  | 29.652 | -51.462 | -46.950 | 4.512 mm |
+  | 29.144 | -53.662 | -49.150 | 4.512 mm |
+  | … | … | … | 4.512 mm |
+  | 26.096 | -66.865 | -62.352 | 4.512 mm |
+
+  **36.1 mm of uncut metal in total.** 4.512 mm along Z at 13° is 1.042 mm
+  measured perpendicular to the ramp, which is very close to twice the
+  0.508 mm floor allowance (2 × 0.508 / sin 13° = 4.516) - so the first thing
+  to check is whether the level stop is applying that allowance twice, or
+  applying it normal to the ramp where it should be radial.
+
+- [ ] **Check the same lead-in on the pre-finish and finish passes** once
+  roughing is done - deferred deliberately, not forgotten.
 
 ## Tool shape — the one live question
 
