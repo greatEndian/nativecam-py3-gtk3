@@ -173,6 +173,71 @@ M2
     check('decimation keeps the path endpoints',
           dec and dec[0][1] == tp.feeds[0][1] and dec[-1][2] == tp.feeds[-1][2])
 
+    # --- 7. nested markers name a phase INSIDE an operation ----------------
+    # The pre-finish contour pass sits inside the polyline feature and shares
+    # its feed rate with the roughing levels and its geometry with the finish
+    # pass. Both of those were measured as discriminators and both failed, so
+    # the marker the subroutine writes is the only thing that separates it.
+    marked = write(d, 'marked.ngc', HEADER + """G0 X40 Z2
+(begin Lathe Polyline)
+G1 X40 Z-1 F100
+(begin pre-finish)
+G1 X30 Z-5
+G3 X20 Z-10 I0 K-5
+(end pre-finish)
+G1 X20 Z-15
+(end Lathe Polyline)
+G1 X40 Z-16
+M2
+""")
+    tp6 = P.parse_program(marked, INI)
+    feeds6 = [m for m in tp6.moves if m.kind == 'feed']
+    pf = [m for m in feeds6 if P.PREFINISH in m.subs]
+    check('the nested marker tags the moves inside it',
+          len(pf) > 2, '%d tagged of %d feeds' % (len(pf), len(feeds6)))
+    check('and the arc inside it is tagged too, segment by segment',
+          len([m for m in pf if m.a[2] < -5.0]) > 2,
+          'the arc walk drops the phase')
+    check('the operation is still the OUTER marker, not the phase',
+          all(m.op == 'Lathe Polyline' for m in pf),
+          str({m.op for m in pf}))
+    check('moves before and after the phase are untagged',
+          not P.PREFINISH in feeds6[0].subs
+          and not P.PREFINISH in feeds6[-1].subs)
+    check('a move outside every marker has no operation and no phase',
+          feeds6[-1].op is None and feeds6[-1].subs == ())
+    check('has_phase sees it', P.has_phase(tp6.moves))
+
+    # colours: blue only for the phase's CUTS, everything else as before
+    check('the phase colour is not the plain feed colour',
+          P.phase_colour(pf[0]) == P.COL['prefinish']
+          and P.COL['prefinish'] != P.COL['feed'])
+    check('moves outside the phase keep the plain feed colour',
+          P.phase_colour(feeds6[-1]) == P.COL['feed'])
+    rapids6 = [m for m in tp6.moves if m.kind == 'rapid']
+    check('rapids are never recoloured by a phase',
+          all(P.phase_colour(m) == P.COL['rapid'] for m in rapids6),
+          '%d rapid(s)' % len(rapids6))
+
+    # the negative control: the same program without the phase markers must
+    # tag nothing and draw exactly as it did before this existed
+    plain = write(d, 'plain.ngc', HEADER + """G0 X40 Z2
+(begin Lathe Polyline)
+G1 X40 Z-1 F100
+G1 X30 Z-5
+G3 X20 Z-10 I0 K-5
+G1 X20 Z-15
+(end Lathe Polyline)
+M2
+""")
+    tp7 = P.parse_program(plain, INI)
+    check('a program with no phase marker tags nothing',
+          not P.has_phase(tp7.moves)
+          and all(m.subs == () for m in tp7.moves))
+    check('and every one of its feeds keeps the plain colour',
+          all(P.phase_colour(m) == P.COL['feed']
+              for m in tp7.moves if m.kind == 'feed'))
+
     shutil.rmtree(d, ignore_errors=True)
 
     test_view()

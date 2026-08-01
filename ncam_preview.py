@@ -54,9 +54,20 @@ import tempfile
 # own tool selection. `cat` is INFERRED, and labelled as such wherever it is
 # shown: nothing in the generated code marks a lead, so it is deduced from
 # where a feed sits relative to the rapids around it.
-Move = collections.namedtuple('Move', 'kind a b op tool cat')
+#
+# `subs` holds the markers nested INSIDE the operation, innermost last. A
+# sub-phase of one feature - the pre-finish contour pass inside a polyline - is
+# not distinguishable any other way: it shares its feed with the roughing
+# levels and its geometry with the finish pass, so neither feed rate nor move
+# category separates it. Both were measured and both failed. A marker written
+# by the subroutine itself is the only ground truth available.
+Move = collections.namedtuple('Move', 'kind a b op tool cat subs',
+                              defaults=((),))
 
 CUT, LEAD, LINK, CONNECT = 'cut', 'lead', 'link', 'connect'
+
+# the sub-phase markers the preview knows about, by the name the .ngc writes
+PREFINISH = 'pre-finish'
 
 
 class Toolpath(object):
@@ -227,6 +238,8 @@ def parse_program(path, ini_path=None):
 
         pos = None
         stack = []            # nested (begin X) markers; [0] is the operation
+        op = None
+        subs = ()             # everything below [0], shared by the moves in it
         tool = None
         for line in canon.splitlines():
             m = _RE['comment'].search(line)
@@ -242,6 +255,10 @@ def parse_program(path, ini_path=None):
                         del stack[stack.index(name):]
                     else:
                         stack.pop()
+                # rebuilt here rather than per move: one tuple object is then
+                # shared by every move of the phase instead of one per move
+                op = stack[0] if stack else None
+                subs = tuple(stack[1:])
                 continue
             m = _RE['tool'].search(line)
             if m:
@@ -256,9 +273,7 @@ def parse_program(path, ini_path=None):
                 v = [float(x) for x in m.group(1).split(',')[:3]]
                 nxt = (v[0], v[1], v[2])
                 if pos is not None:
-                    tp.moves.append(Move(kind, pos, nxt,
-                                         stack[0] if stack else None, tool,
-                                         None))
+                    tp.moves.append(Move(kind, pos, nxt, op, tool, None, subs))
                 pos = nxt
                 continue
             m = _RE['arc'].search(line)
@@ -273,9 +288,8 @@ def parse_program(path, ini_path=None):
                 # walked properly.
                 nxt = (v[1], pos[1] if pos else 0.0, v[0])
                 if pos is not None:
-                    op = stack[0] if stack else None
                     tp.moves.extend(
-                        Move('feed', a, b, op, tool, None) for _n, a, b
+                        Move('feed', a, b, op, tool, None, subs) for _n, a, b
                         in _walk_arc(pos, nxt, v[2], v[3], v[4]))
                 pos = nxt
                 continue
@@ -377,6 +391,7 @@ COL = {
     'soft':      (0.95, 0.45, 0.85),     # what the tool can actually reach
     'tool':      (0.95, 0.75, 0.25),
     'tool_body': (0.42, 0.40, 0.46),
+    'prefinish': (0.35, 0.60, 1.00),     # the pre-finish contour pass
 }
 
 
@@ -1036,6 +1051,25 @@ def palette_colour(key, order):
         return PALETTE[order.index(key) % len(PALETTE)]
     except (ValueError, AttributeError):
         return COL['rapid']
+
+
+def phase_colour(m):
+    """Plain-mode colour for one move: pre-finish cuts blue, the rest as before.
+
+    Rapids stay rapid-coloured whatever phase they are in - they are already
+    dashed and grey everywhere else, and recolouring them would say the machine
+    is cutting where it is not.
+    """
+    if m.kind == 'rapid':
+        return COL['rapid']
+    if PREFINISH in m.subs:
+        return COL['prefinish']
+    return COL['feed']
+
+
+def has_phase(moves, name=PREFINISH):
+    """True when any move carries `name` as a sub-phase marker."""
+    return any(name in m.subs for m in moves)
 
 
 # resolve_points works in DIAMETERS; the plot works in radius, as canon does

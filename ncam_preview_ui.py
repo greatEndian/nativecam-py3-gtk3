@@ -419,6 +419,11 @@ class PreviewPane(object):
         if self.colorize == 'tool':
             order = self.toolpath.tools
             return lambda m: ncam_preview.palette_colour(m.tool, order)
+        # plain: the pre-finish contour pass in its own colour, so it reads
+        # apart from the roughing levels and the finish pass around it. No
+        # marker, no change - a program without one draws exactly as before.
+        if ncam_preview.has_phase(self.toolpath.moves):
+            return ncam_preview.phase_colour
         return None
 
     def _on_colorize(self, combo):
