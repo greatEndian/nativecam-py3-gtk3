@@ -127,6 +127,25 @@ o<movesub> endsub
     tp4 = P.parse_program(os.path.join(d, 'nope.ngc'), INI)
     check('a missing file is reported too', tp4.error is not None)
 
+    # A file that fails PART WAY is the dangerous one. rs274 exits non-zero,
+    # but it has already written a canon file, and that file is well-formed -
+    # the toolpath simply stops. The exit code used to be ignored, so the pane
+    # drew the truncated path and reported "N cutting moves" underneath it:
+    # wrong, and reassuring. This arc's start and end radii do not agree.
+    part = write(d, 'part.ngc', HEADER + """G0 X50 Z2
+G1 X40 Z-2 F120
+G3 X30 Z-10 I0 K-4
+G1 Z-40
+M2
+""")
+    tp4b = P.parse_program(part, INI)
+    check('a run that fails part way is reported, not silently truncated',
+          tp4b.error is not None, 'the partial canon was taken as success')
+    check('and says what the interpreter actually complained about',
+          tp4b.error and 'adius' in tp4b.error, str(tp4b.error))
+    check('while still returning what it got as far as',
+          bool(tp4b.moves), 'the partial path is how you find the bad line')
+
     # --- 4. the live .var must be untouched --------------------------------
     var_rel = P.ini_value(INI, 'RS274NGC', 'PARAMETER_FILE')
     var = os.path.join(os.path.dirname(INI), var_rel) if var_rel else None
@@ -237,6 +256,9 @@ M2
     check('and every one of its feeds keeps the plain colour',
           all(P.phase_colour(m) == P.COL['feed']
               for m in tp7.moves if m.kind == 'feed'))
+
+    # --- 8. the flattened listing ------------------------------------------
+    test_flatten(d)
 
     shutil.rmtree(d, ignore_errors=True)
 
@@ -490,6 +512,111 @@ def test_comparison():
     rem2, _s = P.removed_volume(f3)
     check('turning it down to half radius removes three quarters',
           abs(rem2 / start - 0.75) < 1e-6, 'removed %.4f' % (rem2 / start))
+
+
+def test_flatten(d):
+    """The O-code program rewritten as plain G-code, proved by re-running it.
+
+    Reading the output and agreeing with it proves nothing: a flattener can
+    look perfectly reasonable and still put an arc round the wrong way, or take
+    canon's radius X for a diameter, and the listing would read fine either
+    way. So the flattened text goes back through the interpreter and the two
+    toolpaths are compared move for move - and because arcs are walked into
+    segments before the comparison, a G2 written where a G3 belongs fails on
+    the intermediate points even though its endpoints match.
+    """
+    src = write(d, 'flat_src.ngc', HEADER + """o<shape> sub
+	G1 X40 Z-2 F120
+	G3 X30 Z-7 I-5 K0
+	G1 Z-20
+	#<i> = 0
+	o<lp> while [#<i> LT 3]
+		G1 X[30 + #<i>] Z[-20 - #<i>]
+		#<i> = [#<i> + 1]
+	o<lp> endwhile
+o<shape> endsub
+T2 M6
+S500 M3
+G0 X50 Z2
+(begin Turning)
+o<shape> CALL
+(end Turning)
+G0 X60
+M5
+M2
+""")
+    tp = P.parse_program(src, INI)
+    check('the source program parses at all', tp.error is None and tp.moves,
+          str(tp.error))
+    flat = tp.flat
+    check('a flattened listing comes back with the toolpath', bool(flat))
+
+    # it must be FLAT: no calls, no loops, no expressions, no parameters
+    body = [ln for ln in flat.splitlines()
+            if ln.strip() and not ln.strip().startswith('(')]
+    leftovers = [ln for ln in body
+                 if 'o<' in ln or '#' in ln or '[' in ln]
+    check('no subroutine, loop or expression survives the flattening',
+          not leftovers, str(leftovers[:3]))
+    check('the loop is unrolled into its actual moves',
+          len([ln for ln in body if 'Z-2' in ln or 'Z-21' in ln]) >= 1,
+          'the while body never appears')
+    check('the markers survive, so the listing keeps its structure',
+          '(begin Turning)' in flat and '(end Turning)' in flat)
+    check('the tool change and spindle carry over',
+          'T2' in body and 'M6' in body and 'M3' in body and 'S500' in body,
+          str(body[:8]))
+
+    # --- the round trip ----------------------------------------------------
+    # canon coordinates are ABSOLUTE, so the frame has to be identity for the
+    # re-run to reproduce them. That preamble is deliberately not part of the
+    # listing itself: it would rewrite the operator's G54 if anyone loaded it.
+    run = write(d, 'flat_run.ngc',
+                'G10 L2 P1 X0 Y0 Z0\nG92.1\nG54\n' + flat)
+    tp2 = P.parse_program(run, INI)
+    check('the flattened listing is itself valid G-code',
+          tp2.error is None, str(tp2.error))
+
+    # A move to where the tool already is is dropped from the listing - the
+    # source program has one, where the loop's first iteration re-commands the
+    # position the line before it reached. It is bookkeeping, not motion, so
+    # both sides are compared on motion only.
+    def real(moves):
+        return [m for m in moves
+                if max(abs(p - q) for p, q in zip(m.a, m.b)) > 1e-9]
+    real1, real2 = real(tp.moves), real(tp2.moves)
+    check('the source program does contain a zero-length move',
+          len(tp.moves) > len(real1),
+          'nothing here exercises the null-move case any more')
+    check('and it is not written into the listing',
+          len(tp2.moves) == len(real2),
+          '%d of %d moves are null' % (len(tp2.moves) - len(real2),
+                                       len(tp2.moves)))
+    check('the round trip yields the same number of real moves',
+          len(real2) == len(real1), '%d vs %d' % (len(real2), len(real1)))
+    if len(real2) == len(real1):
+        worst, kinds = 0.0, 0
+        for m1, m2 in zip(real1, real2):
+            if m1.kind != m2.kind:
+                kinds += 1
+            worst = max(worst, max(abs(p - q) for p, q in
+                                   zip(m1.a + m1.b, m2.a + m2.b)))
+        check('every move is the same KIND after the round trip', not kinds,
+              '%d differ' % kinds)
+        check('and lands on the same coordinates', worst < 1e-3,
+              'worst difference %.6f mm' % worst)
+        # a control on the control: the comparison must be able to see a
+        # difference at all, or "worst 0.0" means nothing
+        moved = [m._replace(a=(m.a[0] + 1.0, m.a[1], m.a[2]))
+                 for m in real2]
+        seen = max(abs(p - q) for m1, m2 in zip(real1, moved)
+                   for p, q in zip(m1.a + m1.b, m2.a + m2.b))
+        check('the comparison notices a 1 mm shift when there is one',
+              seen > 0.9, '%.6f' % seen)
+
+    check('X is written as a diameter, not canon\'s radius',
+          any('X40' in ln for ln in body),
+          'the X40 of the source is not in the listing: %s' % body[:12])
 
 
 def test_tagging():

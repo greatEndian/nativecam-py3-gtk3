@@ -93,6 +93,19 @@ class PreviewPane(object):
         scroll.add(view)
         self.widget.append_page(scroll, gtk.Label(label=_('G-code')))
 
+        # ncam.ngc is O-word calls and expressions: true, but it does not say
+        # where the tool goes. This third page is the same program after the
+        # interpreter has had it - every subroutine, loop and expression gone,
+        # every number a number the machine moves to. It costs no width: the
+        # notebook is scrollable, so another tab does not widen the pane.
+        self.flat_buffer = gtk.TextBuffer()
+        flat_view = gtk.TextView.new_with_buffer(self.flat_buffer)
+        flat_view.set_editable(False)
+        flat_view.set_monospace(True)
+        flat_scroll = gtk.ScrolledWindow()
+        flat_scroll.add(flat_view)
+        self.widget.append_page(flat_scroll, gtk.Label(label=_('Flat')))
+
         # --- simulation controls ------------------------------------------
         # Play walks the toolpath; the slider scrubs it. Parameterised by
         # DISTANCE along the path, because the canon dump carries no feed
@@ -331,6 +344,8 @@ class PreviewPane(object):
         self._acc = None          # lengths belong to the old path
         self._reset_field()
         self._busy = False
+        self.flat_buffer.set_text(
+            tp.flat or _('(no flattened listing - the interpreter run failed)'))
         if tp.error:
             self._set_status(_('Preview: %s') % tp.error)
         else:

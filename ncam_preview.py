@@ -79,6 +79,7 @@ class Toolpath(object):
         # feeds and rapids were originally kept in two separate lists, which
         # draws fine and cannot be walked.
         self.moves = []           # [Move]
+        self.flat = ''         # the same program as plain G-code, see flatten_canon
         self.error = None      # human-readable, or None
         self.min = None        # (x,y,z) or None when there is no motion
         self.max = None
@@ -204,7 +205,24 @@ def _canon_dump(path, ini_path, tmpdir):
     if not os.path.exists(out_path):
         return None, (res.stderr or res.stdout or 'rs274 produced no output').strip()
     with open(out_path, errors='replace') as f:
-        return f.read(), None
+        canon = f.read()
+    if res.returncode:
+        # An interpreter error truncates the canon file and leaves it looking
+        # perfectly well-formed - the toolpath simply stops. Ignoring the exit
+        # code showed a partial path with a confident "N cutting moves" under
+        # it, which is the worst of both: wrong, and reassuring. The partial
+        # canon is still returned, because seeing how far it got is how you
+        # find the offending line.
+        return canon, _rs274_error(res)
+    return canon, None
+
+
+def _rs274_error(res):
+    """The useful part of rs274's complaint, on one line."""
+    lines = [ln.strip() for ln in
+             ((res.stderr or '') + '\n' + (res.stdout or '')).splitlines()
+             if ln.strip() and ln.strip() != 'executing']
+    return ' | '.join(lines[-2:]) if lines else 'the interpreter failed'
 
 
 _RE = {
@@ -235,6 +253,7 @@ def parse_program(path, ini_path=None):
         if canon is None:
             tp.error = err
             return tp
+        tp.error = err          # a run that failed PART WAY still has a path
 
         pos = None
         stack = []            # nested (begin X) markers; [0] is the operation
@@ -294,6 +313,7 @@ def parse_program(path, ini_path=None):
                 pos = nxt
                 continue
 
+        tp.flat = flatten_canon(canon)
         tp.moves = categorise(tp.moves)
         pts = [p for m in tp.moves for p in (m.a, m.b)]
         if pts:
@@ -304,6 +324,167 @@ def parse_program(path, ini_path=None):
         return tp
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+_FLAT_RE = {
+    'units': re.compile(r'USE_LENGTH_UNITS\(CANON_UNITS_(\w+)\)'),
+    'plane': re.compile(r'SELECT_PLANE\(CANON_PLANE_(\w+)\)'),
+    'feed': re.compile(r'SET_FEED_RATE\(([-0-9.]+)\)'),
+    'speed': re.compile(r'SET_SPINDLE_SPEED\([^,]*,\s*([-0-9.]+)\)'),
+    'cw': re.compile(r'START_SPINDLE_CLOCKWISE\('),
+    'ccw': re.compile(r'START_SPINDLE_COUNTERCLOCKWISE\('),
+    'spindle_off': re.compile(r'STOP_SPINDLE_TURNING\('),
+    'select': re.compile(r'SELECT_TOOL\(([-0-9.]+)\)'),
+    'change': re.compile(r'CHANGE_TOOL\('),
+    'flood_on': re.compile(r'FLOOD_ON\('),
+    'flood_off': re.compile(r'FLOOD_OFF\('),
+    'dwell': re.compile(r'DWELL\(([-0-9.]+)\)'),
+    'end': re.compile(r'PROGRAM_END\('),
+}
+
+FLAT_HEADER = """(NativeCAM - the generated program as plain G-code)
+(Produced by running the real interpreter over ncam.ngc and writing down what)
+(it actually did, so every subroutine, loop and expression is already gone and)
+(every number here is a number the machine moves to)
+(COORDINATES ARE ABSOLUTE - work offsets are already applied, and so is cutter)
+(compensation: these are TOOL CONTROL POINTS, not the programmed contour)
+(X is a DIAMETER, as everywhere else in NativeCAM; arc I offsets are radius)
+(This is a listing to read, not a program to load)
+"""
+
+
+def _num(v):
+    """A G-code number: enough digits to be exact, no trailing noise."""
+    s = '%.4f' % v
+    s = s.rstrip('0').rstrip('.')
+    return s if s not in ('', '-0') else '0'
+
+
+def flatten_canon(canon):
+    """The canon dump rewritten as plain, modal G-code.
+
+    The G-code tab used to show ncam.ngc itself, which is O-word calls and
+    expressions - true, but it does not tell you where the tool goes. This is
+    the other half: what the interpreter made of it.
+
+    Only the begin/end markers survive from the comments. The generated file
+    carries some 26,000 comment lines, nearly all of them subroutine headers
+    repeated once per call, and keeping them buries the motion they describe.
+
+    Coordinates are canon's own, which are absolute and post-compensation. X is
+    doubled back to a diameter because every other number in this program is a
+    diameter, and the arc offsets are left in radius because that is what the
+    interpreter wants whichever mode it is in.
+    """
+    out = [FLAT_HEADER.rstrip('\n')]
+    pos = None               # (x, y, z) in canon units, X radius
+    g_modal = None
+    feed = None
+    depth = 0
+
+    def xz(x, z):
+        words = []
+        if pos is None or abs(x - pos[0]) > 5e-5:
+            words.append('X' + _num(x * 2.0))       # radius -> diameter
+        if pos is None or abs(z - pos[2]) > 5e-5:
+            words.append('Z' + _num(z))
+        return words
+
+    def once(text):
+        if text not in out:
+            out.append(text)
+
+    def emit(g, words, indent):
+        nonlocal g_modal
+        if not words:
+            return                              # a move to where we already are
+        head = [] if g == g_modal else [g]
+        g_modal = g
+        out.append('  ' * indent + ' '.join(head + words))
+
+    for line in canon.splitlines():
+        m = _RE['comment'].search(line)
+        if m:
+            word, name = m.group(1), m.group(2).strip()
+            if word == 'begin':
+                out.append('')
+                out.append('  ' * depth + '(begin %s)' % name)
+                depth += 1
+            elif depth:
+                depth -= 1
+                out.append('  ' * depth + '(end %s)' % name)
+            # ncam.ngc's header carries a couple of (end ...) comments with no
+            # begin of their own; printing them would read as a listing bug
+            continue
+
+        m = _RE['feed'].search(line) or _RE['rapid'].search(line)
+        if m:
+            rapid = 'STRAIGHT_TRAVERSE' in line
+            v = [float(x) for x in m.group(1).split(',')[:3]]
+            emit('G0' if rapid else 'G1', xz(v[0], v[2]), depth)
+            pos = (v[0], v[1], v[2])
+            continue
+
+        m = _RE['arc'].search(line)
+        if m:
+            v = [float(x) for x in m.group(1).split(',')]
+            ze, xe, zc, xc, rot = v[0], v[1], v[2], v[3], v[4]
+            # canon rotation is positive counter-clockwise in the plane's own
+            # frame; I and K are from the START point, and stay in radius
+            words = xz(xe, ze)
+            if pos is not None:
+                words += ['I' + _num(xc - pos[0]), 'K' + _num(zc - pos[2])]
+            emit('G3' if rot > 0 else 'G2', words, depth)
+            pos = (xe, pos[1] if pos else 0.0, ze)
+            continue
+
+        m = _FLAT_RE['feed'].search(line)
+        if m:
+            f = float(m.group(1))
+            if f > 0 and (feed is None or abs(f - feed) > 1e-6):
+                feed = f
+                out.append('  ' * depth + 'F' + _num(f))
+            continue
+
+        # the interpreter restates units and plane on every reset; a listing
+        # that says G21 four times is just noise
+        m = _FLAT_RE['units'].search(line)
+        if m:
+            once('G21' if m.group(1).startswith('MM') else 'G20')
+            once('G7 (diameter mode)')
+            continue
+        m = _FLAT_RE['plane'].search(line)
+        if m:
+            once({'XZ': 'G18', 'XY': 'G17'}.get(m.group(1), 'G19'))
+            continue
+        m = _FLAT_RE['select'].search(line)
+        if m:
+            out.append('T%d' % int(float(m.group(1))))
+            continue
+        if _FLAT_RE['change'].search(line):
+            out.append('M6')
+            continue
+        m = _FLAT_RE['speed'].search(line)
+        if m:
+            out.append('S' + _num(float(m.group(1))))
+            continue
+        if _FLAT_RE['cw'].search(line):
+            out.append('M3')
+        elif _FLAT_RE['ccw'].search(line):
+            out.append('M4')
+        elif _FLAT_RE['spindle_off'].search(line):
+            out.append('M5')
+        elif _FLAT_RE['flood_on'].search(line):
+            out.append('M8')
+        elif _FLAT_RE['flood_off'].search(line):
+            out.append('M9')
+        elif _FLAT_RE['end'].search(line):
+            out.append('M2')
+        else:
+            m = _FLAT_RE['dwell'].search(line)
+            if m and float(m.group(1)) > 0:
+                out.append('G4 P' + _num(float(m.group(1))))
+    return '\n'.join(out) + '\n'
 
 
 ARC_SAG = 0.02          # mm of chord error allowed when splitting an arc
