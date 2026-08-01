@@ -17,7 +17,7 @@ to get wrong:
 Usage:
   gen_project.py --ini <ini> --project testing_15_0.xml --out /tmp/out.ngc
   gen_project.py --ini <ini> --project p.xml --out o.ngc \
-      --set polyline:param_flank=1 --set polyline:param_flank_len=5.0
+      --set polyline:param_flank=1 --set tool_change:param_flank_len=5.0
 """
 import argparse
 import os

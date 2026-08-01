@@ -790,6 +790,24 @@ class Tools(object):
         """
         return self.get_tool_back_angle(getattr(self, 'saved_tool', 0))
 
+    def save_flank_len(self, value):
+        """Remember the flank length of the tool loaded from here on.
+
+        It is a property of the INSERT, not of the cut, so it is set on the
+        Tool Change and read by whatever comes after - the same route the tool
+        number takes. There is no tool-table column for it: LinuxCNC's table
+        carries D, I, J and Q but nothing about how far the body extends.
+        """
+        self.saved_flank_len = max(get_float(value), 0.0)
+
+    def get_flank_len(self):
+        """Flank length of the last tool change, 0 when none was given.
+
+        0 means "treat the flank as unbounded", which is the conservative
+        answer and what the shadow did before the field existed.
+        """
+        return getattr(self, 'saved_flank_len', 0.0)
+
 
 def tip_comp_inputs():
     """(nose radius, orientation) as the generated G-code will resolve them.

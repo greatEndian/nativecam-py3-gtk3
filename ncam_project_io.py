@@ -154,6 +154,13 @@ class NCamProjectIOMixin:
                     p_dnum = f.get_param('param_dnum')
                     if p_dnum is not None :
                         ncam.TOOL_TABLE.save_tool_orient(get_int(p_dnum.get_ngc_value()))
+                    # the flank length travels the same way and for the same
+                    # reason: it describes the INSERT, so it belongs to the
+                    # tool change, and every feature under it - the polyline's
+                    # reachable envelope, the preview's silhouette - asks here
+                    p_flank = f.get_param('param_flank_len')
+                    ncam.TOOL_TABLE.save_flank_len(
+                        p_flank.get_ngc_value() if p_flank is not None else 0.0)
                 f.validate()
                 # never reuse a cached O-word id: the counter restarts every
                 # build, so a stale stored id collides with freshly assigned

@@ -153,6 +153,9 @@ class PreviewPane(object):
         self.orient = 0
         self.cl_deg = None
         self.included_deg = None
+        self.front_deg = None
+        self.back_deg = None
+        self.flank_len = 0.0
         self._field = None
         self._field_upto = -1
 
@@ -525,16 +528,20 @@ class PreviewPane(object):
         return '   '.join(parts)
 
     # -- simulation ---------------------------------------------------------
-    def set_tool(self, nose_r, orient, cl_deg=None, included_deg=None):
-        """Nose radius, orientation and the real insert angles.
+    def set_tool(self, nose_r, orient, cl_deg=None, included_deg=None,
+                 front_deg=None, back_deg=None, flank_len=0.0):
+        """Nose radius, orientation, the real insert angles, and the flank.
 
         nose_r/orient come from ncam.tip_comp_inputs(), the same source the
-        G-code compensates with. cl_deg/included_deg come from the tool table's
-        I and J, so the drawn insert is the one in the turret rather than a
-        generic wedge.
+        G-code compensates with. cl_deg/included_deg/front_deg/back_deg come
+        from the tool table's I and J, so the drawn insert is the one in the
+        turret rather than a generic wedge. flank_len comes from the Tool
+        Change - it is the one dimension the tool table has no column for.
         """
         self.nose_r, self.orient = nose_r or 0.0, orient or 0
         self.cl_deg, self.included_deg = cl_deg, included_deg
+        self.front_deg, self.back_deg = front_deg, back_deg
+        self.flank_len = flank_len or 0.0
         self._reset_field()
         self.area.queue_draw()
 
@@ -737,7 +744,9 @@ class PreviewPane(object):
         pos, _i, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
                                                self._acc, self._total)
         return {'pos': pos, 'nose_r': self.nose_r, 'orient': self.orient,
-                'cl_deg': self.cl_deg, 'included_deg': self.included_deg}
+                'cl_deg': self.cl_deg, 'included_deg': self.included_deg,
+                'front_deg': self.front_deg, 'back_deg': self.back_deg,
+                'flank_len': self.flank_len}
 
     # -- zoom and pan -------------------------------------------------------
     def _on_scroll(self, area, ev):

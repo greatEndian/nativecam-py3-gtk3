@@ -184,7 +184,13 @@ class NCamAppActionsMixin:
                 # the program is not using
                 nose_r, orient = tip_comp_inputs()
                 cl_deg, included_deg = tool_wedge()
-                pane.set_tool(nose_r, orient, cl_deg, included_deg)
+                # the flank length has no tool-table column - it comes off the
+                # Tool Change feature, the same route the tool number takes
+                tn = getattr(ncam.TOOL_TABLE, 'saved_tool', 0)
+                pane.set_tool(nose_r, orient, cl_deg, included_deg,
+                              ncam.TOOL_TABLE.get_tool_front_angle(tn),
+                              ncam.TOOL_TABLE.get_tool_back_angle(tn),
+                              ncam.TOOL_TABLE.get_flank_len())
                 pane.refresh(fname)
             except Exception as e :
                 print(_('Preview: could not refresh: %s') % str(e))

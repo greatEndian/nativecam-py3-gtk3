@@ -766,7 +766,9 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     if tool is not None and tool.get('pos') is not None:
         draw_tool(cr, tool['pos'], plane, s, ox, oy,
                   tool.get('nose_r', 0.0), tool.get('orient', 0),
-                  tool.get('cl_deg'), tool.get('included_deg'))
+                  tool.get('cl_deg'), tool.get('included_deg'),
+                  tool.get('front_deg'), tool.get('back_deg'),
+                  tool.get('flank_len', 0.0))
 
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
@@ -1033,8 +1035,102 @@ def tool_direction(orient, cl_deg=None):
     return 0.0, 0.0
 
 
+def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
+                    flank_len=0.0, cl_deg=None):
+    """The tool as a closed (z, radius) outline in MODEL units, or None.
+
+    Built the way the insert actually is, from the tool table plus the flank
+    length off the Tool Change:
+
+      - the nose circle of radius R, centred where the orientation puts it;
+      - the two cutting edges, tangent to that circle, running at the FRONT
+        and BACK angles the tool table gives (both measured from Z+);
+      - two lines perpendicular to Z closing the back of it: one tangent to
+        the nose circle on its leading side, the other one flank length behind
+        that. That second line is the whole point - it is the flank length made
+        visible, and it is the same number the reachable envelope uses to
+        decide how far a wall can shadow the cut.
+
+    Returns None rather than a guess when the tool table carries no angles, or
+    no flank length is set: a silhouette drawn at invented dimensions is a
+    claim about the tool that nothing supports, and this one is used to judge
+    clearance.
+    """
+    if not nose_r or nose_r <= 0:
+        return None
+    if front_deg is None or back_deg is None or front_deg == back_deg:
+        return None
+    if not flank_len or flank_len <= 0:
+        return None
+    dz, dx = tool_direction(orient, cl_deg)
+    if not (dz or dx):
+        return None
+    rz, rx = nose_offset(orient)
+    cz, cx = pos[2] + rz * nose_r, pos[0] + rx * nose_r
+
+    def edge(deg):
+        """(tangent point, unit direction into the body) for one cutting edge."""
+        a = math.radians(deg)
+        ez, ex = math.cos(a), math.sin(a)
+        # the outward normal is the one pointing AWAY from the body, so the
+        # edge lies on the cutting side of the circle rather than through it
+        nz, nx = -ex, ez
+        if nz * dz + nx * dx > 0:
+            nz, nx = -nz, -nx
+        # and the edge runs from its tangent point INTO the body, not out of it
+        if ez * dz + ex * dx < 0:
+            ez, ex = -ez, -ex
+        return (cz + nz * nose_r, cx + nx * nose_r), (ez, ex)
+
+    # the cap lines: perpendicular to Z, so both are a constant Z. The first is
+    # tangent to the nose circle on the side the body is NOT, the second one
+    # flank length further into the body.
+    zdir = 1.0 if dz > 1e-9 else (-1.0 if dz < -1e-9 else 0.0)
+    if zdir == 0.0:
+        return None                 # straight facing or boring: no Z extent
+    z_lead = cz - zdir * nose_r
+    z_back = z_lead + zdir * flank_len
+
+    def to_cap(t0, d):
+        """Where an edge crosses the back cap, or None if it never does."""
+        if abs(d[0]) < 1e-9:
+            return None
+        k = (z_back - t0[0]) / d[0]
+        if k < 0:
+            return None
+        return (t0[0] + d[0] * k, t0[1] + d[1] * k)
+
+    (t_f, d_f), (t_b, d_b) = edge(front_deg), edge(back_deg)
+    e_f, e_b = to_cap(t_f, d_f), to_cap(t_b, d_b)
+    if e_f is None or e_b is None:
+        return None
+
+    # the nose arc, from one tangent point round the exposed side to the other
+    a_f = math.atan2(t_f[1] - cx, t_f[0] - cz)
+    a_b = math.atan2(t_b[1] - cx, t_b[0] - cz)
+    span = (a_b - a_f) % (2 * math.pi)
+    if span > math.pi:              # take the short way, over the cutting side
+        span -= 2 * math.pi
+    steps = max(6, int(abs(span) / 0.15) + 1)
+    ts = [i / float(steps) for i in range(steps + 1)]
+    # The leading tangent point has to be a VERTEX, not something the sampling
+    # passes near: it is where the first cap line touches, so the drawn tool
+    # would otherwise be a fraction short of its own flank length - 0.6 um at
+    # this step size, which is invisible and still wrong.
+    a_ext = math.pi if zdir > 0 else 0.0
+    t_ext = (((a_ext - a_f) % (2 * math.pi))
+             - (2 * math.pi if span < 0 else 0.0)) / span
+    if 1e-9 < t_ext < 1.0 - 1e-9:
+        ts.append(t_ext)
+        ts.sort()
+    arc = [(cz + math.cos(a_f + span * t) * nose_r,
+            cx + math.sin(a_f + span * t) * nose_r) for t in ts]
+    return arc + [e_b, e_f]
+
+
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
-              cl_deg=None, included_deg=None):
+              cl_deg=None, included_deg=None, front_deg=None, back_deg=None,
+              flank_len=0.0):
     """The tool at `pos`: its nose circle, and the insert behind it.
 
     The BODY LIES IN THE SAME DIRECTION AS THE NOSE OFFSET, not opposite it.
@@ -1043,11 +1139,15 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
     is inside the tool. The first version drew the holder the other way, which
     put the tool on the far side of its own tip and read as a mirror image.
 
-    With I and J from the tool table the insert is drawn at its true included
-    angle, as a wedge whose two faces are tangent to the nose circle: apex back
-    from the centre by R/sin(half), edges out at CL +/- half. Without them it
-    falls back to a plain schematic, because a wedge drawn at a guessed angle
-    would be a claim about the tool that nothing supports.
+    Given the tool table's angles AND a flank length from the Tool Change, the
+    body is the real silhouette from tool_silhouette() - dimensioned in mm, so
+    it scales with the plot instead of being a fixed number of pixels, and the
+    flank length is something the operator can see rather than only type.
+
+    With I and J but no flank length it falls back to the old wedge, tangent to
+    the nose circle on both faces but of arbitrary length; with neither, to a
+    plain schematic. A wedge drawn at a guessed angle would be a claim about
+    the tool that nothing supports.
     """
     ia, ib = _plane_indices(plane)
     px, py = pos[ia] * s + ox, pos[ib] * s + oy
@@ -1062,8 +1162,27 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         half = None
         if included_deg is not None and 1.0 < included_deg < 179.0:
             half = math.radians(included_deg / 2.0)
+        # a lathe silhouette in the ZX plane only - it is built from a nose
+        # orientation and a flank, neither of which means anything on a mill
+        outline = (tool_silhouette(pos, nose_r, orient, front_deg, back_deg,
+                                   flank_len, cl_deg)
+                   if plane == 'ZX' else None)
         cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
-        if half is not None:
+        if outline:
+            # model units, so it is drawn through the same transform the
+            # toolpath is - a silhouette that did not scale with the zoom
+            # would be a picture of nothing in particular
+            first = True
+            for pz, prx in outline:
+                sx, sy = pz * s + ox, prx * s + oy
+                (cr.move_to if first else cr.line_to)(sx, sy)
+                first = False
+            cr.close_path()
+            cr.fill_preserve()
+            cr.set_source_rgb(*COL['tool_body'])
+            cr.set_line_width(1.0)
+            cr.stroke()
+        elif half is not None:
             # a real wedge, tangent to the nose circle on both faces
             apex = r / math.sin(half)
             ax, ay = cx - dz * apex, cy - dx * apex
