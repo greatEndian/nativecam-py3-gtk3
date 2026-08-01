@@ -239,11 +239,36 @@ def main():
                   and abs(data[y * stride + x * 4] - body[2]) < 12]
             return (max(xs) - min(xs)) if xs else 0
 
-        holder_px = drawn_extent(6.0, P.COL['tool_holder'])
-        check('the holder is drawn too, in its own grey', holder_px > 2,
-              'nothing in the holder colour reached the canvas')
-        check('and its grey is not the insert grey',
-              P.COL['tool_holder'] != P.COL['tool_body'])
+        # The holder is drawn in the SAME grey as the insert, so it cannot be
+        # found by colour. Its own area can: a point inside the holder
+        # triangle and outside the insert must still come out tool-coloured,
+        # and would be background if the holder were never drawn.
+        def inside(poly, p):
+            hits = False
+            for a, b in zip(poly, list(poly[1:]) + [poly[0]]):
+                if (a[1] > p[1]) != (b[1] > p[1]):
+                    t = (p[1] - a[1]) / (b[1] - a[1])
+                    if p[0] < a[0] + (b[0] - a[0]) * t:
+                        hits = not hits
+            return hits
+
+        mid = (sum(q[0] for q in hold) / 3.0, sum(q[1] for q in hold) / 3.0)
+        check('the holder covers ground the insert does not',
+              not inside(poly, mid),
+              'its centroid %s is inside the insert, so this proves nothing'
+              % (mid,))
+        W = H = 400
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
+        cr = cairo.Context(surf)
+        P.draw_tool(cr, POS, 'ZX', 6.0, 300.0, 60.0, R, ORIENT, 45.0, 60.0,
+                    FRONT, BACK, FLANK)
+        surf.flush()
+        px, py = int(mid[0] * 6.0 + 300.0), int(mid[1] * 6.0 + 60.0)
+        data, stride = surf.get_data(), surf.get_stride()
+        inked = (0 <= px < W and 0 <= py < H
+                 and data[py * stride + px * 4 + 3] > 0)
+        check('and that ground is inked, so the holder really is drawn',
+              inked, 'nothing at the holder centroid (%d, %d)' % (px, py))
 
         w1, w2 = drawn_extent(6.0), drawn_extent(12.0)
         check('the silhouette is actually drawn', w1 > 4,

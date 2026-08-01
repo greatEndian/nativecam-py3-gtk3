@@ -635,7 +635,6 @@ COL = {
     'soft':      (0.95, 0.45, 0.85),     # what the tool can actually reach
     'tool':      (0.95, 0.75, 0.25),
     'tool_body': (0.42, 0.40, 0.46),
-    'tool_holder': (0.78, 0.78, 0.80),   # the block behind the insert
     'prefinish': (0.35, 0.60, 1.00),     # the pre-finish contour pass
     'finish':    (1.00, 0.60, 0.15),     # the finishing pass, in any op
 }
@@ -1155,9 +1154,10 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
     corner of a real tool. The insert is a few millimetres; what actually
     fouls a shoulder is the block behind it.
 
-    Returned separately from tool_silhouette rather than merged into it, so
-    the two can be drawn in different greys - the insert is the part that is
-    allowed to be in metal, the holder is not.
+    Returned separately from tool_silhouette rather than merged into it, and
+    drawn in the same grey: they are one tool to look at, but the collision
+    check has to tell them apart, because the insert's front edge is allowed
+    to be in metal and none of the holder is.
     """
     parts = {}
     if tool_silhouette(pos, nose_r, orient, front_deg, back_deg, flank_len,
@@ -1234,8 +1234,9 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
                               flank_len, cl_deg)
                   if plane == 'ZX' else None)
         if holder:
-            # under the insert, so the overlap reads as insert
-            cr.set_source_rgba(*(COL['tool_holder'] + (0.9,)))
+            # the SAME grey as the insert: the two are one tool, and the
+            # split was only ever a way of showing which part is which
+            cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
             first = True
             for pz, prx in holder:
                 (cr.move_to if first else cr.line_to)(pz * s + ox, prx * s + oy)
