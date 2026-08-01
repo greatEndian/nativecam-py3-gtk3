@@ -16,6 +16,17 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
 
 ---
 
+## Next — before anything else
+
+- [ ] **Lead-in shape after a boss segment is wrong.** The lead-in shaping
+  added last week produces the wrong shape where a pass starts after a boss.
+  greatEndian's call: **repair this first**, ahead of the tool-shape question
+  and everything queued behind it. *Needs the case pinned down before code:
+  which project, and a screenshot of the shape it makes against the shape it
+  should make.* Likely area: `lib/lathe/lathe_level_pass.ngc`, the
+  `o<li_cap_all>` / `_li_leff` capping on multi-crossing continuation
+  intervals, and `o<fillet_lead>` for the blend.
+
 ## Tool shape — the one live question
 
 - [ ] **NEEDS A CALL — how is the tool bounded?** The silhouette's radial
@@ -25,6 +36,27 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   property of the construction, not a bug. Candidates: flank measured **along
   the edge** rather than in Z; a separate **holder depth**; a fixed **shank
   height**. Everything under Simulation below waits on this.
+
+- [ ] **A front or back angle over 90° has no defined contour.** The
+  construction puts an edge at 90 − angle from Z, so past 90° it leans the
+  other way and the shape stops meaning what it means for a normal insert.
+  Measured on a 0.8 mm nose, orientation 2, 6 mm flank:
+
+  | front | back | insert | holder |
+  |---|---|---|---|
+  | 15 | 75 | 6.0 × 23.3 mm | yes |
+  | 15 | 105 | 6.0 × 24.7 mm | yes |
+  | 95 | 75 | 5.3 × 1.8 mm | **none** |
+  | 100 | 110 | 5.5 × 2.0 mm | **none** |
+  | 0 | 75 | **none** | none |
+
+  So it does not simply refuse: a front angle over 90° still draws an insert,
+  a wrong one, and drops the holder without saying so; an angle of exactly 0
+  or 180 draws nothing at all and gives no reason. Needs a defined answer for
+  those tools - a different closing line, or a refusal the operator can
+  actually see - rather than a quietly wrong picture. Whatever it is has to be
+  settled with the bounding question above, since both are about how the
+  outline closes.
 
 ## Simulation — paused at your word
 
