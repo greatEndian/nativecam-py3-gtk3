@@ -1070,8 +1070,17 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     cz, cx = pos[2] + rz * nose_r, pos[0] + rx * nose_r
 
     def edge(deg):
-        """(tangent point, unit direction into the body) for one cutting edge."""
-        a = math.radians(deg)
+        """(tangent point, unit direction into the body) for one cutting edge.
+
+        The table's angle is measured off the PERPENDICULAR, so the edge sits
+        at 90 - it from Z. That is the same reading flank_slope has always
+        used for the back angle - a J75 insert ramps at 15 degrees - and
+        photo/toolFlank_1.png labels both the same way: the angle called
+        "back angle" is between the Z axis and the shallow edge, and the one
+        called "front angle" is between the RADIAL direction and the steep
+        one. Taking them as directions from Z instead swapped the two edges.
+        """
+        a = math.radians(90.0 - deg)
         ez, ex = math.cos(a), math.sin(a)
         # the outward normal is the one pointing AWAY from the body, so the
         # edge lies on the cutting side of the circle rather than through it
@@ -1107,7 +1116,8 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
         return None
     if parts is not None:
         parts.update(centre=(cz, cx), t_f=t_f, t_b=t_b, e_f=e_f, e_b=e_b,
-                     z_lead=z_lead, z_back=z_back, zdir=zdir, r=nose_r)
+                     d_f=d_f, d_b=d_b, z_lead=z_lead, z_back=z_back,
+                     zdir=zdir, r=nose_r)
 
     # the nose arc, from one tangent point round the exposed side to the other
     a_f = math.atan2(t_f[1] - cx, t_f[0] - cz)
@@ -1154,20 +1164,31 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
                        cl_deg, parts) is None:
         return None
     cz, cx = parts['centre']
-    t_b, e_b = parts['t_b'], parts['e_b']
-    # The face is the perpendicular-to-Z tangent of the nose circle on the
-    # side the cutting edge does NOT lead with - for a corner tool that line
-    # runs through the control point itself, which is where the red line sits
-    # in photo/toolFlank_0.png. It is the same line the leading cap already
-    # uses; what is new is the surface between it and the insert's edge.
-    z_face = parts['z_lead']
-    del cz
+    t_f, e_f, zdir = parts['t_f'], parts['e_f'], parts['zdir']
+    # The face is the perpendicular-to-Z tangent on the BACK of the nose
+    # circle - the tool tip mirrored through the nose centre, which is the
+    # red line in photo/toolFlank_1.png. It is one nose DIAMETER behind the
+    # leading tangent the insert already caps with, not the same line.
+    z_face = cz + zdir * nose_r
     # the holder runs from that face back to wherever the insert's back edge
     # reaches the cap, and down to the same radius
-    if abs(e_b[1] - cx) < 1e-9:
+    # The face and the front edge CROSS: near the nose the steep edge is in
+    # front of the face, and below the crossing the face is in front of the
+    # edge. The holder is the part on the second side - the block standing
+    # proud of the insert - so it is the triangle from that crossing down.
+    # Taking the whole strip instead gives a self-intersecting outline, which
+    # cairo happily fills into a bow tie.
+    d_f = parts['d_f']
+    if abs(d_f[0]) < 1e-9:
         return None
-    return [(z_face, cx), (z_face, e_b[1]), (e_b[0], e_b[1]),
-            (t_b[0], t_b[1])]
+    k = (z_face - t_f[0]) / d_f[0]
+    if k < 0:
+        return None
+    x_cross = (z_face, t_f[1] + d_f[1] * k)
+    if e_f[1] - x_cross[1] < 1e-9:
+        return None
+    del cx
+    return [x_cross, (z_face, e_f[1]), (e_f[0], e_f[1])]
 
 
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,

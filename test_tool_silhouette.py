@@ -97,12 +97,21 @@ def main():
     def ang(a, b):
         return math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0
 
-    check('the back edge runs at the tool table back angle',
-          abs(ang(arc_end, cap_b) - BACK % 180.0) < 1e-6,
-          '%.4f deg, table says %.4f' % (ang(arc_end, cap_b), BACK))
-    check('the front edge runs at the tool table front angle',
-          abs(ang(cap_f, arc_start) - FRONT % 180.0) < 1e-6,
-          '%.4f deg, table says %.4f' % (ang(cap_f, arc_start), FRONT))
+    # Both table angles are measured off the PERPENDICULAR, so an edge sits
+    # at 90 - it from Z. photo/toolFlank_1.png labels them that way - the
+    # "back angle" is between the Z axis and the shallow edge, the "front
+    # angle" between the RADIAL direction and the steep one - and it is the
+    # same reading flank_slope has always used: a J75 insert ramps at 15 deg.
+    # Taking them as directions from Z swaps the two edges.
+    check('the back edge sits at 90 - the table back angle',
+          abs(ang(arc_end, cap_b) - (90.0 - BACK)) < 1e-6,
+          '%.4f deg, want %.4f' % (ang(arc_end, cap_b), 90.0 - BACK))
+    check('the front edge sits at 90 - the table front angle',
+          abs(ang(cap_f, arc_start) - (90.0 - FRONT)) < 1e-6,
+          '%.4f deg, want %.4f' % (ang(cap_f, arc_start), 90.0 - FRONT))
+    check('so the back edge is the SHALLOW one, as the shadow ramp is',
+          ang(arc_end, cap_b) < ang(cap_f, arc_start),
+          'the two edges are the wrong way round')
 
     # --- the two cap lines are perpendicular to Z, one flank apart ---------
     check('the back of the tool is a single line perpendicular to Z',
@@ -167,25 +176,36 @@ def main():
     # block behind the cutting corner. photo/toolFlank_0.png is the shape.
     hold = P.tool_holder(POS, R, ORIENT, FRONT, BACK, FLANK)
     check('a holder comes back with the insert', hold is not None
-          and len(hold) == 4)
+          and len(hold) == 3)
     if hold:
+        cz2, cx2 = centre()
         check('its front face is a single line perpendicular to Z',
               abs(hold[0][0] - hold[1][0]) < 1e-9,
               'Z%.4f vs Z%.4f' % (hold[0][0], hold[1][0]))
-        check('that face is tangent to the nose circle',
-              abs(hold[0][0] - (centre()[0] - R)) < 1e-9,
-              'face at Z%.4f, tangent at Z%.4f' % (hold[0][0], centre()[0] - R))
-        check('and it starts level with the nose centre, not above it',
-              abs(hold[0][1] - centre()[1]) < 1e-9)
-        check('the far end shares the insert edge, so the two meet flush',
+        check('that face is tangent to the BACK of the nose circle',
+              abs(hold[0][0] - (cz2 + R)) < 1e-9,
+              'face at Z%.4f, back tangent at Z%.4f' % (hold[0][0], cz2 + R))
+        check('which is one nose diameter behind the leading cap',
+              abs(hold[0][0] - min(p[0] for p in poly) - 2 * R) < 1e-9,
+              'face is %.4f behind the cap, nose diameter is %.4f'
+              % (hold[0][0] - min(p[0] for p in poly), 2 * R))
+        check('the top corner is where the face meets the insert edge',
+              hold[0][1] > cx2 + R,
+              'it starts at the nose, so the face and the edge are not crossing')
+        check('the far corner sits on the insert, so the two meet flush',
               any(abs(hold[2][0] - p[0]) < 1e-9 and abs(hold[2][1] - p[1]) < 1e-9
                   for p in poly),
               'the holder corner %s is not on the insert' % (hold[2],))
-        check('the holder is behind the face, never in front of it',
-              all(q[0] >= hold[0][0] - 1e-9 for q in hold),
-              'part of the holder is past its own front face')
+        check('nothing in the holder is in front of its own face',
+              all(q[0] >= hold[0][0] - 1e-9 for q in hold))
         check('it reaches as deep as the insert does',
               abs(max(q[1] for q in hold) - max(p[1] for p in poly)) < 1e-9)
+        # a bow tie fills perfectly happily and looks like a shape
+        def side(a, b, c):
+            return ((b[0] - a[0]) * (c[1] - a[1])
+                    - (b[1] - a[1]) * (c[0] - a[0]))
+        check('the outline is a simple triangle, not a bow tie',
+              abs(side(*hold)) > 1e-9)
     check('no insert, no holder',
           P.tool_holder(POS, R, ORIENT, None, None, FLANK) is None)
     check('no flank length, no holder',
