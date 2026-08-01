@@ -1328,6 +1328,159 @@ class StockField(object):
         return pts
 
 
+# ---------------------------------------------------------------------------
+# collisions
+# ---------------------------------------------------------------------------
+# One reported hit. `at` is the fraction along the whole program, so the
+# timeline can mark it where the operator will look for it.
+Collision = collections.namedtuple('Collision', 'index kind pos depth at')
+
+RAPID_HIT, BODY_HIT = 'rapid into material', 'tool body into material'
+
+# how finely the tool is stepped along a move while looking for a hit. Half a
+# millimetre: a collision that only exists for less than that is a graze the
+# operator cannot act on, and the cost is linear in every move in the program.
+STEP_MM = 0.5
+
+
+def _inside(field, z, r, tol=1e-4):
+    """How deep (z, radius) sits inside the remaining material, or None.
+
+    Depth is measured to the NEAREST surface, so a tool a hair under the skin
+    reports a hair rather than the full wall thickness.
+    """
+    if field is None or field.n <= 0:
+        return None
+    i = field._col(z)
+    if i < 0 or i >= field.n:
+        return None
+    lo, hi = field.inner[i], field.outer[i]
+    if not (lo + tol < r < hi - tol):
+        return None
+    return min(r - lo, hi - r)
+
+
+def _outline_samples(poly, step=0.5, closed=True):
+    """A path, densified so an edge cannot slip through between its ends.
+
+    Testing the vertices alone misses the obvious case: a long straight flank
+    with both ends in clear air and its middle buried in the boss.
+    """
+    out = []
+    pairs = zip(poly, list(poly[1:]) + ([poly[0]] if closed else []))
+    for a, b in pairs:
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        n = max(1, int(d / step))
+        for k in range(n):
+            f = k / float(n)
+            out.append((a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f))
+    return out
+
+
+def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
+               flank_len=0.0, cl_deg=None, columns=None, limit=50,
+               min_depth=None):
+    """Where the tool runs into material it is not cutting.
+
+    Two things are reported, and they are not the same fault:
+
+      - a RAPID whose tool - nose included - is inside material. On a real
+        machine that is a crash.
+      - the tool BODY inside material during a feed. The nose is meant to be
+        in the metal; the flank behind it is not. This is the failure the
+        whole back-angle shadow exists to prevent, and until now nothing
+        checked whether the shadow actually worked.
+
+    Needs the silhouette, so it needs the tool table's angles and a flank
+    length. Without them there is no body to test and this returns [] rather
+    than guessing at one - see tool_silhouette.
+
+    The material is simulated as it goes, so a pass is judged against what the
+    passes before it left, not against the bar.
+    """
+    if not tp.moves or not stock or nose_r <= 0:
+        return []
+    poly0 = tool_silhouette((0.0, 0.0, 0.0), nose_r, orient, front_deg,
+                            back_deg, flank_len, cl_deg)
+    if not poly0:
+        return []
+    # the outline in TOOL coordinates, once - it does not change shape as the
+    # tool moves, so it is built here and translated per sample
+    whole = _outline_samples(poly0)
+    # The BACK flank and the cap behind it - and nothing else. tool_silhouette
+    # returns the nose arc first and then the two cap intersections, so the
+    # last three points are exactly (back tangent, back edge end, front edge
+    # end): the back edge and the cap across the tail of the tool.
+    #
+    # The nose and the FRONT edge are left out on purpose. Both are cutting
+    # surfaces - the nose is the cut and the front edge is where the chip
+    # comes off - so testing them reports every roughing pass as a collision,
+    # which is what the first run of this did: 21 hits on a clean program, all
+    # of them the front edge doing its job.
+    body = _outline_samples(list(poly0[-3:]), closed=False)
+
+    a0, a1, b0, b1 = stock
+    # Deliberately coarser than the removal field the picture is drawn from.
+    # A collision is millimetres of tool in metal, not microns, and this walks
+    # the whole silhouette at every step of every move - at removal resolution
+    # that is tens of millions of lookups and twenty seconds.
+    cols = columns or max(200, min(1200, int(abs(a1 - a0) / 0.25)))
+    field = StockField(a0, a1, b0, b1, cols)
+    d = nose_offset(orient)
+    acc, total = path_lengths(tp)
+
+    # Below this the report is quantisation, not a collision. Sampling the
+    # swept nose at column centres under-cuts by R - sqrt(R^2 - (dz/2)^2), and
+    # the tool then reads as that far into its own groove: 0.02 mm on this
+    # field, which is exactly the depth the first clean run reported. Five
+    # times it, because at three a plain retract out through its own cut still
+    # measured 0.063 against a 0.060 floor. A tool 0.1 mm into metal is not
+    # something an operator can act on anyway.
+    quant = nose_r - math.sqrt(max(nose_r ** 2 - (field.dz / 2.0) ** 2, 0.0))
+    floor = min_depth if min_depth is not None else max(5.0 * quant, 0.05)
+
+    out = []
+    for i, m in enumerate(tp.moves):
+        # A FEED is tested against the material as this move LEAVES it: the
+        # metal the nose takes off on the way through is not a collision, and
+        # the body follows the nose through the same groove. Testing first
+        # reported the body brushing the skin the nose was removing at that
+        # instant - 0.2 to 0.4 mm, on every roughing pass, all of it noise.
+        # A RAPID is tested BEFORE anything is cut, because a rapid is not
+        # entitled to remove metal at all.
+        if m.kind != 'rapid':
+            field.cut_move(m.a, m.b, nose_r, d)
+        pts = whole if m.kind == 'rapid' else body
+        dz, dx = m.b[2] - m.a[2], m.b[0] - m.a[0]
+        steps = max(2, int(max(abs(dz), abs(dx)) / STEP_MM) + 1)
+        worst, where = None, None
+        for k in range(steps + 1):
+            f = k / float(steps)
+            pz, px = m.a[2] + dz * f, m.a[0] + dx * f
+            for tz, tx in pts:
+                depth = _inside(field, pz + tz, px + tx, floor)
+                if depth is not None and (worst is None or depth > worst):
+                    worst, where = depth, (pz + tz, px + tx)
+        if worst is not None:
+            prev = acc[i - 1] if i else 0.0
+            out.append(Collision(i, RAPID_HIT if m.kind == 'rapid'
+                                 else BODY_HIT, where, worst,
+                                 (prev / total) if total else 0.0))
+            if len(out) >= limit:
+                break
+        if m.kind == 'rapid':
+            # a rapid that ploughs through metal has still moved it, and
+            # leaving it in place would report every later move as a collision
+            field.cut_move(m.a, m.b, nose_r, d)
+    return out
+
+
+def _nose_c(nose_r, orient):
+    """Nose centre offset from the control point, in tool coordinates."""
+    rz, rx = nose_offset(orient)
+    return (rz * nose_r, rx * nose_r)
+
+
 def draw_stock_field(cr, field, plane, s, ox, oy, classes=None):
     """Fill what is left of the material.
 
