@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NativeCAM — a conversational CAM GUI for LinuxCNC (fork of FernV/NativeCAM, ported to Python 3 / GTK3 by greatEndian). Users build a feature tree (turning, facing, polylines, drilling…) in a GTK panel embedded in AXIS/Gmoccapy; the app generates `ncam.ngc` G-code that LinuxCNC loads live. Current active work is on the `liveTooling` branch: lathe polyline/contour cycles and turn-mill (C/Y axis) support.
 
+## **Python first, O-code last — standing rule**
+
+**Solve every problem in Python at generation time. Do not reach for G-code
+O-word subroutines when Python can compute the answer first.** greatEndian made
+this a standing rule, not a preference for one task.
+
+`lathe_sections.py` is the shape to copy: GTK-free, imports nothing from
+`ncam`, called from a `.cfg` `[AFTER]` block via
+`<exec>print(lathe_sections.build_*_gcode(self))</exec>`, and it **emits a
+point table that the `.ngc` merely walks** (`cam_load`, `_pl_fc_base`,
+`_pl_env_count`). Leave the `.ngc` a walker: read the table, move.
+
+Why, concretely: O-code cannot be unit-tested; a CALL line has a length limit
+that kills the program with `Command too long`; named parameters must exist at
+load-time pre-parse; and debugging means instrument, run rs274, revert, where
+Python needs a print.
+
 ## Commands
 
 ```bash

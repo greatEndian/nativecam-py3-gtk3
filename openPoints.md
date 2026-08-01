@@ -4,6 +4,9 @@ The running list of what is not finished. Every new open point gets written
 here as soon as it appears, and gets ticked off here as soon as it is done —
 not left to be remembered.
 
+> **Python first, O-code last.** Standing rule, all of it: solve the problem in
+> Python at generation time and leave the `.ngc` walking a table. See CLAUDE.md.
+
 **Conventions**
 
 - `- [ ]` open, `- [x]` done. A finished item moves to **Done**, newest first,
