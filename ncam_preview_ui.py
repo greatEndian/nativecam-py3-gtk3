@@ -93,6 +93,9 @@ class PreviewPane(object):
         view = gtk.TextView.new_with_buffer(self.buffer)
         view.set_editable(False)          # ncam.ngc is generated; edits would
         view.set_monospace(True)          # be lost on the next Regenerate
+        # no blinking cursor: it is a frame-clock tick callback on a page that
+        # is usually not the visible tab, and there is nothing to type into
+        view.set_cursor_visible(False)
         scroll = gtk.ScrolledWindow()
         scroll.add(view)
         self.widget.append_page(scroll, gtk.Label(label=_('G-code')))
@@ -106,6 +109,7 @@ class PreviewPane(object):
         flat_view = gtk.TextView.new_with_buffer(self.flat_buffer)
         flat_view.set_editable(False)
         flat_view.set_monospace(True)
+        flat_view.set_cursor_visible(False)
         flat_scroll = gtk.ScrolledWindow()
         flat_scroll.add(flat_view)
         self.widget.append_page(flat_scroll, gtk.Label(label=_('Flat')))
@@ -123,7 +127,6 @@ class PreviewPane(object):
             name.set_halign(gtk.Align.START)
             val = gtk.Label(label='-')
             val.set_halign(gtk.Align.START)
-            val.set_selectable(True)
             info_grid.attach(name, 0, r, 1, 1)
             info_grid.attach(val, 1, r, 1, 1)
             self.info_rows[key] = val
@@ -135,6 +138,7 @@ class PreviewPane(object):
         stats_view = gtk.TextView.new_with_buffer(self.stats_buffer)
         stats_view.set_editable(False)
         stats_view.set_monospace(True)
+        stats_view.set_cursor_visible(False)
         stats_scroll = gtk.ScrolledWindow()
         stats_scroll.add(stats_view)
         self.widget.append_page(stats_scroll, gtk.Label(label=_('Stats')))
@@ -346,6 +350,13 @@ class PreviewPane(object):
         self.box.pack_start(self.sim_box, False, False, 0)
         self.box.pack_start(self.cmp_box, False, False, 0)
         self.box.pack_start(self.status, False, False, 2)
+        # A GLib timeout is owned by the main loop, not by the widget, so a
+        # running simulation keeps firing after the panel is torn down and
+        # calls set_value/queue_draw on dead widgets. Embedded in AXIS that
+        # surfaces as a burst of
+        #   gdk_frame_clock_end_updating: assertion GDK_IS_FRAME_CLOCK failed
+        # followed by an X BadWindow, and it takes LinuxCNC down with it.
+        self.box.connect('destroy', lambda _w: self._stop_sim())
         self.box.show_all()
         # after show_all, so the row's own children get shown once and only the
         # row itself is toggled from here on. Both halves are needed: without
@@ -377,6 +388,11 @@ class PreviewPane(object):
         GLib.idle_add(self._done, tp)
 
     def _done(self, tp):
+        # the interpreter runs on a worker thread and hands the result back
+        # with idle_add, so the panel can be gone by the time it lands
+        if self.area.get_window() is None and self._acc is not None:
+            self._busy = False
+            return False
         self.toolpath = tp
         self._acc = None          # lengths belong to the old path
         self._reset_field()
@@ -719,6 +735,11 @@ class PreviewPane(object):
         self.play_btn.show_all()
 
     def _sim_tick(self):
+        # belt as well as braces: between the timeout being scheduled and it
+        # firing, the panel can have gone away
+        if self.area.get_window() is None:
+            self._sim_source = None
+            return False
         # ~8 s for the whole path at 1x regardless of length, so a long program
         # is still watchable and a short one is not over before it is seen
         self.sim_t = min(1.0, self.sim_t + self.BASE_STEP * self.speed)

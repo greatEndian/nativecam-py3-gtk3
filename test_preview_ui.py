@@ -205,6 +205,26 @@ def main():
     p.sim_scale.set_value(0.0)
     pump()
 
+    # --- 6c. the simulation timer must not outlive the panel ---------------
+    # A GLib timeout belongs to the main loop, not to the widget. A running
+    # simulation kept firing after the panel was torn down and called
+    # set_value/queue_draw on dead widgets; embedded in AXIS that came out as
+    # a burst of "gdk_frame_clock_end_updating: assertion GDK_IS_FRAME_CLOCK
+    # failed" and then an X BadWindow that took LinuxCNC down with it.
+    p._done(tp)
+    p._on_play(None)
+    pump()
+    check('play actually starts a timer',
+          p.sim_running and p._sim_source is not None)
+    win.destroy()
+    pump()
+    check('destroying the panel stops the timer',
+          not p.sim_running and p._sim_source is None,
+          'the timeout is still queued against destroyed widgets')
+    check('and a tick that slipped through does nothing',
+          p._sim_tick() is False,
+          'it would touch widgets that no longer have a window')
+
     # --- 7. the legend names the colours that are on the plot --------------
     # It lives in the status line precisely so it does not become row number
     # two, so it has to be right about which colours are showing.
