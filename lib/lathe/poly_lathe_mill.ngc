@@ -188,6 +188,15 @@ o<poly_lathe_mill> sub
                         (allowance is never eaten into.)
                         #<k_min> = FUP[ABS[#<step_target> - #<rough_target>] / #<_rough_cut>]
                         #<anch_floor> = [#<rough_target> - #<sgn> * #<k_min> * #<_rough_cut>]
+                        (Roughing's floor BECOMES the grid level. Left at)
+                        (step_target it would take the grid pass and then one)
+                        (more thin descent to the floor - a correct offset pass)
+                        (followed by a sliver, which is the chatter this option)
+                        (exists to remove. The pre-finish pass then carries one)
+                        (whole depth of cut down to its own contour instead of)
+                        (the configured allowance, which is the point of)
+                        (anchoring on the part rather than on the stock.)
+                        #<step_target> = #<anch_floor>
                         #<rough_passes> = FUP[ABS[#<anch_floor> - #<start_radius>] / #<_rough_cut>]
                         (first step takes the remainder, so the last level lands)
                         (exactly on that grid)
