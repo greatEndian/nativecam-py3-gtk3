@@ -168,6 +168,19 @@ def _canon_dump(path, ini_path, tmpdir):
         var = _scratch_parameter_file(ini_path, tmpdir)
         if var:
             cmd += ['-v', var]
+        # -t is NOT optional. Without it rs274 falls back to whatever tool
+        # table it finds rather than the ini's, and every #5410 read in the
+        # generated file - the whole of nose compensation - runs on the wrong
+        # tool. On this config the fallback was mill.tbl's 1/16 end mill, so
+        # the preview compensated for a 0.0625 mm nose where the lathe tool is
+        # 0.8 mm. The path drawn was not the path the machine would cut.
+        tbl = ini_value(ini_path, 'EMCIO', 'TOOL_TABLE')
+        if tbl:
+            if not os.path.isabs(tbl):
+                tbl = os.path.join(os.path.dirname(os.path.abspath(ini_path)),
+                                   tbl)
+            if os.path.isfile(tbl):
+                cmd += ['-t', tbl]
     cmd += [os.path.abspath(path), out_path]
     cwd = os.path.dirname(os.path.abspath(ini_path or path))
     try:
