@@ -177,9 +177,21 @@ o<poly_lathe_mill> sub
                                 #<sgn> = -1
                         o<anch_s> endif
                         #<cut_step> = [#<sgn> * #<_rough_cut>]
+                        (Anchored on the PRE-FINISH contour - rough_target, the)
+                        (surface the next pass leaves - not on the roughing)
+                        (floor. With no pre-finish pass rough_target and)
+                        (step_target are the same radius, so this is exactly the)
+                        (roughing floor and nothing changes.)
+                        (The grid is rough_target stepped outward by whole)
+                        (depths of cut; roughing takes the first level that is)
+                        (still clear of its own floor, so the pre-finish)
+                        (allowance is never eaten into.)
+                        #<k_min> = FUP[ABS[#<step_target> - #<rough_target>] / #<_rough_cut>]
+                        #<anch_floor> = [#<rough_target> - #<sgn> * #<k_min> * #<_rough_cut>]
+                        #<rough_passes> = FUP[ABS[#<anch_floor> - #<start_radius>] / #<_rough_cut>]
                         (first step takes the remainder, so the last level lands)
-                        (exactly on the floor)
-                        #<first_step> = [[#<step_target> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
+                        (exactly on that grid)
+                        #<first_step> = [[#<anch_floor> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
                 o<anch> endif
         o1001 endif
 
