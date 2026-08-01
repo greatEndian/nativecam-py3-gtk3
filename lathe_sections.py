@@ -1521,7 +1521,77 @@ def finish_profile(polyline_feature, back_deg):
     same = (len(env) == len(points)
             and all(abs(a[0] - b[0]) < EPS and abs(a[1] - b[1]) < EPS
                     for a, b in zip(env, points)))
-    return (points, False) if same else (env, True)
+    if same:
+        return points, False
+    return _clean_ramp(env, points), True
+
+
+def _upper_hull(pts):
+    """Upper hull of a Z-ordered run, in (z, x). A straight ramp reduces to its
+    two endpoints; a sawtooth riding on that ramp reduces to the ramp."""
+    if len(pts) < 3:
+        return list(pts)
+    fwd = pts[0][0] <= pts[-1][0]
+    seq = pts if fwd else list(reversed(pts))
+    out = []
+    for p in seq:
+        while len(out) >= 2:
+            (z0, x0), (z1, x1) = out[-2], out[-1]
+            cross = (z1 - z0) * (p[1] - x0) - (x1 - x0) * (p[0] - z0)
+            if cross >= -1e-12:
+                out.pop()
+            else:
+                break
+        out.append(p)
+    return out if fwd else list(reversed(out))
+
+
+def _clean_ramp(env, hard, tol=1e-4):
+    """Replace each artificial ramp in `env` with its upper hull.
+
+    flank_envelope takes the pointwise maximum of the profile and the back-angle
+    ramp. Where the profile is a densified arc the two interleave, and the
+    result is a SAWTOOTH of tiny alternating steps rather than a ramp - about
+    thirty of them on testing_15_2, each a 105 degree concave corner. Roughing
+    never noticed, because its scans only look for crossings. Traced as a
+    contour it is unusable: cutter compensation refuses a concave corner tighter
+    than the nose and aborts the program mid-pass, which is exactly what it did.
+
+    Only the stretches that actually differ from the drawn profile are touched,
+    so real geometry - walls, arcs, corners the operator drew - passes through
+    untouched.
+    """
+    # compared BY Z, not index by index: the envelope carries extra points
+    # where a ramp starts and ends, so the two lists are different lengths and
+    # a positional comparison silently matches nothing
+    out, run = [], []
+    for e in env:
+        h = _profile_x_at(e[0], hard)
+        if h is not None and abs(e[1] - h) > tol:
+            run.append(e)
+            continue
+        if run:
+            out.extend(_close_run(run, e))
+            run = []
+        out.append(e)
+    if run:
+        out.extend(_upper_hull(run))
+    return out
+
+
+def _close_run(run, nxt):
+    """Finish a ramp so it MEETS the profile instead of stopping above it.
+
+    The last ramp point often sits at the same Z as the profile point that
+    follows, leaving a short vertical drop between them - and the corner between
+    the ramp and that drop is far tighter than the nose, so compensation refuses
+    the whole pass. Dropping the point lets the ramp run into the profile at one
+    open corner instead.
+    """
+    hull = _upper_hull(run)
+    while len(hull) > 1 and abs(hull[-1][0] - nxt[0]) < 1e-6:
+        hull = hull[:-1]
+    return hull
 
 
 def unreachable_spans(polyline_feature, back_deg, tol=0.01):
@@ -1580,6 +1650,34 @@ def build_finish_contour_gcode(polyline_feature, back_deg):
     pts, is_soft = finish_profile(polyline_feature, back_deg)
     if not is_soft:
         return ''
+
+    # HELD BACK, deliberately. Tracing the soft contour under native cutter
+    # compensation aborts the program: "Straight feed in concave corner cannot
+    # be reached by the tool without gouging". The back-angle ramp meets the
+    # drawn profile at corners tighter than the nose, and the interpreter
+    # refuses those outright - mid-pass, so the pre-finish pass ends partway
+    # along the ramp with a lead-out arc and nothing after it runs.
+    #
+    # Cleaning the ramp was necessary but not sufficient. flank_envelope takes
+    # the pointwise maximum of profile and ramp, and on a densified arc the two
+    # interleave into a sawtooth of ~30 steps, each a 105 degree concave corner;
+    # _clean_ramp collapses those to the ramp's own hull and the program still
+    # refuses, so at least one corner remains tighter than the nose.
+    #
+    # Three ways out, none of them a small edit, and the choice belongs to the
+    # operator rather than to this function:
+    #   - fillet every concave corner of the soft contour to at least the nose
+    #     radius, which is what a CAM package does and is the proper answer;
+    #   - trace the soft contour with compensation OFF, defensible because that
+    #     stretch is an artefact of the tool and nothing there is to size;
+    #   - trace it with In-CAM compensation, where offset_contour already trims
+    #     internal corners itself and the interpreter is never asked.
+    #
+    # Until then the finishing passes follow the drawn contour as they always
+    # have, and the validation message says the part will not come out to it.
+    # A program that runs and warns beats one that aborts halfway.
+    return ''
+
     top = FC_BASE + 2 * len(pts)
     if top > FC_TOP:
         return ('(WARNING - the reachable finishing contour needs %d parameter '
