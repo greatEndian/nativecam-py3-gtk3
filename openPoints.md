@@ -42,48 +42,49 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
      when it arrives instead of driving in at 45°.
   4. That copied segment has a **constant length**.
 
-  **Measured on testing_15_2 — corrected.** The first measurement said
-  4.512 mm on eight levels behind the boss. **That was wrong**: it came from a
-  generated file made before the polyline version bump refreshed the stored
-  `[AFTER]` template, so it was a stale artefact. Regenerated from the current
-  build - which matches greatEndian's own screenshot exactly, `147 cutting
-  moves, 96 rapids` - the real picture is:
+  **Measured on testing_15_2**, on a file that matches greatEndian's own
+  screenshot exactly (`147 cutting moves, 96 rapids`):
 
-  - **18 level cuts, one interval each.** There are no behind-the-boss
-    continuation intervals at all: with the flank unbounded (`310a06b`) the
-    shadow covers that whole region, so every level is a single cut that stops
-    on the boss's flank.
-  - Each level ends **1.017 to 1.509 mm short in Z** of the contour, widest at
-    the largest diameter. **20.9 mm of uncut metal in total.**
-  - That scale agrees with the picture: the drawn orange segments measure
-    1.2-2.4 mm against a level spacing of 0.508 mm.
+  - **8 intervals enter the volume behind the peak**, and each starts
+    **4.512 mm short in Z** of the ramp - the same figure on all eight, so it
+    is one wrong constant, not an accumulating error. **36.1 mm of uncut metal
+    in total**, which is the staircase in the picture.
+  - The other end of those intervals is fine: they stop 1.016 mm off the end
+    wall, which is the floor allowance against a vertical and correct.
 
-  **Step 1 — where the standoff comes from.** Instrumented the subroutine and
-  read the value rather than deriving it, after two derivations that both came
-  out wrong:
+  **Step 1 — the constant, printed not derived** (two derivations had already
+  come out wrong):
 
       LVLIN  level=29.652  cross_t=1.016000
       LVLD   lvl_d=1.016  step_target=21.016  final_radius=20.000
              fin_off=0.508  prefin=0.254  rough_cut=0.508
 
-  `cross_t` is **1.016 mm**, applied perpendicular to each contour segment. It
-  is the finish offset 0.508 **plus one whole roughing depth of cut 0.508**,
-  the second from *Space passes from = Final contour* rounding the configured
-  0.254 pre-finish allowance up to a whole depth of cut.
+  `cross_t` is **1.016 mm**, applied perpendicular to each contour segment: the
+  finish offset 0.508 plus one whole roughing depth of cut 0.508, the second
+  from *Space passes from = Final contour* rounding the configured 0.254
+  pre-finish allowance up to a whole depth of cut. On the 13° ramp that is
+  1.016 / sin 13° = **4.517 mm** of Z. Confirmed.
 
-  **So the levels stop exactly on the roughing floor, as designed** - the metal
-  in the orange segments is what the pre-finish and finish passes exist to
-  remove. Step 2 is a specification change, not a bug fix: roughing is to come
-  within **one roughing depth of cut** of the contour instead of the full floor
-  allowance, halving 1.016 mm to 0.508 mm of standoff.
+  So the levels stop exactly on the roughing floor as designed, and step 2 is a
+  **specification change**: enter at **one roughing depth of cut** (0.508),
+  which is 2.258 mm of Z instead of 4.517.
 
-  **Step 2 — first attempt reverted.** I changed the entry offset in
-  `lathe_level_next_start`, which is the "level re-enters after a boss blocked
-  it" path. Generated output was byte-identical: that path has no instance in
-  this project, because there are no continuation intervals. Reverted rather
-  than ship an unverifiable change. The standoff that actually matters is at
-  the **end** of the single interval, in `lathe_level_pass`'s crossing scan,
-  and that is where step 2 has to happen.
+  **Step 2 — attempted, reverted, and now understood.** Passing the smaller
+  entry allowance to `lathe_level_next_start` alone **deletes all eight
+  intervals**: 243 moves → 189, 147 cutting → 120. `lathe_level_next_start`
+  finds a resume point 2.26 mm closer to the contour, and then
+  `lathe_level_pass`, whose own scan still uses the 1.016 floor allowance,
+  finds the offset profile already above the level at that point and declares
+  the interval blocked. **Both ends have to move together**, or the entry has
+  to be handed to `lathe_level_pass` as its own argument so its block test
+  uses the entry allowance while its stop crossing keeps the floor one. That
+  is what step 2 has to do.
+
+  *Method note, paid for three times over in this session: an .ngc generated
+  earlier in the session is not a safe baseline, and neither is a toolpath
+  parsed earlier - `parse_program` re-runs the interpreter against whatever
+  `lib/lathe` is on disk AT THAT MOMENT. Generate and parse both sides in one
+  run, with the file state you mean.*
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
