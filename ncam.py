@@ -808,6 +808,19 @@ class Tools(object):
         """
         return getattr(self, 'saved_flank_len', 0.0)
 
+    def save_back_clear(self, value):
+        """Remember the back-angle clearance of the tool loaded from here on.
+
+        How far the artificial wall behind an obstruction is tilted away from
+        the tool's own back flank. At 0 the flank lies flat along that wall and
+        the whole cutting edge rubs at once, which chatters.
+        """
+        self.saved_back_clear = get_float(value)
+
+    def get_back_clear(self):
+        """Back-angle clearance of the last tool change, in degrees."""
+        return getattr(self, 'saved_back_clear', 0.0)
+
 
 def tip_comp_inputs():
     """(nose radius, orientation) as the generated G-code will resolve them.

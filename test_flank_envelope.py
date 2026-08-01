@@ -135,6 +135,41 @@ def main():
     check('a single point is returned unchanged',
           ls.flank_envelope([(0.0, 10.0)], 45.0) == [(0.0, 10.0)])
 
+    # --- the clearance angle tilts the artificial wall off the flank --------
+    # At 0 the wall lies exactly along the back flank, so the whole length of
+    # the cutting edge rubs the stock at once and the cut chatters. Every
+    # degree of clearance has to come off the ramp angle, one for one, or the
+    # field is decoration.
+    for clear in (0.0, 2.0, 5.0, -3.0):
+        e = sorted(ls.flank_envelope([(0.0, 40.0), (-10.0, 40.0),
+                                      (-10.0, 22.0), (-90.0, 22.0)],
+                                     75.0, clearance=clear))
+        got = None
+        for (z0, r0), (z1, r1) in zip(e, e[1:]):
+            if abs(z1 - z0) > 1e-9 and abs(r1 - r0) > 1e-9:
+                got = math.degrees(math.atan(abs((r1 - r0) / 2.0 / (z1 - z0))))
+        want = 90.0 - 75.0 - clear
+        check('%+.0f deg of clearance ramps at %.0f, not %.0f'
+              % (clear, want, 15.0),
+              got is not None and abs(got - want) < 0.01,
+              'measured %s' % (('%.3f' % got) if got else 'no ramp'))
+
+    # and it can only ever leave MORE material, never less - a clearance that
+    # cut deeper would be driving the flank into the wall it is avoiding
+    prof2 = [(0.0, 40.0), (-10.0, 40.0), (-10.0, 22.0), (-90.0, 22.0)]
+    base = ls.flank_envelope(prof2, 75.0)
+    for clear in (1.0, 2.0, 5.0):
+        e = ls.flank_envelope(prof2, 75.0, clearance=clear)
+        worse = [z for z in (-12.0, -15.0, -20.0, -30.0, -45.0, -60.0)
+                 if at(e, z) < at(base, z) - 1e-9]
+        check('+%.0f deg of clearance never removes more metal' % clear,
+              not worse, 'goes deeper at Z%s' % worse[:2])
+    check('clearance 0 is exactly the old behaviour',
+          ls.flank_envelope(prof2, 75.0, clearance=0.0) == base)
+    check('and the slope helper agrees with the envelope',
+          abs(ls.flank_slope(75.0, 2.0)
+              - math.tan(math.radians(13.0))) < 1e-12)
+
     # --- the emitted ramp must measure the tool's own back angle ------------
     # points are diameters and a flank slope is rise-in-radius per unit Z; if
     # that is not accounted for the ramp comes out at half the angle, which is

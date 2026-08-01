@@ -161,6 +161,9 @@ class NCamProjectIOMixin:
                     p_flank = f.get_param('param_flank_len')
                     ncam.TOOL_TABLE.save_flank_len(
                         p_flank.get_ngc_value() if p_flank is not None else 0.0)
+                    p_bc = f.get_param('param_back_clear')
+                    ncam.TOOL_TABLE.save_back_clear(
+                        p_bc.get_ngc_value() if p_bc is not None else 0.0)
                 f.validate()
                 # never reuse a cached O-word id: the counter restarts every
                 # build, so a stale stored id collides with freshly assigned

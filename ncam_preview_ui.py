@@ -875,7 +875,8 @@ class NCamPreviewMixin(object):
             # the same call with the same inputs or neither can be trusted.
             pts, soft = lathe_sections.finish_profile(
                 f, ncam.TOOL_TABLE.get_back_angle(), ncam.tip_comp_inputs()[0],
-                ncam.TOOL_TABLE.get_flank_len())
+                ncam.TOOL_TABLE.get_flank_len(),
+                ncam.TOOL_TABLE.get_back_clear())
             return pts if soft else None
         except Exception:
             return None

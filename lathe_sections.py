@@ -1026,7 +1026,7 @@ def _outer_x(points, z):
     return best
 
 
-def flank_slope(back_deg):
+def flank_slope(back_deg, clearance=0.0):
     """Rise in radius per unit of Z along the trailing flank, or None.
 
     The tool table's BACK angle is measured off the perpendicular, so the ramp
@@ -1034,8 +1034,20 @@ def flank_slope(back_deg):
     a J75 insert ramps at 15 degrees and needs a long projection in Z to clear
     a wall, not a short one. Using BACK directly gives the complement and a
     shadow far too short.
+
+    `clearance` tilts that wall AWAY from the flank, in degrees. At 0 the
+    artificial wall sits exactly along the flank, so the whole length of the
+    back cutting edge rubs the stock at once - which chatters. A positive
+    clearance makes the wall shallower than the flank by that many degrees, so
+    only the nose is in contact and the edge behind it stands off; it leaves
+    more material, which the finishing passes then follow.
+
+    Negative is allowed and is the opposite: the wall is steeper than the
+    flank, so the edge behind the nose runs into it. Nothing here prevents
+    that - it is a legitimate thing to ask for on a tool with more clearance
+    than the table claims, and a bad idea otherwise.
     """
-    eff = 90.0 - back_deg
+    eff = 90.0 - back_deg - clearance
     if eff <= EPS or eff >= 90.0 - EPS:
         return None
     return math.tan(math.radians(eff))
@@ -1056,7 +1068,8 @@ def flank_sides(rough_dir):
     return (1,)
 
 
-def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
+def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
+                   clearance=0.0):
     """The profile widened into the shape the tool can actually reach.
 
     A wedge dilation by the trailing flank: a point (zp, rp) on the shadowed
@@ -1088,7 +1101,7 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
     if not points or len(points) < 2:
         return list(points)
 
-    k = flank_slope(back_deg)
+    k = flank_slope(back_deg, clearance)
     if k is None:
         return list(points)
     k *= DIAMETER_MODE
@@ -1097,7 +1110,8 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
     # how far along Z the flank still exists
     reach = None
     if flank_len and flank_len > EPS:
-        reach = flank_len * math.cos(math.radians(90.0 - back_deg))
+        reach = flank_len * math.cos(math.radians(90.0 - back_deg
+                                                  - clearance))
         if reach <= EPS:
             return list(points)
 
@@ -1168,7 +1182,8 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0):
     return keep
 
 
-def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
+def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
+                      clearance=0.0):
     """Literal G-code building the reachable envelope as a record array, or ''.
 
     Emitted as records so poly_lathe_mill can hand it straight to the level
@@ -1194,7 +1209,8 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
     # decides how much of it the contour is allowed to use, which is currently
     # none: roughing stops on the same unbounded ramp the finishing passes
     # trace, so the two cannot describe different surfaces
-    env = flank_envelope(points, back_deg, rough_dir, _contour_flank(flank_len))
+    env = flank_envelope(points, back_deg, rough_dir,
+                         _contour_flank(flank_len), clearance)
     # the scans walk records in profile order, so hand the envelope back the
     # same way round the profile was drawn rather than sorted ascending
     if points[0][0] > points[-1][0]:
@@ -1415,7 +1431,7 @@ def cam_pass_offsets(fin_off, pf_off, fin_passes):
 
 
 def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
-                         flank_len=0.0):
+                         flank_len=0.0, clearance=0.0):
     """Literal G-code with the CAM-offset contours, or a warning comment.
 
     Emitted as point tables the same way build_flank_gcode emits the flank
@@ -1438,7 +1454,8 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
         return _refuse('tool orientation %s is not one of 1-9' % orient)
     # the SOFT contour, for the same reason the native passes now follow it:
     # offsetting an unreachable profile just produces an unreachable path
-    points, _soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len)
+    points, _soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len,
+                                   clearance)
     if not points or len(points) < 2:
         return _refuse('the profile does not resolve to at least two points')
 
@@ -1530,7 +1547,8 @@ FC_BASE = 4000
 FC_TOP = 4400
 
 
-def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
+def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
+                   clearance=0.0):
     """(points, soft) - the contour the finishing passes should follow.
 
     Returns the hard contour and soft=False when nothing constrains it: no back
@@ -1551,7 +1569,8 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
 
     # flank_len belongs to the tool change, so it arrives as an argument -
     # see build_flank_gcode and FLANK_BOUNDS_CONTOUR
-    env = flank_envelope(points, back_deg, fin_dir, _contour_flank(flank_len))
+    env = flank_envelope(points, back_deg, fin_dir,
+                         _contour_flank(flank_len), clearance)
     if not env or len(env) < 2:
         return points, False
     if points[0][0] > points[-1][0]:
@@ -1670,13 +1689,15 @@ def _close_run(run, nxt):
     return hull
 
 
-def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0):
+def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
+                      clearance=0.0):
     """[(z_from, z_to, worst_radius_gap)] where the part cannot be made.
 
     What the validation message reports, and what the preview colours.
     """
     hard = resolve_points(polyline_feature)
-    soft, is_soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len)
+    soft, is_soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len,
+                                   clearance)
     if not is_soft:
         return []
     zs = sorted({z for z, _x in hard} | {z for z, _x in soft})
@@ -1718,13 +1739,14 @@ def _profile_x_at(z, points):
 
 
 def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
-                               flank_len=0.0):
+                               flank_len=0.0, clearance=0.0):
     """The soft contour as a point table, or '' when the hard one will do.
 
     Runtime gate is _pl_fc_n > 0, so '' leaves the contour passes exactly as
     they were.
     """
-    pts, is_soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len)
+    pts, is_soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
+                                  clearance)
     if not is_soft:
         return ''
 
