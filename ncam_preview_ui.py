@@ -146,18 +146,6 @@ class PreviewPane(object):
         self.sim_box.pack_start(self.speed_combo, False, False, 0)
 
         # --- stock colouring ----------------------------------------------
-        self.color_combo = gtk.ComboBoxText()
-        self.color_combo.append('plain', _('Stock'))
-        self.color_combo.append('comparison', _('Comparison'))
-        self.color_combo.append('operation', _('By operation'))
-        self.color_combo.append('tool', _('By tool'))
-        self.color_combo.set_active_id('plain')
-        self.color_combo.set_tooltip_text(
-            _('Comparison colours the remaining material against the finished '
-              'profile: blue where stock is still standing proud, green where '
-              'it is on size, red where it has been cut past the part.'))
-        self.color_combo.connect('changed', self._on_colorize)
-
         self.leftover_entry = gtk.Entry()
         self.leftover_entry.set_width_chars(6)
         self.leftover_entry.set_text('0.00')
@@ -174,63 +162,126 @@ class PreviewPane(object):
               'counts as excess or gouged.'))
         self.tol_entry.connect('changed', self._on_cmp_value)
 
-        # --- toolpath display ---------------------------------------------
+        # --- toolpath display, in a menu rather than a row of buttons -------
+        # As three rows of controls this pane demanded 522 px of minimum width.
+        # The panel opens at 400 and the operator drags it narrower, so the
+        # right-hand controls were off the edge - and a control you cannot see
+        # is a control that does not exist. Wrapping them was tried first: GTK3
+        # has no wrap box, and a FlowBox lays out in UNIFORM columns sized to
+        # its widest child, so at 400 px it stacked one cluster per line and
+        # spent 208 px of height to save nothing.
+        #
+        # A menu costs one button of width and none of height, and unlike a
+        # Popover it is its own X window - so it is not clipped by the panel it
+        # is embedded in, which is the whole problem being solved here.
         self.mode = ncam_preview.MODE_ALL
-        self.mode_combo = gtk.ComboBoxText()
-        for mid, label in ((ncam_preview.MODE_ALL, _('All toolpaths')),
-                           (ncam_preview.MODE_BEHIND, _('Behind')),
-                           (ncam_preview.MODE_AHEAD, _('Ahead')),
-                           (ncam_preview.MODE_OPERATION, _('Operation')),
-                           (ncam_preview.MODE_TAIL, _('Tail'))):
-            self.mode_combo.append(mid, label)
-        self.mode_combo.set_active_id(ncam_preview.MODE_ALL)
-        self.mode_combo.set_tooltip_text(
-            _('Which of the toolpath is drawn, relative to where the tool has '
-              'reached: everything, only what is behind it, only what is '
-              'ahead, only the current operation, or a short trail.'))
-        self.mode_combo.connect('changed', self._on_mode)
+        self.disp_menu = gtk.Menu()
+        self.mode_items = {}
+        group = []
+        for mid, label, tip in (
+                (ncam_preview.MODE_ALL, _('All toolpaths'),
+                 _('The whole toolpath, wherever the tool has reached')),
+                (ncam_preview.MODE_BEHIND, _('Behind'),
+                 _('Only what the tool has already traversed')),
+                (ncam_preview.MODE_AHEAD, _('Ahead'),
+                 _('Only what the tool has yet to traverse')),
+                (ncam_preview.MODE_OPERATION, _('Operation'),
+                 _('Only the operation the tool is in')),
+                (ncam_preview.MODE_TAIL, _('Tail'),
+                 _('A short trail behind the tool'))):
+            it = gtk.RadioMenuItem.new_with_label(group, label)
+            group = it.get_group()
+            it.set_tooltip_text(tip)
+            it.set_active(mid == ncam_preview.MODE_ALL)
+            it.connect('toggled', self._on_mode, mid)
+            self.mode_items[mid] = it
+        mode_sub = gtk.Menu()
+        for mid in (ncam_preview.MODE_ALL, ncam_preview.MODE_BEHIND,
+                    ncam_preview.MODE_AHEAD, ncam_preview.MODE_OPERATION,
+                    ncam_preview.MODE_TAIL):
+            mode_sub.append(self.mode_items[mid])
+        mode_item = gtk.MenuItem(label=_('Show'))
+        mode_item.set_submenu(mode_sub)
+        self.disp_menu.append(mode_item)
+        self.disp_menu.append(gtk.SeparatorMenuItem())
 
         # Cutting moves and leads are what you look at; links and connections
         # are usually noise, so they start hidden - the reference panel makes
         # the same choice.
         self.cat_btns = {}
-        self.tp_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=2)
-        self.tp_box.pack_start(self.mode_combo, False, False, 0)
         for cat, label, on, tip in (
-                (ncam_preview.CUT, _('Cut'), True, _('Cutting moves')),
-                (ncam_preview.LEAD, _('Lead'), True,
-                 _('Lead moves - the entry to, and exit from, a cut. Inferred '
-                   'from where a feed sits next to a rapid, not marked in the '
-                   'G-code.')),
-                (ncam_preview.LINK, _('Link'), False,
-                 _('Link moves - rapids within one operation')),
-                (ncam_preview.CONNECT, _('Conn'), False,
-                 _('Connection moves - rapids between operations'))):
-            b = gtk.ToggleButton(label=label)
+                (ncam_preview.CUT, _('Cutting moves'), True,
+                 _('The cuts themselves')),
+                (ncam_preview.LEAD, _('Lead moves'), True,
+                 _('The entry to, and exit from, a cut. Inferred from where a '
+                   'feed sits next to a rapid, not marked in the G-code.')),
+                (ncam_preview.LINK, _('Link moves'), False,
+                 _('Rapids within one operation')),
+                (ncam_preview.CONNECT, _('Connection moves'), False,
+                 _('Rapids between operations'))):
+            b = gtk.CheckMenuItem(label=label)
             b.set_active(on)
             b.set_tooltip_text(tip)
             b.connect('toggled', self._on_cat)
             self.cat_btns[cat] = b
-            self.tp_box.pack_start(b, False, False, 0)
-        self.contour_btn = gtk.ToggleButton(label=_('Contour'))
+            self.disp_menu.append(b)
+        self.disp_menu.append(gtk.SeparatorMenuItem())
+
+        self.contour_btn = gtk.CheckMenuItem(label=_('Contour'))
         self.contour_btn.set_active(True)
         self.contour_btn.set_tooltip_text(
             _('Show the drawn contour and the one the tool can actually reach. '
               'Where the tool back angle shadows part of the profile the two '
               'separate, and the gap is material that cannot be cut with this '
               'tool. Where everything is reachable they coincide.'))
-        self.contour_btn.connect('toggled', lambda _b: self.area.queue_draw())
-        self.tp_box.pack_start(self.contour_btn, False, False, 0)
+        self.contour_btn.connect('toggled', self._on_contour)
+        self.disp_menu.append(self.contour_btn)
 
-        self.points_btn = gtk.ToggleButton(label=_('Pts'))
+        self.points_btn = gtk.CheckMenuItem(label=_('Points'))
         self.points_btn.set_tooltip_text(
             _('Mark where each move starts and ends - useful on a path made of '
               'many small segments.'))
         self.points_btn.connect('toggled', lambda _b: self.area.queue_draw())
-        self.tp_box.pack_start(self.points_btn, False, False, 0)
+        self.disp_menu.append(self.points_btn)
+        self.disp_menu.append(gtk.SeparatorMenuItem())
 
+        self.col_items = {}
+        group = []
+        for cid, label, tip in (
+                ('plain', _('Stock'), _('One colour for the material')),
+                ('comparison', _('Comparison'),
+                 _('Colour the remaining material against the finished '
+                   'profile: blue where stock still stands proud, green where '
+                   'it is on size, red where it has been cut past the part.')),
+                ('operation', _('By operation'),
+                 _('A colour per feature, from the markers NativeCAM writes')),
+                ('tool', _('By tool'), _('A colour per tool number'))):
+            it = gtk.RadioMenuItem.new_with_label(group, label)
+            group = it.get_group()
+            it.set_tooltip_text(tip)
+            it.set_active(cid == 'plain')
+            it.connect('toggled', self._on_colorize, cid)
+            self.col_items[cid] = it
+        col_sub = gtk.Menu()
+        for cid in ('plain', 'comparison', 'operation', 'tool'):
+            col_sub.append(self.col_items[cid])
+        col_item = gtk.MenuItem(label=_('Colour'))
+        col_item.set_submenu(col_sub)
+        self.disp_menu.append(col_item)
+        self.disp_menu.show_all()
+
+        self.disp_btn = gtk.MenuButton(label=_('Display'))
+        self.disp_btn.set_popup(self.disp_menu)
+        self.disp_btn.set_tooltip_text(
+            _('What is drawn: which part of the toolpath, which kinds of move, '
+              'the contour overlays, and how the material is coloured.'))
+        self.sim_box.pack_start(self.disp_btn, False, False, 0)
+
+        # Leave/Tol belong to Comparison and mean nothing in the other three
+        # colourings, so they are only in the pane when that one is chosen -
+        # the reference panel marks them "Comparison only" for the same reason.
+        # That keeps the steady-state chrome to one row and the status line.
         self.cmp_box = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
-        self.cmp_box.pack_start(self.color_combo, False, False, 0)
         self.cmp_box.pack_start(gtk.Label(label=_('Leave')), False, False, 0)
         self.cmp_box.pack_start(self.leftover_entry, False, False, 0)
         self.cmp_box.pack_start(gtk.Label(label=_('Tol')), False, False, 0)
@@ -243,10 +294,17 @@ class PreviewPane(object):
         self.box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.box.pack_start(self.widget, True, True, 0)
         self.box.pack_start(self.sim_box, False, False, 0)
-        self.box.pack_start(self.tp_box, False, False, 0)
         self.box.pack_start(self.cmp_box, False, False, 0)
         self.box.pack_start(self.status, False, False, 2)
         self.box.show_all()
+        # after show_all, so the row's own children get shown once and only the
+        # row itself is toggled from here on. Both halves are needed: without
+        # no_show_all a later show_all from whatever the pane is packed into
+        # brings the row back, and without the show_all above the row would
+        # come back empty. set_visible still works through no_show_all - it is
+        # only show_all that skips the widget.
+        self.cmp_box.set_no_show_all(True)
+        self.cmp_box.hide()
 
     # -- refreshing ---------------------------------------------------------
     def refresh(self, fname=None):
@@ -302,8 +360,41 @@ class PreviewPane(object):
         if not self.view.fitted:
             text = '%s  -  zoom %.0f%%, double-click to fit' % (
                 text, self.view.scale * 100.0)
-        self.status.set_markup('<small>%s</small>'
-                               % GLib.markup_escape_text(text))
+        markup = '<small>%s</small>' % GLib.markup_escape_text(text)
+        legend = self._legend()
+        if legend:
+            markup += '  <small>%s</small>' % legend
+        self.status.set_markup(markup)
+
+    def _legend(self):
+        """Pango markup naming the colours currently on the plot.
+
+        In the status line rather than a row of its own: a legend is the kind
+        of thing that quietly costs another 34 px of a pane that had none to
+        spare, and it is only worth showing while there is something in the
+        picture it explains.
+        """
+        def swatch(rgb, label):
+            return '<span foreground="#%02x%02x%02x">■</span> %s' % (
+                int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255),
+                GLib.markup_escape_text(label))
+
+        col = ncam_preview.COL
+        if self.colorize == 'comparison':
+            cmp_col = ncam_preview.CMP_COL
+            parts = [swatch(cmp_col[ncam_preview.EXCESS], _('proud')),
+                     swatch(cmp_col[ncam_preview.IN_TOL], _('on size')),
+                     swatch(cmp_col[ncam_preview.GOUGE], _('gouged'))]
+        elif self.colorize in ('operation', 'tool'):
+            return ''                     # a colour per key; no fixed legend
+        elif ncam_preview.has_phase(self.toolpath.moves):
+            parts = [swatch(col['feed'], _('cut')),
+                     swatch(col['prefinish'], _('pre-finish'))]
+        else:
+            parts = []
+        if self.contour_btn.get_active() and self.soft_cb is not None:
+            parts.append(swatch(col['soft'], _('reachable')))
+        return '   '.join(parts)
 
     # -- simulation ---------------------------------------------------------
     def set_tool(self, nose_r, orient, cl_deg=None, included_deg=None):
@@ -393,11 +484,20 @@ class PreviewPane(object):
         self._sync_play_icon()
         self.area.queue_draw()
 
-    def _on_mode(self, combo):
-        self.mode = combo.get_active_id() or ncam_preview.MODE_ALL
+    def _on_mode(self, item, mid):
+        # a radio group fires twice per change - once for the item losing the
+        # selection and once for the item gaining it. Acting on both would set
+        # the mode to whichever fired last, which is not the one clicked.
+        if not item.get_active():
+            return
+        self.mode = mid
         self.area.queue_draw()
 
     def _on_cat(self, _btn):
+        self.area.queue_draw()
+
+    def _on_contour(self, _btn):
+        self._render_status()             # the legend follows the overlay
         self.area.queue_draw()
 
     def _shown_cats(self):
@@ -426,8 +526,12 @@ class PreviewPane(object):
             return ncam_preview.phase_colour
         return None
 
-    def _on_colorize(self, combo):
-        self.colorize = combo.get_active_id() or 'plain'
+    def _on_colorize(self, item, cid):
+        if not item.get_active():
+            return                        # the deselect half of the pair
+        self.colorize = cid
+        self.cmp_box.set_visible(cid == 'comparison')
+        self._render_status()
         self.area.queue_draw()
 
     def _on_cmp_value(self, _entry):
