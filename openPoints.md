@@ -69,16 +69,31 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   **specification change**: enter at **one roughing depth of cut** (0.508),
   which is 2.258 mm of Z instead of 4.517.
 
-  **Step 2 — attempted, reverted, and now understood.** Passing the smaller
-  entry allowance to `lathe_level_next_start` alone **deletes all eight
-  intervals**: 243 moves → 189, 147 cutting → 120. `lathe_level_next_start`
-  finds a resume point 2.26 mm closer to the contour, and then
-  `lathe_level_pass`, whose own scan still uses the 1.016 floor allowance,
-  finds the offset profile already above the level at that point and declares
-  the interval blocked. **Both ends have to move together**, or the entry has
-  to be handed to `lathe_level_pass` as its own argument so its block test
-  uses the entry allowance while its stop crossing keeps the floor one. That
-  is what step 2 has to do.
+  **Step 2 — the entry point is right; the plumbing behind it is not.**
+  Instrumented run with the entry allowance at one roughing depth of cut:
+
+      LP  level=29.652  w_from=1.000  zc=-22.882  blocked=0
+      NS  in  level=29.652  off=0.508  from=-22.882  to=-70.400
+      NS  out level=29.652  found=1  z=-49.203
+      NS  in  level=29.652  off=0.508  from=-49.203  to=-70.400
+      NS  out level=29.652  found=0
+
+  **The resume point lands exactly where it should** - Z-49.203 against the
+  old Z-51.462, which is the 2.258 mm the specification asks for. But no
+  `LP` line follows it: no pass is ever run from there, and the eight
+  intervals disappear (243 moves → 189, 147 cutting → 120).
+
+  The reason is the roughing flow, not the geometry. In **phase 1**
+  `lathe_level_next_start` is only a *detector* - finding a resume point means
+  "a genuine obstruction blocks a continuous sweep", and the loop breaks out
+  to **phase 2**, which is what actually cuts behind the peak. Phase 2 has its
+  own `lathe_level_next_start` calls (`poly_lathe_mill.ngc` ~558 and ~573) and
+  its own pass calls. Changing the allowance in one place moves the detector
+  without moving the cutter.
+
+  **So step 2 is: give the entry allowance to phase 2's own resume-and-cut
+  path**, and check `lathe_level_pass`'s block test agrees with it, rather
+  than changing the shared constant. Next session starts there.
 
   *Method note, paid for three times over in this session: an .ngc generated
   earlier in the session is not a safe baseline, and neither is a toolpath
