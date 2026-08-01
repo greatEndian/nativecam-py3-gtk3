@@ -373,6 +373,8 @@ COL = {
     'rapid':   (0.45, 0.45, 0.52),
     'axis':    (0.55, 0.40, 0.40),
     'text':    (0.80, 0.80, 0.84),
+    'hard':      (0.55, 0.55, 0.62),     # the contour as drawn
+    'soft':      (0.95, 0.45, 0.85),     # what the tool can actually reach
     'tool':      (0.95, 0.75, 0.25),
     'tool_body': (0.42, 0.40, 0.46),
 }
@@ -406,7 +408,8 @@ def _fit(tp, stock, plane, width, height, margin):
 
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   view=None, tool=None, field=None, classes=None,
-                  moves=None, move_colour=None, points=False):
+                  moves=None, move_colour=None, points=False,
+                  hard=None, soft=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -481,6 +484,15 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
         cr.move_to(*pt(m.a))
         cr.line_to(*pt(m.b))
         cr.stroke()
+
+    # The drawn contour and the reachable one, under the toolpath so the path
+    # stays readable. Where the tool can reach everything the two coincide and
+    # only the soft one shows - which is the honest picture: there is nothing
+    # to warn about.
+    if hard:
+        _draw_profile(cr, hard, pt, COL['hard'], 1.2, [4.0, 3.0])
+    if soft:
+        _draw_profile(cr, soft, pt, COL['soft'], 2.0, None)
 
     if points:
         cr.set_source_rgb(*COL['text'])
@@ -1024,3 +1036,26 @@ def palette_colour(key, order):
         return PALETTE[order.index(key) % len(PALETTE)]
     except (ValueError, AttributeError):
         return COL['rapid']
+
+
+# resolve_points works in DIAMETERS; the plot works in radius, as canon does
+PROFILE_DIA = 2.0
+
+
+def _draw_profile(cr, pts, pt, colour, width, dash):
+    """One contour, in (z, diameter) as resolve_points returns it."""
+    if len(pts) < 2:
+        return
+    cr.set_source_rgb(*colour)
+    cr.set_line_width(width)
+    cr.set_dash(dash or [])
+    first = True
+    for z, x in pts:
+        px, py = pt((x / PROFILE_DIA, 0.0, z))
+        if first:
+            cr.move_to(px, py)
+            first = False
+        else:
+            cr.line_to(px, py)
+    cr.stroke()
+    cr.set_dash([])

@@ -45,7 +45,7 @@ class PreviewPane(object):
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
-                 profile_cb=None):
+                 profile_cb=None, soft_cb=None):
         self.ini_path = ini_path
         self.plane = plane
         # returns (a_min, a_max, b_min, b_max) for the stock, or None. A
@@ -56,6 +56,7 @@ class PreviewPane(object):
         # same reason stock_cb is one: it must never be a stale copy of a
         # feature the operator has since edited.
         self.profile_cb = profile_cb
+        self.soft_cb = soft_cb
         self.colorize = 'plain'
         self.leftover = 0.0
         self.tolerance = 0.01
@@ -211,6 +212,16 @@ class PreviewPane(object):
             b.connect('toggled', self._on_cat)
             self.cat_btns[cat] = b
             self.tp_box.pack_start(b, False, False, 0)
+        self.contour_btn = gtk.ToggleButton(label=_('Contour'))
+        self.contour_btn.set_active(True)
+        self.contour_btn.set_tooltip_text(
+            _('Show the drawn contour and the one the tool can actually reach. '
+              'Where the tool back angle shadows part of the profile the two '
+              'separate, and the gap is material that cannot be cut with this '
+              'tool. Where everything is reachable they coincide.'))
+        self.contour_btn.connect('toggled', lambda _b: self.area.queue_draw())
+        self.tp_box.pack_start(self.contour_btn, False, False, 0)
+
         self.points_btn = gtk.ToggleButton(label=_('Pts'))
         self.points_btn.set_tooltip_text(
             _('Mark where each move starts and ends - useful on a path made of '
@@ -392,6 +403,14 @@ class PreviewPane(object):
     def _shown_cats(self):
         return {c for c, b in self.cat_btns.items() if b.get_active()}
 
+    def _contour(self, cb):
+        if cb is None or not self.contour_btn.get_active():
+            return None
+        try:
+            return cb()
+        except Exception:
+            return None
+
     def _move_colour(self):
         """Per-move colour for the By operation / By tool modes."""
         if self.colorize == 'operation':
@@ -548,7 +567,9 @@ class PreviewPane(object):
                                    view=self.view, tool=self._tool_state(),
                                    field=fld, classes=self._classes(fld),
                                    moves=moves, move_colour=self._move_colour(),
-                                   points=self.points_btn.get_active())
+                                   points=self.points_btn.get_active(),
+                                   hard=self._contour(self.profile_cb),
+                                   soft=self._contour(self.soft_cb))
         return False
 
 
@@ -573,7 +594,8 @@ class NCamPreviewMixin(object):
         ini = getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME')
         plane = 'ZX' if getattr(self, 'catalog_dir', '') == 'lathe' else 'XY'
         self.preview_pane = PreviewPane(ini, plane, self._preview_stock,
-                                       self._preview_profile)
+                                       self._preview_profile,
+                                       self._preview_soft_profile)
 
         paned = gtk.Paned(orientation=gtk.Orientation.VERTICAL)
         self.preview_paned = paned
@@ -591,6 +613,20 @@ class NCamPreviewMixin(object):
             parent.add(paned)
         paned.show_all()
         return paned
+
+    def _preview_soft_profile(self):
+        """The reachable contour, or None when the drawn one is reachable."""
+        try:
+            f = self._find_feature('polyline')
+            if f is None:
+                return None
+            import lathe_sections
+            import ncam
+            pts, soft = lathe_sections.finish_profile(
+                f, ncam.TOOL_TABLE.get_back_angle(), ncam.tip_comp_inputs()[0])
+            return pts if soft else None
+        except Exception:
+            return None
 
     def _preview_profile(self):
         """The finished profile as (z, diameter), or None.
