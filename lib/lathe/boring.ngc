@@ -48,6 +48,9 @@ o<boring> sub
 	o121 endif
 
 	o20 if [#<finishing_passes> AND #<_tool_usage> NE 1]
+		(bracketed like a feature, so the preview can tell the finishing)
+		(pass apart from the roughing before it - see poly_lathe_mill.ngc)
+		(begin finish)
 		F#<_finish_feed>
 	(nose geometry and comp side are resolved for BOTH compensated modes: native)
 	(hands them to G41.1/G42.1, while In CAM needs the same numbers to offset the)
@@ -107,6 +110,7 @@ o<boring> sub
 			G0 X[#<end_x> - #<_ix_clear>]
 		o21 endrepeat
 	o<bnc> endif
+		(end finish)
 	o20 endif
 	
 	M9 (cooling off)

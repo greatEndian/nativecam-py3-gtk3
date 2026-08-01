@@ -229,6 +229,18 @@ def main():
     p.toolpath = tp
     check('a path WITH a pre-finish pass legends it',
           'pre-finish' in p._legend(), p._legend())
+    check('and does not legend a finish pass it does not contain',
+          'finish' in p._legend() and '■</span> finish' not in p._legend(),
+          p._legend())
+
+    # facing has no pre-finish - the finishing pass is the only phase it has,
+    # and it must still be named
+    tp.moves = [ncam_preview.Move('feed', (0.0, 0.0, 0.0), (0.0, 0.0, -1.0),
+                                  'Facing', 1, ncam_preview.CUT,
+                                  (ncam_preview.FINISH,))]
+    check('an op with only a finishing pass legends that',
+          '■</span> finish' in p._legend()
+          and 'pre-finish' not in p._legend(), p._legend())
 
     p.contour_btn.set_active(False)
     pump()

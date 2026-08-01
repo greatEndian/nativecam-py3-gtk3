@@ -71,8 +71,13 @@ Move = collections.namedtuple('Move', 'kind a b op tool cat subs feed fmode rpm'
 
 CUT, LEAD, LINK, CONNECT = 'cut', 'lead', 'link', 'connect'
 
-# the sub-phase markers the preview knows about, by the name the .ngc writes
+# The sub-phase markers the preview knows about, by the name the .ngc writes.
+# Every lathe op that has a finishing pass brackets it, not just the polyline -
+# on facing, turning, boring, the tapers and radius_od the finish IS the only
+# phase there is to tell apart from the roughing.
 PREFINISH = 'pre-finish'
+FINISH = 'finish'
+PHASES = (PREFINISH, FINISH)
 
 
 class Toolpath(object):
@@ -631,6 +636,7 @@ COL = {
     'tool':      (0.95, 0.75, 0.25),
     'tool_body': (0.42, 0.40, 0.46),
     'prefinish': (0.35, 0.60, 1.00),     # the pre-finish contour pass
+    'finish':    (1.00, 0.60, 0.15),     # the finishing pass, in any op
 }
 
 
@@ -1412,7 +1418,10 @@ def palette_colour(key, order):
 
 
 def phase_colour(m):
-    """Plain-mode colour for one move: pre-finish cuts blue, the rest as before.
+    """Plain-mode colour for one move, by which pass of the op it belongs to.
+
+    Roughing keeps the plain feed colour, so what changes colour is what is
+    actually cutting the finished surface.
 
     Rapids stay rapid-coloured whatever phase they are in - they are already
     dashed and grey everywhere else, and recolouring them would say the machine
@@ -1420,13 +1429,25 @@ def phase_colour(m):
     """
     if m.kind == 'rapid':
         return COL['rapid']
+    # pre-finish first: on the polyline the finish loop and the pre-finish pass
+    # are separate brackets, but a nested one must not be masked by an outer
     if PREFINISH in m.subs:
         return COL['prefinish']
+    if FINISH in m.subs:
+        return COL['finish']
     return COL['feed']
 
 
-def has_phase(moves, name=PREFINISH):
-    """True when any move carries `name` as a sub-phase marker."""
+def phases_in(moves):
+    """Which sub-phases this toolpath actually contains, in PHASES order."""
+    seen = {s for m in moves for s in m.subs}
+    return tuple(p for p in PHASES if p in seen)
+
+
+def has_phase(moves, name=None):
+    """True when any move carries `name`, or any known phase when name is None."""
+    if name is None:
+        return bool(phases_in(moves))
     return any(name in m.subs for m in moves)
 
 

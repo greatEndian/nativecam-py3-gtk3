@@ -642,6 +642,7 @@ o<poly_lathe_mill> sub
 
         (finishing passes: step the finish offset down to the final profile)
         o<fin_00> if [#<fin_passes> GE 1]
+                (begin finish)
                 F#<_finish_feed>
                 #<fin_i> = 0
                 o<wh_fin> while [#<fin_i> LT #<fin_passes>]
@@ -682,6 +683,7 @@ o<poly_lathe_mill> sub
                         o<fn_cam> endif
                 o<wh_fin> endwhile
                 F#<_rough_feed>
+                (end finish)
         o<fin_00> endif
 
         #<_x_clamp_r> = 999999.0 (disable clamping outside the roughing loop)

@@ -204,6 +204,9 @@ G1 X40 Z-1 F100
 G1 X30 Z-5
 G3 X20 Z-10 I0 K-5
 (end pre-finish)
+(begin finish)
+G1 X20 Z-12
+(end finish)
 G1 X20 Z-15
 (end Lathe Polyline)
 G1 X40 Z-16
@@ -226,6 +229,20 @@ M2
     check('a move outside every marker has no operation and no phase',
           feeds6[-1].op is None and feeds6[-1].subs == ())
     check('has_phase sees it', P.has_phase(tp6.moves))
+
+    # two phases in one operation must not bleed into each other: the finish
+    # bracket opens only after the pre-finish one has closed
+    fin6 = [m for m in feeds6 if P.FINISH in m.subs]
+    check('a second phase in the same operation is tagged separately',
+          len(fin6) >= 1 and not any(P.PREFINISH in m.subs for m in fin6),
+          '%d finish moves, %d of them still pre-finish'
+          % (len(fin6), len([m for m in fin6 if P.PREFINISH in m.subs])))
+    check('and the phases are reported in program order',
+          P.phases_in(tp6.moves) == (P.PREFINISH, P.FINISH),
+          str(P.phases_in(tp6.moves)))
+    check('the finish colour is its own, not the pre-finish one',
+          P.phase_colour(fin6[0]) == P.COL['finish']
+          and P.COL['finish'] != P.COL['prefinish'] != P.COL['feed'])
 
     # colours: blue only for the phase's CUTS, everything else as before
     check('the phase colour is not the plain feed colour',

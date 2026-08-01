@@ -141,6 +141,9 @@ o<facing> sub
 	o121 endif
 
 	o20 if [#<finishing_passes> AND [#<_tool_usage> NE 1]]
+		(bracketed like a feature, so the preview can tell the finishing)
+		(pass apart from the roughing before it - see poly_lathe_mill.ngc)
+		(begin finish)
 		F#<_finish_feed>
 	o<fnc> if [#<n_comp> GT 0]
 		(compensated finish: a clean face with a straight run-in that establishes)
@@ -283,6 +286,7 @@ o<facing> sub
 			G0 Z[#<cut_z> + #<_z_clear> * #<z_factor>]
 		o21 endrepeat
 	o<fnc> endif
+		(end finish)
 	o20 endif
 
 	M9 (cooling off)

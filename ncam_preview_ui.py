@@ -512,11 +512,14 @@ class PreviewPane(object):
                      swatch(cmp_col[ncam_preview.GOUGE], _('gouged'))]
         elif self.colorize in ('operation', 'tool'):
             return ''                     # a colour per key; no fixed legend
-        elif ncam_preview.has_phase(self.toolpath.moves):
-            parts = [swatch(col['feed'], _('cut')),
-                     swatch(col['prefinish'], _('pre-finish'))]
         else:
-            parts = []
+            # only the phases this program actually contains: a legend naming
+            # a colour that is nowhere on the plot is worse than none
+            names = {ncam_preview.PREFINISH: (col['prefinish'], _('pre-finish')),
+                     ncam_preview.FINISH: (col['finish'], _('finish'))}
+            found = ncam_preview.phases_in(self.toolpath.moves)
+            parts = [swatch(col['feed'], _('rough'))] if found else []
+            parts += [swatch(*names[p]) for p in found if p in names]
         if self.contour_btn.get_active() and self.soft_cb is not None:
             parts.append(swatch(col['soft'], _('reachable')))
         return '   '.join(parts)

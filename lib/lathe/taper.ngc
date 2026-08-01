@@ -69,6 +69,9 @@ o<taper> sub
 	o123 endif
 
 	o20 if [#<finishing_passes> AND #<_tool_usage> NE 1]
+		(bracketed like a feature, so the preview can tell the finishing)
+		(pass apart from the roughing before it - see poly_lathe_mill.ngc)
+		(begin finish)
 		F#<_finish_feed>
 		(nose-radius comp on the angled finish wall: the radial approach from)
 		(above the OD down to the taper start is the establishing move - x_clear)
@@ -122,6 +125,7 @@ o<taper> sub
 			o<tip_comp_off> CALL
 			G0 X[#<t_ex> + #<_x_clear>]
 		o21 endrepeat
+		(end finish)
 	o20 endif
 	
 	M9 (cooling off)

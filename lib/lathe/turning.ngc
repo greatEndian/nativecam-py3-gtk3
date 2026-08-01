@@ -118,6 +118,9 @@ o<turning> sub
 	o121 endif
 
 	o20 if [#<finishing_passes> AND [#<_tool_usage> NE 1]]
+		(bracketed like a feature, so the preview can tell the finishing)
+		(pass apart from the roughing before it - see poly_lathe_mill.ngc)
+		(begin finish)
 		F#<_finish_feed>
 		o70 if [#<mode> LE 0] (no radius, no compensation)
 			o21 repeat [#<finishing_passes>]
@@ -146,6 +149,7 @@ o<turning> sub
 				o31 endif
 			o22 endrepeat
 		o70 endif
+		(end finish)
 	o20 endif
 	
 	M9 (cooling off)

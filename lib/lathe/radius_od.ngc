@@ -24,13 +24,13 @@ o<radius_od> sub
 	#<x_step>   = [#<z_step> * #<_diameter_mode>]
 
 	o31 if [#<direction> EQ 0]
-		#<mode> = 1 (begin on X axis)
+		#<mode> = 1 (mode 1 - starts on the X axis)
 		#<dir> = 3
 		#<pv_dir> = 2 (preview dir)
 		#<z_factor> = -1
 		#<comp> = 42
 	o31 elseif [#<direction> EQ 1]
-		#<mode> = 2 (begin on Z axis)
+		#<mode> = 2 (mode 2 - starts on the Z axis)
 		#<dir> = 3
 		#<pv_dir> = 3
 		#<z_factor> = 1
@@ -63,7 +63,7 @@ o<radius_od> sub
 	o15 if [#<_tool_usage> LE 1]
 		F#<_rough_feed>
 		#<pass> = 1
-		o14 if [#<mode> EQ 1] (begin on X axis)
+		o14 if [#<mode> EQ 1] (mode 1 - starts on the X axis)
 			o<loop00> while [#<pass> LE #<rough_passes>]
 				G0 X[#<peak_x> - [#<x_step> * #<pass> + #<xtend>]]
 				G0 Z[#<peak_z>]
@@ -73,7 +73,7 @@ o<radius_od> sub
 				G0 X[#<peak_x> + #<_x_clear>]
 				G0 Z[#<peak_z> - #<_z_clear> * #<z_factor>]
 				#<pass> = [#<pass> + 1]
-			o<loop00> endwhile (begin on Z axis)
+			o<loop00> endwhile (mode 2 - starts on the Z axis)
 		o14 else
 			o<loop01> while [#<pass> LT #<rough_passes>]
 				G0 Z[#<peak_z> + [#<z_step> * #<pass> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
@@ -89,8 +89,11 @@ o<radius_od> sub
 	o15 endif
 	
 	o25 if [[#<_tool_usage> NE 1] AND [#<finishing_passes> GT 0]]
+		(bracketed like a feature, so the preview can tell the finishing)
+		(pass apart from the roughing before it - see poly_lathe_mill.ngc)
+		(begin finish)
 		F#<_finish_feed>
-		o24 if [#<mode> EQ 1] (begin on X axis)
+		o24 if [#<mode> EQ 1] (mode 1 - starts on the X axis)
 			o<loop10> repeat [#<finishing_passes>]
 				G0 X[#<peak_x> - [#<x_radius> + #<xtend>]]
 				G0 Z[#<peak_z>]
@@ -99,7 +102,7 @@ o<radius_od> sub
 				G1 Z[#<peak_z> + [#<radius> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
 				G0 X[#<peak_x> + #<_x_clear>]
 				G0 Z[#<peak_z> - #<_z_clear> * #<z_factor>]
-			o<loop10> endrepeat (begin on Z axis)
+			o<loop10> endrepeat (mode 2 - starts on the Z axis)
 		o24 else
 			o<loop11> repeat [#<finishing_passes>]
 				G0 Z[#<peak_z> + [#<radius> + [#5410 * #<_tbl_scale>]] * #<z_factor>]
@@ -111,6 +114,7 @@ o<radius_od> sub
 				G0 X[#<peak_x> + #<_x_clear>]
 			o<loop11> endrepeat
 		o24 endif
+		(end finish)
 	o25 endif
 	
 	M9 (cooling off)
