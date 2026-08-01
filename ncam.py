@@ -2589,6 +2589,7 @@ class Preferences(object):
             self.default += ("#<_pl_resume_z>             = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
+            self.default += ("#<_pl_min_pass>            = 0.0\n")
             self.default += ("#<_pl_fc_base>             = 0.0\n")
             self.default += ("#<_pl_fc_n>                = 0.0\n")
             self.default += ("#<_pl_cam_dir>             = 0.0\n")

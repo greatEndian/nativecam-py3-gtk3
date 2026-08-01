@@ -252,6 +252,19 @@ o<lathe_level_pass> sub
 	(stopped cutting, to search for a further interval past it)
 	#<_pl_level_z_end> = #<z_end>
 
+	(Skip a pass too short to be worth making. A level whose cuttable interval)
+	(is only a fraction of the tool sits almost entirely inside the pre-finish)
+	(allowance anyway - the contour pass that follows takes the same metal in)
+	(one go - so cutting it costs a full approach and retract to remove almost)
+	(nothing. The limit arrives as _pl_min_pass, 0 when the option is off.)
+	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
+	(knows where this level got to and carries on past it.)
+	o<shrt> if [#<_pl_min_pass> GT 0]
+		o<shrt2> if [ABS[#<z_end> - #<w_from>] LT #<_pl_min_pass>]
+			o<lathe_level_pass> return
+		o<shrt2> endif
+	o<shrt> endif
+
 	(approach: full retract above stock, or minimal retract just above the)
 	(previous pass level - safe because that band is already cut)
 	o<ret_md> if [#<_pl_ret_mode> GT 0]
