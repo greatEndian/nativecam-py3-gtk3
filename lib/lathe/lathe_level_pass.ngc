@@ -252,18 +252,6 @@ o<lathe_level_pass> sub
 	(stopped cutting, to search for a further interval past it)
 	#<_pl_level_z_end> = #<z_end>
 
-	(Skip a pass too short to be worth making. A level whose cuttable interval)
-	(is only a fraction of the tool sits almost entirely inside the pre-finish)
-	(allowance anyway - the contour pass that follows takes the same metal in)
-	(one go - so cutting it costs a full approach and retract to remove almost)
-	(nothing. The limit arrives as _pl_min_pass, 0 when the option is off.)
-	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
-	(knows where this level got to and carries on past it.)
-	o<shrt> if [#<_pl_min_pass> GT 0]
-		o<shrt2> if [ABS[#<z_end> - #<w_from>] LT #<_pl_min_pass>]
-			o<lathe_level_pass> return
-		o<shrt2> endif
-	o<shrt> endif
 
 	(approach: full retract above stock, or minimal retract just above the)
 	(previous pass level - safe because that band is already cut)
@@ -360,6 +348,21 @@ o<lathe_level_pass> sub
 	(the _pl_level_z_end export; only the physical straight-cut endpoint and)
 	(the fillet's own tangent point move)
 	#<z_end_cut> = #<z_end>
+
+	(Skip a pass too short to be worth making. A level whose cut is only a)
+	(fraction of the tool sits almost entirely inside the pre-finish allowance)
+	(anyway - the contour pass that follows takes the same metal in one go - so)
+	(cutting it costs an approach and a retract to remove almost nothing.)
+	(Measured on z_end_cut, NOT on the raw crossing z_end: the lead-out pulls)
+	(the cut end back, and measuring before that made the pass read ~0.4 mm)
+	(longer than it is, so the gate never fired on the passes it was meant for.)
+	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
+	(knows where this level reached and carries on past it.)
+	o<shrt> if [#<_pl_min_pass> GT 0]
+		o<shrt2> if [ABS[#<z_end_cut> - #<w_from>] LT #<_pl_min_pass>]
+			o<lathe_level_pass> return
+		o<shrt2> endif
+	o<shrt> endif
 	o<lo_res> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
 		(lead-out line direction: unit vector pointing from the exit toward)
 		(the far rapid point - 0 degrees along Z surface, 90 radial)
