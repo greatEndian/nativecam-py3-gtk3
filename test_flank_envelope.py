@@ -229,19 +229,23 @@ def main():
 
 
 def test_preview_agrees():
-    """The contour DRAWN must be the contour the passes follow.
+    """The contour DRAWN must be the contour every pass follows.
 
-    These are two calls to the same function from two places - the .cfg that
+    Two things are pinned here.
+
+    First, they come from one function called from two places - the .cfg that
     generates the G-code, and the preview's soft-contour callback - and they
     have to be given the same inputs or the picture is of a different tool from
-    the program. That is exactly what happened when the flank length moved to
-    the Tool Change: the cfg call was updated, the preview call was not, so it
-    kept drawing an INFINITE-flank contour while the passes used the real
-    insert. The passes then appeared to run outside their own reachable
-    surface, which is a convincing-looking bug in something that was correct.
+    the program. That went wrong once: the cfg call was updated when the flank
+    length moved to the Tool Change and the preview call was not, so the drawn
+    contour was an unbounded-flank one while the passes used a 16 mm insert.
+    The passes then appeared to run outside their own reachable surface, which
+    is a convincing-looking bug in something that was correct.
 
-    Nothing here reads the source; it sets two different flank lengths on the
-    Tool Change and checks the drawn contour actually changes.
+    Second, and the reason that mismatch was visible at all: the accessible
+    contour is computed with an UNBOUNDED flank. The Tool Change flank length
+    does not shorten the shadow - see FLANK_BOUNDS_CONTOUR - so setting it must
+    change nothing about the contour, in the preview or in the program.
     """
     import shutil
     import tempfile
@@ -268,6 +272,7 @@ def test_preview_agrees():
             xml = app.update_features(etree.fromstring(f.read().encode()))
         app.treestore_from_xml(xml)
         tc = app._find_feature('tool_change')
+        pl = app._find_feature('polyline')
         check('the Tool Change carries the flank length',
               tc is not None and tc.get_param('param_flank_len') is not None)
         if tc is None or tc.get_param('param_flank_len') is None:
@@ -282,20 +287,43 @@ def test_preview_agrees():
                   'got %.4f' % ncam.TOOL_TABLE.get_flank_len())
             drawn[mm] = app._preview_soft_profile()
 
-        check('the drawn contour exists for both',
+        check('the drawn contour exists at all',
               bool(drawn[0.0]) and bool(drawn[16.0]),
               '%s and %s points' % (len(drawn[0.0] or []), len(drawn[16.0] or [])))
-        check('and the flank length changes what is DRAWN, not just what is cut',
-              drawn[0.0] != drawn[16.0],
-              'same contour at 0 mm and 16 mm - the preview is not being told '
-              'the length')
-        if drawn[0.0] and drawn[16.0]:
-            # a finite flank releases the shadow, so it can only ever produce a
-            # contour that hugs the drawn profile more closely
-            check('a finite flank shadows LESS than an unbounded one',
-                  len(drawn[16.0]) > len(drawn[0.0]),
-                  '%d points at 16 mm vs %d unbounded'
-                  % (len(drawn[16.0]), len(drawn[0.0])))
+        check('the flank length does NOT shorten the drawn shadow',
+              drawn[0.0] == drawn[16.0],
+              'a 16 mm flank drew %s points against %s unbounded - the release '
+              'is back' % (len(drawn[16.0] or []), len(drawn[0.0] or [])))
+
+        # The ramp must run on to the drawn profile and corner there, rather
+        # than curving down and rejoining it early - that IS the difference
+        # between the two contours, and it shows up as ONE long straight
+        # segment where the released version has a subdivided curve.
+        def longest_run(pts):
+            return max(abs(b[0] - a[0]) for a, b in zip(pts, pts[1:]))
+        soft = drawn[16.0]
+        run = longest_run(soft)
+        check('the shadow ramp is one straight run to the far end',
+              run > 30.0, 'longest segment is only %.2f mm of Z, so the ramp '
+              'is releasing part way' % run)
+
+        # and the mechanism is only paused, not rotted: turning it back on has
+        # to still produce the shorter shadow, or the flag is a dead letter
+        ls.FLANK_BOUNDS_CONTOUR = True
+        try:
+            bounded = app._preview_soft_profile()
+        finally:
+            ls.FLANK_BOUNDS_CONTOUR = False
+        check('the bounded-flank shadow still works when switched back on',
+              bounded != drawn[16.0] and len(bounded) > len(drawn[16.0]),
+              '%s points against %s - FLANK_BOUNDS_CONTOUR does nothing'
+              % (len(bounded or []), len(drawn[16.0] or [])))
+        check('and it is the release that the long run is measuring',
+              longest_run(bounded) < run,
+              'the bounded contour still has a %.2f mm run' % longest_run(bounded))
+        check('and switching it off again restores the unbounded contour',
+              app._preview_soft_profile() == drawn[16.0])
+        del pl
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

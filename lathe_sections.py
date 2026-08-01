@@ -978,6 +978,32 @@ def band_windows(sections, ordered, points):
 # once; direction only decides which end of a given level ends up limited, and
 # that falls out. Constraining just the trailing flank would be wrong the moment
 # roughing runs in Both directions.
+#
+# --- the flank is treated as UNBOUNDED for the accessible contour ------------
+#
+# The shadow ramp leaves the obstruction at the back angle and runs on until it
+# meets the drawn profile again, cornering there. It does not release part way.
+#
+# flank_envelope CAN bound it: give it a flank length and the shadow stops after
+# flank_len*cos(90-back) of Z, after which the envelope curves down through the
+# remaining obstructions and rejoins the profile early. That was added because
+# a real insert is not infinitely long - "we now counting that BACK angle
+# surface is infinate in direction +Z .. but in reality every tool have some
+# dimension". That premise has since been withdrawn, so the contour ignores the
+# length: roughing, the pre-finish pass, the finish pass and the contour drawn
+# in the preview all take the unbounded ramp, which is the single surface they
+# are all judged against.
+#
+# PAUSED, not deleted. flank_envelope's flank_len still works and is still
+# tested; only the contour builders decline to use it. Flip this to True to put
+# the release back everywhere at once - and note the Tool Change's flank length
+# is unaffected either way, it still draws the tool silhouette.
+FLANK_BOUNDS_CONTOUR = False
+
+
+def _contour_flank(flank_len):
+    """The flank length the accessible contour may use - see above."""
+    return _to_float(flank_len) if FLANK_BOUNDS_CONTOUR else 0.0
 
 
 def _outer_x(points, z):
@@ -1164,8 +1190,11 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
     rough_dir = int(_to_float(d_param.get_ngc_value())) if d_param is not None else 0
     # flank_len comes from the TOOL CHANGE, not from this feature - it
     # describes the insert, so one polyline could not sensibly hold a
-    # different value from the next under the same tool
-    env = flank_envelope(points, back_deg, rough_dir, _to_float(flank_len))
+    # different value from the next under the same tool. _contour_flank then
+    # decides how much of it the contour is allowed to use, which is currently
+    # none: roughing stops on the same unbounded ramp the finishing passes
+    # trace, so the two cannot describe different surfaces
+    env = flank_envelope(points, back_deg, rough_dir, _contour_flank(flank_len))
     # the scans walk records in profile order, so hand the envelope back the
     # same way round the profile was drawn rather than sorted ascending
     if points[0][0] > points[-1][0]:
@@ -1521,8 +1550,8 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0):
     fin_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
 
     # flank_len belongs to the tool change, so it arrives as an argument -
-    # see build_flank_gcode
-    env = flank_envelope(points, back_deg, fin_dir, _to_float(flank_len))
+    # see build_flank_gcode and FLANK_BOUNDS_CONTOUR
+    env = flank_envelope(points, back_deg, fin_dir, _contour_flank(flank_len))
     if not env or len(env) < 2:
         return points, False
     if points[0][0] > points[-1][0]:
