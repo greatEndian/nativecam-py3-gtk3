@@ -69,40 +69,40 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   **specification change**: enter at **one roughing depth of cut** (0.508),
   which is 2.258 mm of Z instead of 4.517.
 
-  **Step 2 — both halves tried, and the blocking mechanism is now proven.**
+  **Step 2 — design settled, two mechanical blockers left.**
 
-  The resume point itself is correct. With the entry allowance at one roughing
-  depth of cut, `lathe_level_next_start` returns **Z-49.203** against the old
-  **Z-51.462** - exactly the 2.258 mm the specification asks for.
+  greatEndian, 2026-08-01: **the stop keeps the floor allowance, only the
+  start moves** - by the stop the pass is already down on the floor. And it
+  must work with roughing running **back to front** as well as front to back.
 
-      NS out level=29.652  found=1  z=-49.203      <- wanted
-      NS in  level=29.652  from=-49.203            <- searched again
-      NS out level=29.652  found=0                 <- and gave up
+  Design that satisfies both, and does not disturb the stop at all:
 
-  Two attempts, both reverted, both leaving 189 moves / 120 cutting against
-  243 / 147 - every interval behind the peak gone:
+  1. Phase 2 resolves the resume point **twice** from the same search origin -
+     once with the floor allowance (`w_from`, exactly as today, so the scan,
+     the stop and the block test are untouched) and once with the entry
+     allowance (where the cut may begin).
+  2. `lathe_level_pass` gains `z_start`, used **only** for the approach, the
+     lead-in geometry and the pass-length tests. Direction falls out of
+     `z_dir`, so front-to-back and back-to-front need no separate case.
 
-  1. Changing the shared allowance moved **phase 1's detector**. There
-     `lathe_level_next_start` only answers "does an obstruction exist", and
-     finding one breaks out to phase 2; moving it does not move the cutter.
-  2. Changing **phase 2's own resume calls** (`poly_lathe_mill.ngc`, the
-     `o<ph1_chk> else` branch) puts `l_fr` at Z-49.203 and re-runs the pass
-     from there - and `lathe_level_pass` then **rejects it as blocked**,
-     because its own scan still offsets the profile by the 1.016 floor
-     allowance, under which the profile is still above the level at Z-49.203.
-     It only drops below at Z-51.462. Hence the second search and the give-up.
+  Measured: the entry resume lands at **Z-49.203** against **Z-51.462** - the
+  2.258 mm wanted.
 
-  **So `lathe_level_pass` has to be told both numbers.** Its stop crossing must
-  keep the floor allowance - those intervals end 1.016 mm off the end wall and
-  that is correct against a vertical - while its *blocked* verdict uses the
-  entry allowance. That is a two-offset change inside one scan, and it carries
-  a decision worth taking deliberately rather than in passing:
+  Two blockers hit while wiring it, both recorded so the next attempt does not
+  rediscover them:
 
-  - [ ] **NEEDS A CALL** — if the pass simply re-scans with the entry
-    allowance when the floor-allowance scan says blocked, the interval also
-    **ends 0.508 mm from the end wall instead of 1.016 mm**, cutting into the
-    finish allowance there. Acceptable, or must the stop keep the floor
-    allowance while only the start moves?
+  - **`Command too long`.** Adding a 15th argument to the `lathe_level_pass`
+    CALL kills the whole program - that line is already at the interpreter's
+    limit, which is why the polyline's other state travels as globals. The
+    entry point must be a global (`#<_pl_entry_z>`), set before the call and
+    cleared after it.
+  - **`Named parameter #<l_entry_z> not defined`.** LinuxCNC pre-parses the
+    whole file at load, so a local first assigned inside a branch is undefined
+    even though the sequence would set it. It needs initialising at the top of
+    `poly_lathe_mill`, beside the other locals, and `#<_pl_entry_z>` needs a
+    line in `create_defaults()` in `ncam.py` for the same reason.
+
+  Both attempts reverted; `lib/lathe` and `ncam.py` are clean.
 
   *Method note, paid for three times over in this session: an .ngc generated
   earlier in the session is not a safe baseline, and neither is a toolpath
