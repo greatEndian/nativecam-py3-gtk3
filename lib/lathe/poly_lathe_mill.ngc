@@ -157,9 +157,30 @@ o<poly_lathe_mill> sub
         o1001 if [#<step_target> EQ #<start_radius>]
                 #<cut_step> = 0
                 #<rough_passes> = 1
+                #<first_step> = 0
         o1001 else
                 #<rough_passes> = FUP[ABS[#<step_target> - #<start_radius>] / #<_rough_cut>]
                 #<cut_step> = [[#<step_target> - #<start_radius>] / #<rough_passes>]
+                #<first_step> = #<cut_step>
+                (Where the levels are ANCHORED. Spacing them evenly between the)
+                (stock and the floor - the default - divides the total by the)
+                (pass count, so every step is the same and slightly under the)
+                (depth of cut. Anchoring on the finished contour instead takes)
+                (full depth-of-cut steps measured from the floor outward, which)
+                (puts the odd remainder on the FIRST pass at the stock, where it)
+                (is a full-length cut through oversize material, rather than)
+                (leaving a level sitting just clear of the finished surface and)
+                (grazing it for a sliver.)
+                o<anch> if [#<_pl_pass_from> GT 0]
+                        #<sgn> = 1
+                        o<anch_s> if [#<step_target> LT #<start_radius>]
+                                #<sgn> = -1
+                        o<anch_s> endif
+                        #<cut_step> = [#<sgn> * #<_rough_cut>]
+                        (first step takes the remainder, so the last level lands)
+                        (exactly on the floor)
+                        #<first_step> = [[#<step_target> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
+                o<anch> endif
         o1001 endif
 
         o<set_feed_rate_and_speed> CALL [#<tool_eng>]
@@ -546,7 +567,10 @@ o<poly_lathe_mill> sub
                                 o<wh_00> break
                         o<if_next> endif
 
-                        #<current_radius> = [#<current_radius> + #<cut_step>]
+                        (the first advance may differ from the rest when the)
+                        (levels are anchored on the finished contour)
+                        #<current_radius> = [#<current_radius> + #<first_step>]
+                        #<first_step> = #<cut_step>
                         (check if we passed this phase's own floor)
                         o<if_done> if [[#<start_radius> GT #<lvl_floor>] AND [#<current_radius> LT #<lvl_floor>]]
                                 #<current_radius> = #<lvl_floor>
