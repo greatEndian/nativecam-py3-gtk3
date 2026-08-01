@@ -42,49 +42,48 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
      when it arrives instead of driving in at 45°.
   4. That copied segment has a **constant length**.
 
-  **Measured on testing_15_2, current build.** Every one of the eight levels
-  behind the boss starts exactly **4.512 mm short in Z** of the ramp - the
-  same figure on all eight, so this is one wrong constant and not an
-  accumulating geometry error. Roughing depth of cut is 0.508 mm; the levels
-  step 2.2007 mm in Z, which is 0.508 / tan(13°) and correct for the ramp.
+  **Measured on testing_15_2 — corrected.** The first measurement said
+  4.512 mm on eight levels behind the boss. **That was wrong**: it came from a
+  generated file made before the polyline version bump refreshed the stored
+  `[AFTER]` template, so it was a stale artefact. Regenerated from the current
+  build - which matches greatEndian's own screenshot exactly, `147 cutting
+  moves, 96 rapids` - the real picture is:
 
-  | radius | starts Z | ramp at Z | uncut |
-  |---|---|---|---|
-  | 29.652 | -51.462 | -46.950 | 4.512 mm |
-  | 29.144 | -53.662 | -49.150 | 4.512 mm |
-  | … | … | … | 4.512 mm |
-  | 26.096 | -66.865 | -62.352 | 4.512 mm |
+  - **18 level cuts, one interval each.** There are no behind-the-boss
+    continuation intervals at all: with the flank unbounded (`310a06b`) the
+    shadow covers that whole region, so every level is a single cut that stops
+    on the boss's flank.
+  - Each level ends **1.017 to 1.509 mm short in Z** of the contour, widest at
+    the largest diameter. **20.9 mm of uncut metal in total.**
+  - That scale agrees with the picture: the drawn orange segments measure
+    1.2-2.4 mm against a level spacing of 0.508 mm.
 
-  **36.1 mm of uncut metal in total.** Applies **only where a boss is present
-  and the level is reaching the volume behind it** - greatEndian, 2026-08-01.
-  A level meeting a vertical wall stands off correctly; it is only the shallow
-  ramp behind a boss that turns a small radial allowance into a long gap in Z.
-
-  **Step 1 done — where the constant comes from.** Instrumented the subroutine
-  and read the value rather than deriving it, after two derivations that both
-  came out wrong (3.387 mm and 6.775 mm against a measured 4.512):
+  **Step 1 — where the standoff comes from.** Instrumented the subroutine and
+  read the value rather than deriving it, after two derivations that both came
+  out wrong:
 
       LVLIN  level=29.652  cross_t=1.016000
       LVLD   lvl_d=1.016  step_target=21.016  final_radius=20.000
              fin_off=0.508  prefin=0.254  rough_cut=0.508
 
-  `cross_t` is **1.016 mm**, and 1.016 / sin 13° = 4.516 mm - the measured gap.
-  It decomposes as the finish offset 0.508 **plus one whole roughing depth of
-  cut 0.508**, the second coming from *Space passes from = Final contour*
-  rounding the configured 0.254 pre-finish allowance up to a whole depth of
-  cut (`step_target` 20.762 → 21.016).
+  `cross_t` is **1.016 mm**, applied perpendicular to each contour segment. It
+  is the finish offset 0.508 **plus one whole roughing depth of cut 0.508**,
+  the second from *Space passes from = Final contour* rounding the configured
+  0.254 pre-finish allowance up to a whole depth of cut.
 
-  **So the levels are not stopping short by accident.** They stop exactly on
-  the roughing floor, as designed - the metal in the orange segments is what
-  the pre-finish and finish passes are there to remove. The change wanted is
-  therefore a **specification change**, not a bug fix, and needs one more
-  answer before step 2:
+  **So the levels stop exactly on the roughing floor, as designed** - the metal
+  in the orange segments is what the pre-finish and finish passes exist to
+  remove. Step 2 is a specification change, not a bug fix: roughing is to come
+  within **one roughing depth of cut** of the contour instead of the full floor
+  allowance, halving 1.016 mm to 0.508 mm of standoff.
 
-  | standoff from the contour | radial | along the ramp |
-  |---|---|---|
-  | floor allowance — today | 1.016 mm | 4.52 mm |
-  | one roughing depth of cut | 0.508 mm | 2.26 mm |
-  | finish + pre-finish as configured | 0.762 mm | 3.39 mm |
+  **Step 2 — first attempt reverted.** I changed the entry offset in
+  `lathe_level_next_start`, which is the "level re-enters after a boss blocked
+  it" path. Generated output was byte-identical: that path has no instance in
+  this project, because there are no continuation intervals. Reverted rather
+  than ship an unverifiable change. The standoff that actually matters is at
+  the **end** of the single interval, in `lathe_level_pass`'s crossing scan,
+  and that is where step 2 has to happen.
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
