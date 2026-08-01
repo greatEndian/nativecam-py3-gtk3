@@ -1492,7 +1492,7 @@ FC_BASE = 4000
 FC_TOP = 4400
 
 
-def finish_profile(polyline_feature, back_deg):
+def finish_profile(polyline_feature, back_deg, nose_r=0.0):
     """(points, soft) - the contour the finishing passes should follow.
 
     Returns the hard contour and soft=False when nothing constrains it: no back
@@ -1523,7 +1523,17 @@ def finish_profile(polyline_feature, back_deg):
                     for a, b in zip(env, points)))
     if same:
         return points, False
-    return _clean_ramp(env, points), True
+    # 1.2 x the nose DIAMETER. Measured on testing_15_2: this limit departs
+    # from the true envelope by 0.105 mm, where 2 x diameter costs 0.729 mm -
+    # accuracy falls away quickly above it, and the surface being approximated
+    # is an artefact of the tool that is not to size anyway.
+    # Applied to the WHOLE contour, not just the ramp stretches. The segment
+    # that aborted the pass sat at the junction where the ramp meets the drawn
+    # profile, so filtering the ramp alone left it in place and the interpreter
+    # still refused. This only ever runs on a profile that HAS an unreachable
+    # region - a fully reachable one is returned untouched above - so the blast
+    # radius is exactly the parts that would otherwise abort.
+    return _min_segment(_clean_ramp(env, points), 2.4 * nose_r), True
 
 
 def _upper_hull(pts):
@@ -1577,6 +1587,34 @@ def _clean_ramp(env, hard, tol=1e-4):
     if run:
         out.extend(_upper_hull(run))
     return out
+
+
+def _min_segment(pts, limit):
+    """Drop points that would leave a segment shorter than `limit`.
+
+    Cutter compensation shrinks each segment by R*tan(deficit/2) at a concave
+    corner - two-sided, so a segment shorter than that reverses and the
+    interpreter refuses the whole pass with "concave corner cannot be reached
+    without gouging". The back-angle ramp on testing_15_2 contained a 0.252 mm
+    segment against 0.238 mm of shrink, which is what aborted the pre-finish
+    pass halfway.
+
+    Note this is NOT about sharp corners: the worst corner on that part is
+    146.8 degrees and most are 176.8, so filleting them would have fixed
+    nothing. Length is what matters.
+
+    The endpoints are always kept, so the ramp still starts and ends where it
+    meets the drawn profile.
+    """
+    if limit <= 0 or len(pts) < 3:
+        return list(pts)
+    keep = [pts[0]]
+    for q in pts[1:-1]:
+        if math.hypot(q[0] - keep[-1][0],
+                      (q[1] - keep[-1][1]) / DIAMETER_MODE) >= limit:
+            keep.append(q)
+    keep.append(pts[-1])
+    return keep
 
 
 def _close_run(run, nxt):
@@ -1641,43 +1679,25 @@ def _profile_x_at(z, points):
     return best
 
 
-def build_finish_contour_gcode(polyline_feature, back_deg):
+def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0):
     """The soft contour as a point table, or '' when the hard one will do.
 
     Runtime gate is _pl_fc_n > 0, so '' leaves the contour passes exactly as
     they were.
     """
-    pts, is_soft = finish_profile(polyline_feature, back_deg)
+    pts, is_soft = finish_profile(polyline_feature, back_deg, nose_r)
     if not is_soft:
         return ''
 
-    # HELD BACK, deliberately. Tracing the soft contour under native cutter
-    # compensation aborts the program: "Straight feed in concave corner cannot
-    # be reached by the tool without gouging". The back-angle ramp meets the
-    # drawn profile at corners tighter than the nose, and the interpreter
-    # refuses those outright - mid-pass, so the pre-finish pass ends partway
-    # along the ramp with a lead-out arc and nothing after it runs.
-    #
-    # Cleaning the ramp was necessary but not sufficient. flank_envelope takes
-    # the pointwise maximum of profile and ramp, and on a densified arc the two
-    # interleave into a sawtooth of ~30 steps, each a 105 degree concave corner;
-    # _clean_ramp collapses those to the ramp's own hull and the program still
-    # refuses, so at least one corner remains tighter than the nose.
-    #
-    # Three ways out, none of them a small edit, and the choice belongs to the
-    # operator rather than to this function:
-    #   - fillet every concave corner of the soft contour to at least the nose
-    #     radius, which is what a CAM package does and is the proper answer;
-    #   - trace the soft contour with compensation OFF, defensible because that
-    #     stretch is an artefact of the tool and nothing there is to size;
-    #   - trace it with In-CAM compensation, where offset_contour already trims
-    #     internal corners itself and the interpreter is never asked.
-    #
-    # Until then the finishing passes follow the drawn contour as they always
-    # have, and the validation message says the part will not come out to it.
-    # A program that runs and warns beats one that aborts halfway.
-    return ''
-
+    # Kept for the record: tracing this contour under native compensation used
+    # to abort the program - "Straight feed in concave corner cannot be reached
+    # by the tool without gouging" - and the cause was segment LENGTH, not
+    # corner angle. _min_segment above fixes it. Two other routes exist if this
+    # ever hits a dead end: trace the soft stretch with compensation off, which
+    # needs the pass split so real surfaces keep their comp; or trace it In-CAM,
+    # where offset_contour trims internal corners itself and the interpreter is
+    # never asked - though on this part that offset came out non-monotone in Z,
+    # so it needs its self-intersections resolved first.
     top = FC_BASE + 2 * len(pts)
     if top > FC_TOP:
         return ('(WARNING - the reachable finishing contour needs %d parameter '
