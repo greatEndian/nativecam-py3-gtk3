@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `be094c2`.
+Branch: `liveTooling`. Last pushed: `f4698ed`.
 
 ---
 
@@ -175,31 +175,6 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   stop: the same value drives the block test and the multi-crossing scan, so
   halving it lets levels run on through material they were held out of.
 
-- [x] **Item 3 - the three-piece entry. DONE.** Reading 1, projected length
-  one roughing depth of cut. The approach copies the contour's own angle,
-  taken from the entry table rather than assumed, and turns onto the level at
-  the entry point. Measured behind the peak:
-
-      dZ 2.2004   dR 0.5080   length 2.2583   13.00 deg
-
-  The depth of cut is a RADIAL quantity, so it is **projected** onto the
-  contour's angle rather than used as a length: one depth of cut of radius
-  costs `doc/sin` along the segment and `doc/tan` in Z - 2.2583 and 2.2004 for
-  a 0.508 mm cut on a 13 degree ramp. The first version used 0.508 as the Z
-  extent directly, which is the same number in the wrong place.
-
-  0.508 is the roughing depth of cut, 13.00 deg is the ramp. 243 moves -> 261,
-  the 18 being two feeds on each of the nine entries; level cuts, cut length
-  and gouge count all unchanged.
-
-  **First version did nothing in AXIS** - greatEndian, same day. The segment
-  had been put INSIDE the `o<lead_in>` branch, which only runs when a lead-in
-  length or radius is set, and the project that wants it has **both at 0**. It
-  is not part of the lead-in and is now emitted outside it, with both the
-  lead-in branch and the plain-rapid branch landing on the segment's start.
-  Verified in the failing configuration itself - `li_len=0 li_rad=0` - not
-  only in the default one.
-
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
 
@@ -256,10 +231,47 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
 
 ## Lathe G-code
 
+- [ ] **NEEDS A CALL — is tool radius compensation done by the CNC or by the
+  CAM?** Raised by greatEndian 2026-08-02. Today it is **always the control**:
+  `taper`/`taper_id`/`boring`/`facing` switch native comp on through
+  `tip_comp_on.ngc` (`G41.1`/`G42.1 D#<_tip_comp_d> L#<_tip_comp_l>`),
+  `turning` and `radius_od` use plain `G41`/`G42`, and the polyline finish pass
+  uses dynamic comp with `L0` for the geometric offset and `L#5413` only when
+  nose comp is on. The CAM emits control points and the interpreter offsets
+  them.
+
+  The alternative — and the one the standing rule points at — is to offset the
+  path **in Python at generation time**, the way `entry_contour()` and the stop
+  table already offset the contour, and emit coordinates the machine walks with
+  `G40` throughout.
+
+  What each side actually buys:
+
+  | | CNC-side (today) | CAM-side (Python) |
+  |---|---|---|
+  | follows the machine's own tool table | yes, no regeneration needed | no, baked in at generation |
+  | a re-ground insert | just works | must regenerate |
+  | unit-testable | no, only `rs274` end-to-end | yes, plain `python3` |
+  | entry/exit rules | a comp entry needs a straight feed ≥ nose radius in free air | none |
+  | impossible geometry | control aborts the program | we decide and can warn in the pane |
+  | preview agrees with the machine | only if we model comp ourselves | exactly, the points are the path |
+
+  The entry rule is not theoretical: it is why `facing.ngc` **drops its lead-in
+  and lead-out arcs** when comp is on, why the ID ops need the retract widened
+  by `#<_tip_lead_w>`, and it is the likely root of the 1.4929 mm ID gouge
+  below. It is also why comp is refused on some ops at all.
+
+  The realistic answer is probably **both, as a preference** — control comp for
+  a shop that edits its tool table between runs, CAM comp for correctness and
+  for the preview. But that is a decision, not a guess, and it decides how much
+  of `lib/lathe` stays. Nothing else should be built on top of comp until it is
+  taken.
+
 - [ ] **ID lead-in/out gouge, 1.4929 mm native** — open since the tip-comp
-  work.
+  work. Very likely a consequence of the entry rule in the point above; if
+  compensation moves into Python it disappears rather than gets fixed.
 - [ ] **In-CAM comp is still refused on the five parametric ops**: facing
-  refuses outright; tapers and boring accept it.
+  refuses outright; tapers and boring accept it. Blocked on the same call.
 - [ ] **Grooving** is not implemented — the menu icon is a placeholder, left
   deliberately so it is not forgotten.
 - [ ] **Drilling** — same, placeholder only.
@@ -288,6 +300,27 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
 ---
 
 ## Done
+
+- [x] **Item 3 — the three-piece entry, confirmed in AXIS by greatEndian
+  2026-08-02** — `168f703` `9474185` `f4698ed`. The approach copies the
+  contour's own angle, taken from the entry table rather than assumed, and
+  turns onto the level at the entry point:
+
+      dZ 2.2004   dR 0.5080   length 2.2583   13.00 deg
+
+  The depth of cut is a RADIAL quantity, so it is **projected** onto the
+  contour's angle rather than used as a length: one depth of cut of radius
+  costs `doc/sin` along the segment and `doc/tan` in Z — 2.2583 and 2.2004 for
+  a 0.508 mm cut on a 13° ramp. The first version used 0.508 as the Z extent
+  directly, which is the same number in the wrong place. 243 moves → 261, the
+  18 being two feeds on each of the nine entries; level cuts, cut length and
+  gouge count all unchanged.
+
+  Two lessons kept: the segment first went **inside** the `o<lead_in>` branch,
+  which only runs when a lead-in length or radius is set, and the project that
+  wants it has **both at 0** — so it did nothing in AXIS and had to be verified
+  in the failing configuration itself, not the working one. And a projection is
+  not a length.
 
 - [x] **AXIS crash: simulation timer outlived the panel** — `be094c2`. A GLib
   timeout belongs to the main loop, not the widget; it kept firing on dead
