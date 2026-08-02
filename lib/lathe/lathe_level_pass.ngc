@@ -21,6 +21,10 @@ o<lathe_level_pass> sub
 	#<lo_feed>   = #12
 	#<li_rad>    = #13
 	#<lo_rad>    = #14
+	(where this pass may BEGIN. Defined here, not inside the branch that)
+	(sets it: LinuxCNC pre-parses the whole file at load and a named)
+	(parameter first assigned in a branch reads as "not defined".)
+	#<z_start>   = #<w_from>
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -247,6 +251,43 @@ o<lathe_level_pass> sub
 			#<z_end> = #<w_to>
 		o<zend2> endif
 	o<zend> endif
+	(Extend the START back to the entry contour, when Python emitted one.)
+	(w_from is where the level clears the FLOOR allowance and everything)
+	(else keeps using it - the crossing scan above, the stop, the block)
+	(test. But the pass need not wait that long to begin: entering behind)
+	(the highest peak the tool can still reach, the floor allowance costs)
+	(its own length over the sine of the ramp before the cut even starts.)
+	(This walks a table lathe_sections built at generation time - the)
+	(contour already offset by one roughing depth of cut - rather than)
+	(offsetting anything itself. Read the table, move.)
+	o<ent> if [#<_pl_entry_n> GT 0]
+		#<e_i>    = 0
+		#<e_best> = 0
+		#<e_have> = 0
+		#<e_pz> = #[#<_pl_entry_base>]
+		#<e_px> = #[#<_pl_entry_base> + 1]
+		o<e_w> while [#<e_i> LT [#<_pl_entry_n> - 1]]
+			#<e_i> = [#<e_i> + 1]
+			#<e_cz> = #[#<_pl_entry_base> + #<e_i> * 2]
+			#<e_cx> = #[#<_pl_entry_base> + #<e_i> * 2 + 1]
+			o<e_cross> if [[[#<e_px> - #<l_eff>] * [#<e_cx> - #<l_eff>]] LT 0]
+				#<e_z> = [#<e_pz> + [#<e_cz> - #<e_pz>] * [#<l_eff> - #<e_px>] / [#<e_cx> - #<e_px>]]
+				(only a crossing the cut has not reached yet, and the nearest)
+				o<e_bef> if [[#<z_dir> * [#<e_z> - #<w_from>]] GT 0.0001]
+					o<e_near> if [[#<e_have> EQ 0] OR [[#<z_dir> * [#<e_z> - #<e_best>]] LT 0]]
+						#<e_best> = #<e_z>
+						#<e_have> = 1
+					o<e_near> endif
+				o<e_bef> endif
+			o<e_cross> endif
+			#<e_pz> = #<e_cz>
+			#<e_px> = #<e_cx>
+		o<e_w> endwhile
+		o<e_ok> if [#<e_have>]
+			#<z_start> = #<e_best>
+		o<e_ok> endif
+	o<ent> endif
+
 	(exposed for callers doing their own disjoint-interval scanning after this)
 	(call - e.g. lathe_level_next_start needs to know where THIS pass actually)
 	(stopped cutting, to search for a further interval past it)
@@ -339,7 +380,7 @@ o<lathe_level_pass> sub
 	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
 	(knows where this level reached and carries on past it.)
 	o<shrt> if [#<_pl_min_pass> GT 0]
-		o<shrt2> if [ABS[#<z_end_cut> - #<w_from>] LT #<_pl_min_pass>]
+		o<shrt2> if [ABS[#<z_end_cut> - #<z_start>] LT #<_pl_min_pass>]
 			o<lathe_level_pass> return
 		o<shrt2> endif
 	o<shrt> endif
@@ -393,14 +434,14 @@ o<lathe_level_pass> sub
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<_li_reff> GT 0]
-			o<fillet_lead> CALL [#<w_from>] [#<level>] [-#<z_dir>] [0] [#<li_bz>] [#<li_bx>] [#<_li_reff>] [#<z_dir>]
+			o<fillet_lead> CALL [#<z_start>] [#<level>] [-#<z_dir>] [0] [#<li_bz>] [#<li_bx>] [#<_li_reff>] [#<z_dir>]
 		o<li_geom> endif
 
 		o<li_base> if [#<_flt_ok>]
 			#<li_baz> = #<_flt_t1z>
 			#<li_bax> = #<_flt_t1x>
 		o<li_base> else
-			#<li_baz> = #<w_from>
+			#<li_baz> = #<z_start>
 			#<li_bax> = #<level>
 		o<li_base> endif
 
@@ -421,14 +462,14 @@ o<lathe_level_pass> sub
 			(tangent blend from the lead-in line into the pass's own)
 			(direction, instead of a sharp corner)
 			o<li_arc_d> if [#<_flt_cw>]
-				G2 X[#<level> * #<_diameter_mode>] Z#<w_from> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+				G2 X[#<level> * #<_diameter_mode>] Z#<z_start> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
 			o<li_arc_d> else
-				G3 X[#<level> * #<_diameter_mode>] Z#<w_from> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+				G3 X[#<level> * #<_diameter_mode>] Z#<z_start> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
 			o<li_arc_d> endif
 		o<li_arc> endif
 		F#<pass_feed>
 	o<lead_in> else
-		G0 Z[#<w_from> + #<z_dir> * #<_pl_z_clear>]
+		G0 Z[#<z_start> + #<z_dir> * #<_pl_z_clear>]
 		G0 X[#<level> * #<_diameter_mode>]
 	o<lead_in> endif
 

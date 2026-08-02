@@ -111,18 +111,26 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   sin 13° is 0.0044 mm of Z. **So the Python construction and the subroutine's
   now agree to within their own tolerance**, which is what step 2b needs.
 
-  **Step 2b — what is left.** `lathe_level_pass` gains `z_start`, used ONLY for
-  the approach, the lead-in geometry and the pass-length tests; its scan, its
-  stop and its block test keep the floor allowance untouched, which is what
-  greatEndian asked for - by the stop the pass is already down on the floor.
-  The entry Z comes from the new table, and travels as a GLOBAL
-  (`#<_pl_entry_z>`), never as a 15th argument. Both traps already hit and
-  recorded: a local first assigned inside a branch reads as "not defined" under
-  LinuxCNC's load-time pre-parse, so it needs initialising at the top of the
-  sub, and the global needs a `create_defaults()` line.
+  **Step 2b — DONE.** `lathe_level_pass` gains `z_start`, resolved by walking
+  the table Python emitted - no offsetting of its own, no second scan, no extra
+  CALL argument. `w_from` still governs the crossing scan, the stop and the
+  block test, so the floor allowance is untouched exactly as asked.
 
-  Target, measured: the entry lands at **Z-49.203** against **Z-51.462**, and
-  the eight intervals behind the peak must survive - 243 moves, 147 cutting.
+  Measured against a baseline generated and parsed under its own library state:
+
+  | | before | after |
+  |---|---|---|
+  | moves / cutting moves | 243 / 147 | 243 / 147 |
+  | level cuts | 26 | **27** |
+  | roughing cut length | 466.4 mm | **487.0 mm** |
+  | gouges into the reachable contour | 0 | **0** |
+  | uncut behind the peak | 36.1 mm | **20.3 mm** |
+  | gap per level | 4.512 mm | **2.254 mm** |
+  | levels NOT behind the peak | - | **ends unchanged, all 18** |
+
+  2.254 against the 2.258 target - the difference is the scan's own `l_eff`
+  epsilon. No extra air moves, one extra interval now reachable, and 20.6 mm
+  more metal actually removed.
 
   *Method note, paid for three times over in this session: an .ngc generated
   earlier in the session is not a safe baseline, and neither is a toolpath
@@ -132,6 +140,13 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
+
+- [ ] **`test_skip_short` has lost its case.** The entry extension lengthened
+  every level on testing_15_2 past 2.5x the nose diameter, so nothing is short
+  enough to skip there any more and the "does it skip at all" control is
+  unexercised - it now prints SKIP with the reason rather than passing
+  silently. The orphan-entry check, which is the real regression guard, still
+  runs. Needs a project that still has a short level.
 
 ## Tool shape — the one live question
 
