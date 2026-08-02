@@ -15,128 +15,11 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `5b14d7f`.
+Branch: `liveTooling`. Last pushed: `c21dccd`.
 
 ---
 
 ## Next — before anything else
-
-- [ ] **Lead-in shape after a boss segment is wrong.** greatEndian's call:
-  **repair this first**, ahead of the tool-shape question and everything
-  queued behind it. Case: `photo/leadInPresent_0.png` (now) against
-  `photo/leadInNewAndRight_1.png` (wanted), on testing_15_2 with lead-in
-  length and radius both 0.
-
-  **Agreed specification** — confirmed 2026-08-01, applies to **ROUGHING
-  passes only** (check the pre-finish and finish passes later, see below).
-  Roughing runs Front to back, so the RIGHT-hand end of each level is where
-  it starts.
-
-  1. **Each level starts ON the contour, not short of it.** Today every level
-     stops short and leaves a staircase of uncut steps; the orange segments in
-     the picture are that missing metal. The level continues at its own
-     diameter until it meets the offset contour below.
-  2. **The offset contour** is the pre-finish contour copied outward by the
-     **roughing depth of cut** — the yellow line in the picture.
-  3. **The entry is three pieces**, outside inwards: a straight *real lead-in*
-     through air, a tangent *lead-in radius* arc, then a straight segment that
-     copies the profile at the **profile's own angle** and meets the contour
-     tangentially, so the tool is already travelling parallel to the surface
-     when it arrives instead of driving in at 45°.
-  4. That copied segment has a **constant length**.
-
-  **Measured on testing_15_2**, on a file that matches greatEndian's own
-  screenshot exactly (`147 cutting moves, 96 rapids`):
-
-  - **8 intervals enter the volume behind the peak**, and each starts
-    **4.512 mm short in Z** of the ramp - the same figure on all eight, so it
-    is one wrong constant, not an accumulating error. **36.1 mm of uncut metal
-    in total**, which is the staircase in the picture.
-  - The other end of those intervals is fine: they stop 1.016 mm off the end
-    wall, which is the floor allowance against a vertical and correct.
-
-  **Step 1 — the constant, printed not derived** (two derivations had already
-  come out wrong):
-
-      LVLIN  level=29.652  cross_t=1.016000
-      LVLD   lvl_d=1.016  step_target=21.016  final_radius=20.000
-             fin_off=0.508  prefin=0.254  rough_cut=0.508
-
-  `cross_t` is **1.016 mm**, applied perpendicular to each contour segment: the
-  finish offset 0.508 plus one whole roughing depth of cut 0.508, the second
-  from *Space passes from = Final contour* rounding the configured 0.254
-  pre-finish allowance up to a whole depth of cut. On the 13° ramp that is
-  1.016 / sin 13° = **4.517 mm** of Z. Confirmed.
-
-  So the levels stop exactly on the roughing floor as designed, and step 2 is a
-  **specification change**: enter at **one roughing depth of cut** (0.508),
-  which is 2.258 mm of Z instead of 4.517.
-
-  **Step 2a — the entry contour, in Python. DONE.** The standing rule
-  redirected this: instead of teaching the subroutine to resolve a second
-  resume point at a second allowance - which needed a 15th CALL argument the
-  interpreter refuses ("Command too long") and a second untestable scan -
-  Python offsets the contour once, at generation time, and emits a table.
-
-  - `lathe_sections.entry_contour()` offsets the reachable contour outward by
-    one roughing depth of cut, by **exactly the rule lathe_level_pass uses**
-    (per-segment outward normal, consecutive ends joined by a straight
-    connector), so the entry and the stop are measured off the same
-    construction. Side follows the roughing direction, so front-to-back and
-    back-to-front both come out right.
-  - `build_entry_contour_gcode()` emits it at `_pl_entry_base` / `_pl_entry_n`.
-  - Table space: FC_TOP 4400 → 4200, ENTRY 4200-4400. Both bounded, both refuse
-    rather than run into a neighbour; `test_table_layout` covers it.
-  - The roughing depth of cut reaches generation-time Python by the route the
-    flank length already takes - `TOOL_TABLE.save_rough_cut` from the Tool
-    Change's own cut depth.
-  - On testing_15_2 the table comes out 38 points, and **motion is
-    byte-identical**: 244 calls before and after, because nothing reads it yet.
-
-  **A silent factor of two, found by cross-checking rather than by reading.**
-  The first version offset the profile in the DIAMETERS `resolve_points`
-  returns, using a RADIUS offset. A perpendicular offset is not the same
-  construction in the two spaces - the ramp that measures 13° in radius
-  measures 24.78° in diameter - so it landed at **Z-48.161 where the
-  interpreter's own scan at the same allowance gives Z-49.203**, exactly half
-  the shift, with nothing to show for it. Fixed by offsetting in radius.
-
-  | level r | Python entry Z | interpreter scan | error |
-  |---|---|---|---|
-  | 29.652 | -49.208 | -49.203 | 0.005 mm |
-  | 29.144 | -51.408 | -51.404 | 0.004 mm |
-  | 28.636 | -53.609 | -53.604 | 0.005 mm |
-
-  The residual is the scan's own `l_eff` epsilon: 0.001 mm of radius over
-  sin 13° is 0.0044 mm of Z. **So the Python construction and the subroutine's
-  now agree to within their own tolerance**, which is what step 2b needs.
-
-  **Step 2b — DONE.** `lathe_level_pass` gains `z_start`, resolved by walking
-  the table Python emitted - no offsetting of its own, no second scan, no extra
-  CALL argument. `w_from` still governs the crossing scan, the stop and the
-  block test, so the floor allowance is untouched exactly as asked.
-
-  Measured against a baseline generated and parsed under its own library state:
-
-  | | before | after |
-  |---|---|---|
-  | moves / cutting moves | 243 / 147 | 243 / 147 |
-  | level cuts | 26 | **27** |
-  | roughing cut length | 466.4 mm | **487.0 mm** |
-  | gouges into the reachable contour | 0 | **0** |
-  | uncut behind the peak | 36.1 mm | **20.3 mm** |
-  | gap per level | 4.512 mm | **2.254 mm** |
-  | levels NOT behind the peak | - | **ends unchanged, all 18** |
-
-  2.254 against the 2.258 target - the difference is the scan's own `l_eff`
-  epsilon. No extra air moves, one extra interval now reachable, and 20.6 mm
-  more metal actually removed.
-
-  *Method note, paid for three times over in this session: an .ngc generated
-  earlier in the session is not a safe baseline, and neither is a toolpath
-  parsed earlier - `parse_program` re-runs the interpreter against whatever
-  `lib/lathe` is on disk AT THAT MOMENT. Generate and parse both sides in one
-  run, with the file state you mean.*
 
 - [ ] **Roughing pass ENDINGS stand off the pre-finish contour, everywhere.**
   greatEndian in AXIS, 2026-08-02, after step 2b landed: the behind-boss entry
@@ -186,6 +69,10 @@ Branch: `liveTooling`. Last pushed: `5b14d7f`.
   runs. Needs a project that still has a short level.
 
 ## Tool shape
+
+> The tool as it stands is written up in full in **`TOOL-DEFINITION.md`** —
+> every line, where each number comes from, and what the collision check counts
+> as tool. Read that before changing any of it.
 
 - [ ] **Rework the tool dimensions and the visualisation onto a CAM
   package's own tool template.** greatEndian, 2026-08-02, after seeing the
@@ -318,6 +205,124 @@ Branch: `liveTooling`. Last pushed: `5b14d7f`.
 ---
 
 ## Done
+
+- [x] **Lead-in shape after a boss segment — CLOSED**, confirmed in
+  AXIS by greatEndian 2026-08-02, all four parts.  Originally: greatEndian's call:
+  **repair this first**, ahead of the tool-shape question and everything
+  queued behind it. Case: `photo/leadInPresent_0.png` (now) against
+  `photo/leadInNewAndRight_1.png` (wanted), on testing_15_2 with lead-in
+  length and radius both 0.
+
+  **Agreed specification** — confirmed 2026-08-01, applies to **ROUGHING
+  passes only** (check the pre-finish and finish passes later, see below).
+  Roughing runs Front to back, so the RIGHT-hand end of each level is where
+  it starts.
+
+  1. **Each level starts ON the contour, not short of it.** Today every level
+     stops short and leaves a staircase of uncut steps; the orange segments in
+     the picture are that missing metal. The level continues at its own
+     diameter until it meets the offset contour below.
+  2. **The offset contour** is the pre-finish contour copied outward by the
+     **roughing depth of cut** — the yellow line in the picture.
+  3. **The entry is three pieces**, outside inwards: a straight *real lead-in*
+     through air, a tangent *lead-in radius* arc, then a straight segment that
+     copies the profile at the **profile's own angle** and meets the contour
+     tangentially, so the tool is already travelling parallel to the surface
+     when it arrives instead of driving in at 45°.
+  4. That copied segment has a **constant length**.
+
+  **Measured on testing_15_2**, on a file that matches greatEndian's own
+  screenshot exactly (`147 cutting moves, 96 rapids`):
+
+  - **8 intervals enter the volume behind the peak**, and each starts
+    **4.512 mm short in Z** of the ramp - the same figure on all eight, so it
+    is one wrong constant, not an accumulating error. **36.1 mm of uncut metal
+    in total**, which is the staircase in the picture.
+  - The other end of those intervals is fine: they stop 1.016 mm off the end
+    wall, which is the floor allowance against a vertical and correct.
+
+  **Step 1 — the constant, printed not derived** (two derivations had already
+  come out wrong):
+
+      LVLIN  level=29.652  cross_t=1.016000
+      LVLD   lvl_d=1.016  step_target=21.016  final_radius=20.000
+             fin_off=0.508  prefin=0.254  rough_cut=0.508
+
+  `cross_t` is **1.016 mm**, applied perpendicular to each contour segment: the
+  finish offset 0.508 plus one whole roughing depth of cut 0.508, the second
+  from *Space passes from = Final contour* rounding the configured 0.254
+  pre-finish allowance up to a whole depth of cut. On the 13° ramp that is
+  1.016 / sin 13° = **4.517 mm** of Z. Confirmed.
+
+  So the levels stop exactly on the roughing floor as designed, and step 2 is a
+  **specification change**: enter at **one roughing depth of cut** (0.508),
+  which is 2.258 mm of Z instead of 4.517.
+
+  **Step 2a — the entry contour, in Python. DONE.** The standing rule
+  redirected this: instead of teaching the subroutine to resolve a second
+  resume point at a second allowance - which needed a 15th CALL argument the
+  interpreter refuses ("Command too long") and a second untestable scan -
+  Python offsets the contour once, at generation time, and emits a table.
+
+  - `lathe_sections.entry_contour()` offsets the reachable contour outward by
+    one roughing depth of cut, by **exactly the rule lathe_level_pass uses**
+    (per-segment outward normal, consecutive ends joined by a straight
+    connector), so the entry and the stop are measured off the same
+    construction. Side follows the roughing direction, so front-to-back and
+    back-to-front both come out right.
+  - `build_entry_contour_gcode()` emits it at `_pl_entry_base` / `_pl_entry_n`.
+  - Table space: FC_TOP 4400 → 4200, ENTRY 4200-4400. Both bounded, both refuse
+    rather than run into a neighbour; `test_table_layout` covers it.
+  - The roughing depth of cut reaches generation-time Python by the route the
+    flank length already takes - `TOOL_TABLE.save_rough_cut` from the Tool
+    Change's own cut depth.
+  - On testing_15_2 the table comes out 38 points, and **motion is
+    byte-identical**: 244 calls before and after, because nothing reads it yet.
+
+  **A silent factor of two, found by cross-checking rather than by reading.**
+  The first version offset the profile in the DIAMETERS `resolve_points`
+  returns, using a RADIUS offset. A perpendicular offset is not the same
+  construction in the two spaces - the ramp that measures 13° in radius
+  measures 24.78° in diameter - so it landed at **Z-48.161 where the
+  interpreter's own scan at the same allowance gives Z-49.203**, exactly half
+  the shift, with nothing to show for it. Fixed by offsetting in radius.
+
+  | level r | Python entry Z | interpreter scan | error |
+  |---|---|---|---|
+  | 29.652 | -49.208 | -49.203 | 0.005 mm |
+  | 29.144 | -51.408 | -51.404 | 0.004 mm |
+  | 28.636 | -53.609 | -53.604 | 0.005 mm |
+
+  The residual is the scan's own `l_eff` epsilon: 0.001 mm of radius over
+  sin 13° is 0.0044 mm of Z. **So the Python construction and the subroutine's
+  now agree to within their own tolerance**, which is what step 2b needs.
+
+  **Step 2b — DONE.** `lathe_level_pass` gains `z_start`, resolved by walking
+  the table Python emitted - no offsetting of its own, no second scan, no extra
+  CALL argument. `w_from` still governs the crossing scan, the stop and the
+  block test, so the floor allowance is untouched exactly as asked.
+
+  Measured against a baseline generated and parsed under its own library state:
+
+  | | before | after |
+  |---|---|---|
+  | moves / cutting moves | 243 / 147 | 243 / 147 |
+  | level cuts | 26 | **27** |
+  | roughing cut length | 466.4 mm | **487.0 mm** |
+  | gouges into the reachable contour | 0 | **0** |
+  | uncut behind the peak | 36.1 mm | **20.3 mm** |
+  | gap per level | 4.512 mm | **2.254 mm** |
+  | levels NOT behind the peak | - | **ends unchanged, all 18** |
+
+  2.254 against the 2.258 target - the difference is the scan's own `l_eff`
+  epsilon. No extra air moves, one extra interval now reachable, and 20.6 mm
+  more metal actually removed.
+
+  *Method note, paid for three times over in this session: an .ngc generated
+  earlier in the session is not a safe baseline, and neither is a toolpath
+  parsed earlier - `parse_program` re-runs the interpreter against whatever
+  `lib/lathe` is on disk AT THAT MOMENT. Generate and parse both sides in one
+  run, with the file state you mean.*
 
 - [x] **The block is gone; its reference lines close the tool** — greatEndian
   in AXIS, `photo/toolFlank_3.png`, "now" against "then". Drawn as a square of
