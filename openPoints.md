@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `0e399e0`.
+Branch: `liveTooling`. Last pushed: `7ed2b8c`.
 
 ---
 
@@ -187,6 +187,25 @@ Branch: `liveTooling`. Last pushed: `0e399e0`.
 
 ## Tool shape
 
+- [ ] **Rework the tool dimensions and the visualisation onto a CAM
+  package's own tool template.** greatEndian, 2026-08-02, after seeing the
+  shank in AXIS. What we have is built up from what LinuxCNC's tool table
+  happens to carry — nose radius, orientation, front and back angle — plus two
+  numbers bolted onto the Tool Change (flank length, shank height). A CAM
+  package defines a turning tool as one object: insert designation, holder
+  designation, hand, and a drawn profile that follows from them. That is the
+  shape to move to, and it decides which of our numbers survive.
+
+  **Needs the reference material first** — a screenshot or export of the tool
+  definition dialog we are to follow, into `ref/tool-template/`, then
+  `/ref-intake`: restate it as a parameter table in our vocabulary and confirm
+  before any code. Do not start from a guess at what the template contains.
+
+  Known to be affected: the flank length (whether it stays a separate number
+  at all), the shank height field added today, the over-90° angle cases below,
+  and whether the drawn tool keeps coming out of the tool table or out of its
+  own definition.
+
 - [ ] **A front or back angle over 90° still has no defined contour.** The
   construction puts an edge at 90 − angle from Z, so past 90° it leans the
   other way and the shape stops meaning what it means for a normal insert.
@@ -299,6 +318,35 @@ Branch: `liveTooling`. Last pushed: `0e399e0`.
 ---
 
 ## Done
+
+- [x] **The block is gone; its reference lines close the tool** — greatEndian
+  in AXIS, `photo/toolFlank_3.png`, "now" against "then". Drawn as a square of
+  its own it read as a second object floating clear of the tool it belongs to.
+  The square is no longer drawn at all. Instead its **near side becomes the
+  tool's right-hand reference** and its **far side becomes the tool's bottom**,
+  so the silhouette is one continuous body from the nose down.
+
+  Measured on a 0.8 mm nose, orientation 2, front 15 / back 75, 25 mm shank:
+
+  | | |
+  |---|---|
+  | right-hand reference | Z +12.598 from the tip, one line of constant Z |
+  | bottom | r +37.598 from the tip = insert 12.6 + shank 25 |
+  | joined by | the front cutting edge, run on to the bottom line |
+  | closing points | 4, up from 3 |
+  | radial extent at a 20 mm shank | 32.60 mm — **exactly 5 mm less**, the shank difference and nothing else |
+
+  The collision check still uses the **full 160 mm block**, which the picture
+  no longer shows: what fouls a shoulder is the holder running back to the
+  turret, and a check that stopped where the drawing stops would be a drawing
+  rather than a check. Still 0 hits on the demo program at 12, 25 and 32 mm.
+
+  Two things this broke on the way. The collision body was taking the last
+  **three** points of the outline, which silently dropped the new bottom line -
+  most of the tool. `tool_silhouette` now reports how many closing points there
+  are in `parts['tail']`. And `tool_shank` measured its anchor off the returned
+  outline, which now runs down to the bottom line - that set the block one
+  whole shank height too far out. It takes the insert corners from `parts`.
 
 - [x] **How the tool is bounded: by its SHANK** — greatEndian supplied the ISO
   holder relationships 2026-08-02, kept in `ref/tool-shank/NOTES.md`. Decided:

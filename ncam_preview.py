@@ -1053,14 +1053,6 @@ SHANK_TABLE = (
     (32.0, 180.0, 16.0),
 )
 
-# How much of the shank is DRAWN, as a multiple of its own height. The whole
-# holder is 6 to 8 times its shank and would be most of the picture next to a
-# 60 mm part; the collision check uses the full l1 regardless, so nothing is
-# missed by drawing less. A multiple rather than a millimetre figure so it
-# means the same thing on an inch machine.
-SHANK_STUB = 1.0
-
-
 def shank_dims(shank_h):
     """(overall length l1, insert edge length) for a shank height, or None.
 
@@ -1131,13 +1123,16 @@ def tool_shank(pos, nose_r, orient, front_deg=None, back_deg=None,
         # is none
         return None
     z0, x0 = pos[2], pos[0]
-    ins = tool_silhouette(pos, nose_r, orient, front_deg, back_deg, 0.0,
-                          cl_deg, None, shank_h)
-    if ins:
-        # the insert's far corners: its extreme in Z and its extreme in radius,
-        # each taken on the body's side
-        z0 = max(p[0] for p in ins) if zdir > 0 else min(p[0] for p in ins)
-        x0 = max(p[1] for p in ins) if xdir > 0 else min(p[1] for p in ins)
+    parts = {}
+    if tool_silhouette(pos, nose_r, orient, front_deg, back_deg, 0.0,
+                       cl_deg, parts, shank_h) and 'e_f' in parts:
+        # The INSERT's far corners, taken from parts rather than from the
+        # returned outline: that outline now runs on down to the bottom
+        # reference line, and measuring its extremes would set the block off
+        # from there instead - one shank height too far out, every time.
+        corners = (parts['e_f'], parts['e_b'])
+        z0 = (max if zdir > 0 else min)(p[0] for p in corners)
+        x0 = (max if xdir > 0 else min)(p[1] for p in corners)
     lz = dims[0] if length is None else min(length, dims[0])
     z1, x1 = z0 + zdir * lz, x0 + xdir * shank_h
     return [(z0, x0), (z1, x0), (z1, x1), (z0, x1)]
@@ -1214,6 +1209,7 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     # tangent to the nose circle on the side the body is NOT, the second one
     # flank length further into the body.
     zdir = 1.0 if dz > 1e-9 else (-1.0 if dz < -1e-9 else 0.0)
+    xdir = 1.0 if dx > 1e-9 else (-1.0 if dx < -1e-9 else 0.0)
     if zdir == 0.0:
         return None                 # straight facing or boring: no Z extent
     z_lead = cz - zdir * nose_r
@@ -1265,7 +1261,34 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
         ts.sort()
     arc = [(cz + math.cos(a_f + span * t) * nose_r,
             cx + math.sin(a_f + span * t) * nose_r) for t in ts]
-    return arc + [e_b, e_f]
+    ins = arc + [e_b, e_f]
+    if parts is not None:
+        parts['tail'] = 3
+    if dims is None or not xdir:
+        return ins
+
+    # THE SHANK IS NOT DRAWN AS A BLOCK OF ITS OWN. Its two near reference
+    # lines close the tool instead: the side facing the cut becomes the tool's
+    # right-hand reference, and the far side becomes the tool's bottom.
+    # greatEndian, photo/toolFlank_3.png - drawn as a separate square it read
+    # as a second object floating clear of the tool it belongs to, which is
+    # exactly what it looked like in AXIS.
+    z_ref = max(p[0] for p in ins) if zdir > 0 else min(p[0] for p in ins)
+    x_far = max(p[1] for p in ins) if xdir > 0 else min(p[1] for p in ins)
+    x_bot = x_far + xdir * shank_h
+    if abs(d_f[1]) < 1e-9:
+        return ins                  # a front edge parallel to Z never gets down
+    k = (x_bot - t_f[1]) / d_f[1]
+    if k <= 0:
+        return ins
+    down = (t_f[0] + d_f[0] * k, x_bot)
+    if (down[0] - z_ref) * zdir > 0:
+        # a shallow front edge would run out past the right-hand reference
+        # before it ever reached the bottom one; the reference wins
+        down = (z_ref, x_bot)
+    if parts is not None:
+        parts.update(z_ref=z_ref, x_bot=x_bot, tail=4)
+    return arc + [e_b, (z_ref, x_bot), down]
 
 
 def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
@@ -1360,19 +1383,8 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         holder = (tool_holder(pos, nose_r, orient, front_deg, back_deg,
                               flank_len, cl_deg, shank_h)
                   if plane == 'ZX' else None)
-        # only a stub of it - see SHANK_STUB. Drawn FIRST so the insert and
-        # the holder face sit on top of it rather than under.
-        shank = (tool_shank(pos, nose_r, orient, front_deg, back_deg,
-                            shank_h, cl_deg, length=shank_h * SHANK_STUB)
-                 if plane == 'ZX' else None)
-        if shank:
-            cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
-            first = True
-            for pz, prx in shank:
-                (cr.move_to if first else cr.line_to)(pz * s + ox, prx * s + oy)
-                first = False
-            cr.close_path()
-            cr.fill()
+        # the shank is NOT drawn as a block of its own - the silhouette above
+        # already closes on its two reference lines. See tool_silhouette.
         if holder:
             # the SAME grey as the insert: the two are one tool, and the
             # split was only ever a way of showing which part is which
@@ -1616,29 +1628,34 @@ def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
     """
     if not tp.moves or not stock or nose_r <= 0:
         return []
+    parts0 = {}
     poly0 = tool_silhouette((0.0, 0.0, 0.0), nose_r, orient, front_deg,
-                            back_deg, flank_len, cl_deg, None, shank_h)
+                            back_deg, flank_len, cl_deg, parts0, shank_h)
     if not poly0:
         return []
-    # The shank at its FULL length, however little of it is drawn: what fouls a
-    # shoulder is the block, and a check that stopped where the picture stops
-    # would be a picture rather than a check.
+    # The shank at its FULL length, which the picture no longer shows at all:
+    # what fouls a shoulder is the block running back to the turret, and a
+    # check that stopped where the drawing stops would be a drawing rather
+    # than a check.
     shank0 = tool_shank((0.0, 0.0, 0.0), nose_r, orient, front_deg,
                         back_deg, shank_h, cl_deg)
     # the outline in TOOL coordinates, once - it does not change shape as the
     # tool moves, so it is built here and translated per sample
     whole = _outline_samples(poly0)
-    # The BACK flank and the cap behind it - and nothing else. tool_silhouette
-    # returns the nose arc first and then the two cap intersections, so the
-    # last three points are exactly (back tangent, back edge end, front edge
-    # end): the back edge and the cap across the tail of the tool.
+    # The BACK flank and everything closing behind it - and nothing else.
+    # tool_silhouette returns the nose arc first and then the closing points,
+    # and says in `tail` how many of them there are: three for the flank-length
+    # cap (back tangent, back edge end, front edge end), four once the shank's
+    # reference lines close it (back tangent, back edge end, the corner, the
+    # front edge down at the bottom line). Hard-coding three dropped the
+    # bottom line, which is most of the tool.
     #
     # The nose and the FRONT edge are left out on purpose. Both are cutting
     # surfaces - the nose is the cut and the front edge is where the chip
     # comes off - so testing them reports every roughing pass as a collision,
     # which is what the first run of this did: 21 hits on a clean program, all
     # of them the front edge doing its job.
-    body = _outline_samples(list(poly0[-3:]), closed=False)
+    body = _outline_samples(list(poly0[-parts0.get('tail', 3):]), closed=False)
     if shank0:
         # all of it, both for a rapid and for a feed - no part of the holder is
         # ever entitled to be in metal

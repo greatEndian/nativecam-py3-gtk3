@@ -280,9 +280,11 @@ def main():
               w1 and abs(w1 - FLANK * 6.0) <= 3,
               '%d px for a %g mm tool at 6 px/mm' % (w1, FLANK))
 
-        # and the shank is really put on the canvas, not merely computed. A
-        # point 20 mm behind and 20 mm out is well past the 12.6 mm insert,
-        # so it is background unless the block is drawn.
+        # The block is no longer drawn as a square of its own; the tool runs
+        # down to its bottom line instead. Two probes: one 30 mm below the tip
+        # and just inside the right-hand reference, which must be tool, and
+        # one 20 mm to the RIGHT of the tip where the square used to sit,
+        # which must now be background.
         W = H = 500
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
         cr = cairo.Context(surf)
@@ -290,12 +292,18 @@ def main():
                     FRONT, BACK, FLANK, 25.0)
         surf.flush()
         data, stride = surf.get_data(), surf.get_stride()
-        px = int((POS[2] + 20.0) * 6.0 + 120.0)
-        py = int((POS[0] + 20.0) * 6.0 + 60.0)
-        check('the shank is drawn, not just computed',
-              data[py * stride + px * 4 + 3] > 0,
-              'nothing at (20, 20) mm, which is inside the block and outside '
-              'the insert')
+
+        def alpha(dz, dr):
+            x = int((POS[2] + dz) * 6.0 + 120.0)
+            y = int((POS[0] + dr) * 6.0 + 60.0)
+            return data[y * stride + x * 4 + 3]
+
+        check('the tool runs down to the bottom reference line',
+              alpha(10.0, 30.0) > 0,
+              'nothing 30 mm below the tip, which is inside the body')
+        check('and the separate grey block is gone',
+              alpha(20.0, 20.0) == 0,
+              'still inked 20 mm to the right of the tip, where the square was')
 
     # --- the shank: what actually bounds the tool -------------------------
     # Without one the outline closes on a Z-perpendicular cap a flank length
@@ -326,28 +334,66 @@ def main():
     edge = P.shank_dims(SH)[1]
     ins = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK, shank_h=SH)
     check('a shank height gives a silhouette', ins is not None)
+    prt = {}
+    P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK, parts=prt, shank_h=SH)
     if ins:
-        t_f, t_b, e_b, e_f = ins[0], ins[-3], ins[-2], ins[-1]
+        # arc ... back tangent, back edge end, the corner, the front edge down
+        # at the bottom line
+        t_f, t_b, e_b = ins[0], ins[-4], ins[-3]
+        corner, down = ins[-2], ins[-1]
+        check('the outline closes on four points, not three',
+              prt.get('tail') == 4, 'tail = %s' % prt.get('tail'))
         check('the back edge runs exactly one insert edge length',
               abs(math.hypot(e_b[0] - t_b[0], e_b[1] - t_b[1]) - edge) < 1e-9,
               'measured %.4f, wanted %g'
               % (math.hypot(e_b[0] - t_b[0], e_b[1] - t_b[1]), edge))
-        check('and so does the front edge',
-              abs(math.hypot(e_f[0] - t_f[0], e_f[1] - t_f[1]) - edge) < 1e-9,
-              'measured %.4f, wanted %g'
-              % (math.hypot(e_f[0] - t_f[0], e_f[1] - t_f[1]), edge))
+        check('the insert edge is the one the shank carries',
+              abs(math.hypot(prt['e_f'][0] - t_f[0],
+                             prt['e_f'][1] - t_f[1]) - edge) < 1e-9,
+              'the front edge of the insert is not %g mm' % edge)
+
+        # The block is NOT drawn as a square of its own any more. Its near side
+        # is the tool's right-hand reference and its far side is the tool's
+        # bottom - greatEndian, photo/toolFlank_3.png, where the separate
+        # square read as a second object floating clear of its own tool.
+        check('the right-hand reference is one line of constant Z',
+              abs(corner[0] - e_b[0]) < 1e-9,
+              'Z%.4f against Z%.4f' % (corner[0], e_b[0]))
+        check('and the bottom is one line of constant radius',
+              abs(corner[1] - down[1]) < 1e-9,
+              'r%.4f against r%.4f' % (corner[1], down[1]))
+        check('the bottom sits one shank height below the insert',
+              abs(corner[1] - (prt['e_f'][1] + SH)) < 1e-9,
+              'r%.4f, wanted r%.4f' % (corner[1], prt['e_f'][1] + SH))
+        check('the point on the bottom line is on the front cutting edge',
+              abs((down[0] - t_f[0]) * (prt['e_f'][1] - t_f[1])
+                  - (down[1] - t_f[1]) * (prt['e_f'][0] - t_f[0])) < 1e-6,
+              'the bottom line is joined by something other than the edge')
+
+        # The tool is bigger than the old flank outline, and that is the point:
+        # it now includes the block it is clamped in. What matters is that it
+        # is BOUNDED - the flank version runs away, this one does not.
         rad = max(p[1] for p in ins) - min(p[1] for p in ins)
-        old = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK)
-        old_rad = max(p[1] for p in old) - min(p[1] for p in old)
-        check('so the insert is bounded by itself, not by the flank',
-              rad < old_rad,
-              '%.2f mm radially with a shank, %.2f without - no better'
-              % (rad, old_rad))
-        check('and no bigger than the edge that draws it',
-              rad <= edge * 1.05,
-              '%.2f mm radially for a %g mm insert' % (rad, edge))
+        loose = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK * 4)
+        loose_rad = max(p[1] for p in loose) - min(p[1] for p in loose)
+        check('a flank-bounded tool still runs away as the flank grows',
+              loose_rad > 90.0,
+              'only %.2f mm at a %g mm flank - the premise has changed'
+              % (loose_rad, FLANK * 4))
+        check('a shank-bounded one does not move at all',
+              rad < loose_rad,
+              '%.2f mm with a shank against %.2f mm at the same flank'
+              % (rad, loose_rad))
+        # 20 and 25 mm shanks carry the SAME 12 mm insert, so the difference
+        # between them is the shank height and nothing else
+        r20 = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK, shank_h=20.0)
+        d20 = max(p[1] for p in r20) - min(p[1] for p in r20)
+        check('and it follows the shank height exactly',
+              abs((rad - d20) - (SH - 20.0)) < 1e-9,
+              '%.2f mm at 25, %.2f at 20 - a %.2f mm difference for 5'
+              % (rad, d20, rad - d20))
         far = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK * 4, shank_h=SH)
-        check('the flank length no longer changes the drawn insert at all',
+        check('the flank length no longer changes the drawn tool at all',
               far == ins,
               'quadrupling the flank moved it, so it is still the bound')
 
@@ -369,23 +415,29 @@ def main():
         near_z = min(p[0] for p in sh)
         near_x = min(p[1] for p in sh)
         check('its corner is behind the insert in Z, not on the tip',
-              abs(near_z - max(p[0] for p in ins)) < 1e-9,
+              abs(near_z - prt['e_b'][0]) < 1e-9,
               'starts at Z%.4f, the insert ends at Z%.4f'
-              % (near_z, max(p[0] for p in ins)))
+              % (near_z, prt['e_b'][0]))
         check('and outside it radially, so the insert stands proud',
-              abs(near_x - max(p[1] for p in ins)) < 1e-9
-              and near_x > POS[0] + 1e-9,
+              abs(near_x - prt['e_f'][1]) < 1e-9 and near_x > POS[0] + 1e-9,
               'starts at r%.4f, the insert reaches r%.4f'
-              % (near_x, max(p[1] for p in ins)))
+              % (near_x, prt['e_f'][1]))
+        # and the block picks up exactly where the drawn tool stops, so the two
+        # are one solid: measuring the block off the EXTENDED outline instead
+        # set it a whole shank height too far out
+        check('the block starts at the tool bottom, not below it',
+              abs(max(p[1] for p in sh) - max(p[1] for p in ins)) < 1e-9,
+              'block reaches r%.4f, the tool bottom is r%.4f'
+              % (max(p[1] for p in sh), max(p[1] for p in ins)))
         check('lying the way the body does, behind the tip',
               max(p[0] for p in sh) > POS[2]
               and min(p[1] for p in sh) >= POS[0] - 1e-9,
               'the holder is on the cutting side of its own insert')
-        stub = P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH, length=SH * P.SHANK_STUB)
+        stub = P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH, length=SH)
         s_dz = max(p[0] for p in stub) - min(p[0] for p in stub)
-        check('a stub is drawn shorter than the holder really is',
-              s_dz < dz and abs(s_dz - SH * P.SHANK_STUB) < 1e-9,
-              '%.1f mm stub against a %.1f mm holder' % (s_dz, dz))
+        check('it can be asked for short, for anything that wants less',
+              s_dz < dz and abs(s_dz - SH) < 1e-9,
+              '%.1f mm asked for, %.1f mm holder' % (s_dz, dz))
         check('and asking for more than the holder has gives the holder',
               max(p[0] for p in P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH,
                                              length=l1 * 10)) - POS[2]
