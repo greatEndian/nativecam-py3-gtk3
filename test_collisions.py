@@ -134,6 +134,38 @@ def main():
               len(arc) > 3 and all(p not in tail for p in arc),
               '%d arc points, %d tested' % (len(arc), len(tail)))
 
+    # --- 5b. the holder shank ----------------------------------------------
+    # The block behind the insert is the thing that actually fouls a shoulder,
+    # and it reaches far further than any insert: 160 mm for a 25 mm shank
+    # against a 12 mm cutting edge. Tested 40 mm clear of the bar end so
+    # NOTHING of the insert can reach the metal - if this fires, it is the
+    # block and only the block.
+    SHANK = 25.0
+    far = path([('rapid', (5.0, 0.0, -100.0), (5.0, 0.0, -95.0))])
+    check('the insert alone cannot reach 40 mm past the end of the bar',
+          not find(far), str(find(far)[:1]))
+    blk = find(far, shank_h=SHANK)
+    check('but the holder behind it is driven straight through the bar',
+          bool(blk), 'the block is never tested - which looks like success')
+    if blk:
+        check('and it is inside the bar, not off the end',
+              -60.0 < blk[0].pos[0] < 0.0, 'Z%.2f' % blk[0].pos[0])
+        check('at a radius the block covers, not the tip radius',
+              blk[0].pos[1] > 5.0 + NOSE, 'r%.2f' % blk[0].pos[1])
+
+    check('a clean pass stays clean once the holder is included',
+          not find(turn, shank_h=SHANK), str(find(turn, shank_h=SHANK)[:2]))
+    check('and so does a program that never touches the bar',
+          not find(clear, shank_h=SHANK))
+    # Anchoring the block on the TOOL TIP instead of on the insert put its top
+    # face at the cutting radius, so it swept the whole part behind the tool:
+    # 50 hits on the demo lathe program, which has none, and the same 50 for a
+    # 12 mm shank as for a 25 mm one. The insert stands proud of its pocket.
+    check('the block does not sit at the cutting radius',
+          min(x for _z, x in P.tool_shank((0.0, 0.0, 0.0), NOSE, ORIENT,
+                                          FRONT, BACK, SHANK)) > NOSE,
+          'its top face is level with the tip, so it sweeps the finished size')
+
     # --- 6. it refuses rather than guesses ---------------------------------
     check('no tool angles, no report', not P.collisions(crash, STOCK, NOSE,
                                                         ORIENT, None, None,

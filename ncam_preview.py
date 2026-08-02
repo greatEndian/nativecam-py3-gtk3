@@ -768,7 +768,7 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   tool.get('nose_r', 0.0), tool.get('orient', 0),
                   tool.get('cl_deg'), tool.get('included_deg'),
                   tool.get('front_deg'), tool.get('back_deg'),
-                  tool.get('flank_len', 0.0))
+                  tool.get('flank_len', 0.0), tool.get('shank_h', 0.0))
 
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
@@ -1035,8 +1035,116 @@ def tool_direction(orient, cl_deg=None):
     return 0.0, 0.0
 
 
+# Shank cross-section -> the rest of the holder. From greatEndian's ISO
+# reference, 2026-08-02, kept in ref/tool-shank/NOTES.md: external turning
+# holders are square (b = h), the overall length l1 follows the shank by the
+# ISO length code, and the insert size follows the pocket the shank can carry.
+#
+# l1 here is the MIDPOINT of the length code's range. The insert edge length is
+# the common size for that shank rather than the middle of the stated range - a
+# 25 mm holder carries a CNMG 1204 far more often than a 19 mm insert.
+#
+#   h       l1     insert edge
+SHANK_TABLE = (
+    (12.0, 110.0, 9.0),
+    (16.0, 125.0, 9.0),
+    (20.0, 150.0, 12.0),
+    (25.0, 160.0, 12.0),
+    (32.0, 180.0, 16.0),
+)
+
+# How much of the shank is DRAWN, as a multiple of its own height. The whole
+# holder is 6 to 8 times its shank and would be most of the picture next to a
+# 60 mm part; the collision check uses the full l1 regardless, so nothing is
+# missed by drawing less. A multiple rather than a millimetre figure so it
+# means the same thing on an inch machine.
+SHANK_STUB = 1.0
+
+
+def shank_dims(shank_h):
+    """(overall length l1, insert edge length) for a shank height, or None.
+
+    l1 is INTERPOLATED between the two standard sizes it falls between, and
+    extrapolated proportionally outside them: an inch shank is 25.4 mm against
+    the 25 mm entry and comes out a little longer rather than snapping to the
+    metric number, and a ground-to-fit 22 mm shank lands between the 20 and the
+    25. Nearest-match with a scale factor was tried first and is not monotonic
+    - it made a 22 mm shank longer than a 25 mm one.
+
+    The insert edge is NOT interpolated. Inserts come in standard sizes and
+    12.2 mm is not one of them, so it takes the nearest entry's whole value.
+    """
+    if not shank_h or shank_h <= 0:
+        return None
+    lo = hi = None
+    for row in SHANK_TABLE:
+        if row[0] <= shank_h and (lo is None or row[0] > lo[0]):
+            lo = row
+        if row[0] >= shank_h and (hi is None or row[0] < hi[0]):
+            hi = row
+    edge = min(SHANK_TABLE, key=lambda r: abs(r[0] - shank_h))[2]
+    if lo is None or hi is None:                # off the end of the table
+        row = lo or hi
+        return row[1] * shank_h / row[0], edge
+    if lo[0] == hi[0]:
+        return lo[1], edge
+    f = (shank_h - lo[0]) / (hi[0] - lo[0])
+    return lo[1] + (hi[1] - lo[1]) * f, edge
+
+
+def tool_shank(pos, nose_r, orient, front_deg=None, back_deg=None,
+               shank_h=0.0, cl_deg=None, length=None):
+    """The holder shank behind the insert, as a closed (z, radius) outline.
+
+    A rectangle, shank height radially by overall length in Z, running in the
+    direction the body lies. This is what bounds the tool: before it, the
+    outline closed by extending both cutting edges to a Z-perpendicular cap
+    one flank length back, and the steep front edge needs 3.86 mm of radius per
+    mm of Z - so a 6 mm flank drew a 23 mm tool and a 25 mm flank drew a 94 mm
+    one. An insert is bounded by its own edge length; the block behind it is
+    bounded by the turret, not by anything the flank does.
+
+    ITS CORNER IS ON THE INSERT, NOT ON THE TOOL TIP. The insert stands proud
+    of the block it is clamped in - that is the whole point of a pocket - so
+    the shank starts where the insert's two far corners are, inset behind it in
+    Z and outset from it radially. Anchored on the tip instead, the block's top
+    face lies at the cutting radius itself and sweeps the entire part on the
+    body's side of the tool: on the demo lathe program that reported 50
+    collisions on a program with none, and reported the SAME 50 for a 12 mm
+    shank as for a 25 mm one, which is what gave it away.
+
+    Falls back to the tip when the tool table has no angles to build an insert
+    from - conservative, and it is the only anchor there is.
+
+    `length` shortens it for drawing; the collision check passes None and gets
+    the whole l1. It is never longer than l1 either way.
+    """
+    dims = shank_dims(shank_h)
+    if dims is None or not nose_r or nose_r <= 0:
+        return None
+    dz, dx = tool_direction(orient, cl_deg)
+    zdir = 1.0 if dz > 1e-9 else (-1.0 if dz < -1e-9 else 0.0)
+    xdir = 1.0 if dx > 1e-9 else (-1.0 if dx < -1e-9 else 0.0)
+    if zdir == 0.0 or xdir == 0.0:
+        # a tool pointing straight along Z or straight out has no corner to
+        # hang a rectangle on, and guessing one would put steel where there
+        # is none
+        return None
+    z0, x0 = pos[2], pos[0]
+    ins = tool_silhouette(pos, nose_r, orient, front_deg, back_deg, 0.0,
+                          cl_deg, None, shank_h)
+    if ins:
+        # the insert's far corners: its extreme in Z and its extreme in radius,
+        # each taken on the body's side
+        z0 = max(p[0] for p in ins) if zdir > 0 else min(p[0] for p in ins)
+        x0 = max(p[1] for p in ins) if xdir > 0 else min(p[1] for p in ins)
+    lz = dims[0] if length is None else min(length, dims[0])
+    z1, x1 = z0 + zdir * lz, x0 + xdir * shank_h
+    return [(z0, x0), (z1, x0), (z1, x1), (z0, x1)]
+
+
 def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
-                    flank_len=0.0, cl_deg=None, parts=None):
+                    flank_len=0.0, cl_deg=None, parts=None, shank_h=0.0):
     """The tool as a closed (z, radius) outline in MODEL units, or None.
 
     Built the way the insert actually is, from the tool table plus the flank
@@ -1045,22 +1153,33 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
       - the nose circle of radius R, centred where the orientation puts it;
       - the two cutting edges, tangent to that circle, running at the FRONT
         and BACK angles the tool table gives (both measured from Z+);
-      - two lines perpendicular to Z closing the back of it: one tangent to
-        the nose circle on its leading side, the other one flank length behind
-        that. That second line is the whole point - it is the flank length made
-        visible, and it is the same number the reachable envelope uses to
-        decide how far a wall can shadow the cut.
+      - a back, closing the two of them.
+
+    How that back is drawn depends on whether a SHANK HEIGHT is known:
+
+      - with one, each edge runs its own INSERT EDGE LENGTH - derived from the
+        shank by shank_dims - and the two ends are joined. That is the insert:
+        a nose corner between two edges of a known length, which is what an
+        ISO designation actually specifies. What lies behind it is the shank,
+        returned separately by tool_shank.
+      - without one, the older construction: two lines perpendicular to Z, one
+        tangent to the nose circle on its leading side and the other one flank
+        length behind it, with both edges extended to reach the second. Kept
+        so a project that has never been given a shank draws what it drew
+        before, but it is not a bound - the steep front edge grows 3.86 mm of
+        radius per mm of Z, which is why a 6 mm flank drew a 48 mm tool.
 
     Returns None rather than a guess when the tool table carries no angles, or
-    no flank length is set: a silhouette drawn at invented dimensions is a
-    claim about the tool that nothing supports, and this one is used to judge
-    clearance.
+    neither a shank height nor a flank length is set: a silhouette drawn at
+    invented dimensions is a claim about the tool that nothing supports, and
+    this one is used to judge clearance.
     """
     if not nose_r or nose_r <= 0:
         return None
     if front_deg is None or back_deg is None or front_deg == back_deg:
         return None
-    if not flank_len or flank_len <= 0:
+    dims = shank_dims(shank_h)
+    if dims is None and (not flank_len or flank_len <= 0):
         return None
     dz, dx = tool_direction(orient, cl_deg)
     if not (dz or dx):
@@ -1110,9 +1229,17 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
         return (t0[0] + d[0] * k, t0[1] + d[1] * k)
 
     (t_f, d_f), (t_b, d_b) = edge(front_deg), edge(back_deg)
-    e_f, e_b = to_cap(t_f, d_f), to_cap(t_b, d_b)
-    if e_f is None or e_b is None:
-        return None
+    if dims is not None:
+        # the insert: each edge runs its own length from where it leaves the
+        # nose circle, and the two far corners are joined. No extension, so
+        # nothing here depends on how steeply an edge climbs.
+        el = dims[1]
+        e_f = (t_f[0] + d_f[0] * el, t_f[1] + d_f[1] * el)
+        e_b = (t_b[0] + d_b[0] * el, t_b[1] + d_b[1] * el)
+    else:
+        e_f, e_b = to_cap(t_f, d_f), to_cap(t_b, d_b)
+        if e_f is None or e_b is None:
+            return None
     if parts is not None:
         parts.update(centre=(cz, cx), t_f=t_f, t_b=t_b, e_f=e_f, e_b=e_b,
                      d_f=d_f, d_b=d_b, z_lead=z_lead, z_back=z_back,
@@ -1142,7 +1269,7 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
 
 
 def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
-                flank_len=0.0, cl_deg=None):
+                flank_len=0.0, cl_deg=None, shank_h=0.0):
     """The holder in front of the insert, as a closed (z, radius) outline.
 
     A third line perpendicular to Z, tangent to the nose circle on its BACK
@@ -1161,7 +1288,7 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
     """
     parts = {}
     if tool_silhouette(pos, nose_r, orient, front_deg, back_deg, flank_len,
-                       cl_deg, parts) is None:
+                       cl_deg, parts, shank_h) is None:
         return None
     cz, cx = parts['centre']
     t_f, e_f, zdir = parts['t_f'], parts['e_f'], parts['zdir']
@@ -1193,7 +1320,7 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
 
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
               cl_deg=None, included_deg=None, front_deg=None, back_deg=None,
-              flank_len=0.0):
+              flank_len=0.0, shank_h=0.0):
     """The tool at `pos`: its nose circle, and the insert behind it.
 
     The BODY LIES IN THE SAME DIRECTION AS THE NOSE OFFSET, not opposite it.
@@ -1228,11 +1355,24 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         # a lathe silhouette in the ZX plane only - it is built from a nose
         # orientation and a flank, neither of which means anything on a mill
         outline = (tool_silhouette(pos, nose_r, orient, front_deg, back_deg,
-                                   flank_len, cl_deg)
+                                   flank_len, cl_deg, None, shank_h)
                    if plane == 'ZX' else None)
         holder = (tool_holder(pos, nose_r, orient, front_deg, back_deg,
-                              flank_len, cl_deg)
+                              flank_len, cl_deg, shank_h)
                   if plane == 'ZX' else None)
+        # only a stub of it - see SHANK_STUB. Drawn FIRST so the insert and
+        # the holder face sit on top of it rather than under.
+        shank = (tool_shank(pos, nose_r, orient, front_deg, back_deg,
+                            shank_h, cl_deg, length=shank_h * SHANK_STUB)
+                 if plane == 'ZX' else None)
+        if shank:
+            cr.set_source_rgba(*(COL['tool_body'] + (0.9,)))
+            first = True
+            for pz, prx in shank:
+                (cr.move_to if first else cr.line_to)(pz * s + ox, prx * s + oy)
+                first = False
+            cr.close_path()
+            cr.fill()
         if holder:
             # the SAME grey as the insert: the two are one tool, and the
             # split was only ever a way of showing which part is which
@@ -1455,7 +1595,7 @@ def _outline_samples(poly, step=0.5, closed=True):
 
 def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
                flank_len=0.0, cl_deg=None, columns=None, limit=50,
-               min_depth=None):
+               min_depth=None, shank_h=0.0):
     """Where the tool runs into material it is not cutting.
 
     Two things are reported, and they are not the same fault:
@@ -1477,9 +1617,14 @@ def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
     if not tp.moves or not stock or nose_r <= 0:
         return []
     poly0 = tool_silhouette((0.0, 0.0, 0.0), nose_r, orient, front_deg,
-                            back_deg, flank_len, cl_deg)
+                            back_deg, flank_len, cl_deg, None, shank_h)
     if not poly0:
         return []
+    # The shank at its FULL length, however little of it is drawn: what fouls a
+    # shoulder is the block, and a check that stopped where the picture stops
+    # would be a picture rather than a check.
+    shank0 = tool_shank((0.0, 0.0, 0.0), nose_r, orient, front_deg,
+                        back_deg, shank_h, cl_deg)
     # the outline in TOOL coordinates, once - it does not change shape as the
     # tool moves, so it is built here and translated per sample
     whole = _outline_samples(poly0)
@@ -1494,6 +1639,12 @@ def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
     # which is what the first run of this did: 21 hits on a clean program, all
     # of them the front edge doing its job.
     body = _outline_samples(list(poly0[-3:]), closed=False)
+    if shank0:
+        # all of it, both for a rapid and for a feed - no part of the holder is
+        # ever entitled to be in metal
+        shank_pts = _outline_samples(shank0)
+        whole = whole + shank_pts
+        body = body + shank_pts
 
     a0, a1, b0, b1 = stock
     # Deliberately coarser than the removal field the picture is drawn from.

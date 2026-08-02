@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `f4698ed`.
+Branch: `liveTooling`. Last pushed: `0e399e0`.
 
 ---
 
@@ -185,44 +185,40 @@ Branch: `liveTooling`. Last pushed: `f4698ed`.
   silently. The orphan-entry check, which is the real regression guard, still
   runs. Needs a project that still has a short level.
 
-## Tool shape — the one live question
+## Tool shape
 
-- [ ] **NEEDS A CALL — how is the tool bounded?** The silhouette's radial
-  extent is large: **48 mm at a 6 mm flank, 85 mm at 16 mm**. The steep 75°
-  front edge needs 3.86 mm of travel per mm of Z to reach the cap, so capping
-  in Z is what makes it grow. Now that the angles are right this is a real
-  property of the construction, not a bug. Candidates: flank measured **along
-  the edge** rather than in Z; a separate **holder depth**; a fixed **shank
-  height**. Everything under Simulation below waits on this.
-
-- [ ] **A front or back angle over 90° has no defined contour.** The
+- [ ] **A front or back angle over 90° still has no defined contour.** The
   construction puts an edge at 90 − angle from Z, so past 90° it leans the
   other way and the shape stops meaning what it means for a normal insert.
-  Measured on a 0.8 mm nose, orientation 2, 6 mm flank:
+  The shank bounds it now, so nothing runs away, but a bounded wrong shape is
+  still a wrong shape. Re-measured on a 0.8 mm nose, orientation 2, 6 mm flank,
+  25 mm shank:
 
-  | front | back | insert | holder |
-  |---|---|---|---|
-  | 15 | 75 | 6.0 × 23.3 mm | yes |
-  | 15 | 105 | 6.0 × 24.7 mm | yes |
-  | 95 | 75 | 5.3 × 1.8 mm | **none** |
-  | 100 | 110 | 5.5 × 2.0 mm | **none** |
-  | 0 | 75 | **none** | none |
+  | front | back | insert, no shank | insert, 25 shank | holder face |
+  |---|---|---|---|---|
+  | 15 | 75 | 6.0 × 23.3 mm | 12.6 × 12.6 mm | yes |
+  | 15 | 105 | 6.0 × 24.7 mm | 12.2 × 15.7 mm | yes |
+  | 95 | 75 | 5.3 × 1.8 mm | 12.0 × 4.2 mm | **none** |
+  | 100 | 110 | 5.5 × 2.0 mm | 12.0 × 4.1 mm | **none** |
+  | 0 | 75 | **none** | 12.6 × 12.8 mm | none |
 
-  So it does not simply refuse: a front angle over 90° still draws an insert,
-  a wrong one, and drops the holder without saying so; an angle of exactly 0
-  or 180 draws nothing at all and gives no reason. Needs a defined answer for
-  those tools - a different closing line, or a refusal the operator can
-  actually see - rather than a quietly wrong picture. Whatever it is has to be
-  settled with the bounding question above, since both are about how the
-  outline closes.
+  Two things changed with the shank and neither is a fix. A front angle over
+  90° still draws a wrong insert - a 12.0 × 4.2 mm sliver - and still drops the
+  holder face without saying so. And the 0° case, which used to draw nothing at
+  all, now draws a full-looking insert: the shank construction never refuses on
+  angle, so the one case that failed loudly now fails quietly. Needs a defined
+  answer for those tools - a different closing line, or a refusal the operator
+  can see - rather than a quietly wrong picture.
 
 ## Simulation — paused at your word
 
 - [ ] **Collision detection is built and tested but not wired to the pane**
   (`fdfa99d`). Reports rapids into metal and the tool body into metal, 1.5 s
-  on testing_15_2. Held back because its output depends on the tool shape
-  above — currently 22 hits on a clean program, all artefacts of the
-  silhouette's proportions.
+  on testing_15_2. It was held back because its output depended on the tool
+  shape - **that blocker is gone**: with the shank it reports **0 hits on the
+  demo lathe program at every shank size, 12, 25 and 32 mm**, and still catches
+  a holder driven through the bar 40 mm behind the tip, which no insert can
+  reach. Only the wiring is left.
 - [ ] Timeline marks for collisions, and a Verification line in Stats —
   designed, not built.
 - [ ] `Accuracy` slider → `StockField.columns_for`.
@@ -286,7 +282,10 @@ Branch: `liveTooling`. Last pushed: `f4698ed`.
 - [ ] **Skip short passes is now off by default.**
 - [ ] **testing_15_2 and testing_15_3 need their flank length re-entered** on
   the Tool Change, 25 mm each — though with the contour unbounded it now only
-  affects the drawn silhouette.
+  affects the drawn silhouette, and with a shank set it affects nothing at all.
+- [ ] **Every project gains a 25 mm / 1 in shank on migration** to
+  tool-change.cfg 1.22. That is the common size and it only changes the
+  picture, but a 12 mm boring-bar tool will look too big until it is set.
 
 ## Watch list
 
@@ -300,6 +299,40 @@ Branch: `liveTooling`. Last pushed: `f4698ed`.
 ---
 
 ## Done
+
+- [x] **How the tool is bounded: by its SHANK** — greatEndian supplied the ISO
+  holder relationships 2026-08-02, kept in `ref/tool-shank/NOTES.md`. Decided:
+  the Tool Change asks for the **shank height** and nothing else; overall
+  length, width and insert size all follow from it.
+
+  The old outline closed by extending both cutting edges to a Z-perpendicular
+  cap one flank length back. The steep front edge climbs 3.86 mm of radius per
+  mm of Z, so it grew without limit — **6 mm flank → 23.3 mm radially, 25 mm
+  flank → 94.2 mm**. It is now three nested pieces: nose circle, insert closed
+  at its own **edge length along the edge**, and the shank rectangle behind.
+
+  | | before | after, 25 mm shank |
+  |---|---|---|
+  | insert, 6 mm flank | 6.0 × 23.3 mm | **12.6 × 12.6 mm** |
+  | insert, 25 mm flank | 25.0 × 94.2 mm | **12.6 × 12.6 mm, unchanged** |
+  | what bounds it | the flank | the insert edge |
+  | collisions on the demo program | 0 | **0 at 12, 25 and 32 mm** |
+
+  Derivation is interpolated, not nearest-match: nearest-match with a scale
+  factor made a 22 mm shank come out **longer** (165 mm) than a 25 mm one
+  (160 mm). The insert edge is not interpolated — 12.2 mm is not a size an
+  insert comes in.
+
+  **The block's corner sits on the INSERT, not on the tool tip.** Anchored on
+  the tip its top face lies at the cutting radius and sweeps the whole part
+  behind the tool: **50 collisions on a program with none, and the same 50 for
+  a 12 mm shank as for a 25 mm one** — the identical count is what gave it
+  away. A real insert stands proud of its pocket.
+
+  Only a stub of the holder is drawn, one shank height deep; the collision
+  check uses the full 160 mm. A field, not a combo of standard sizes, because
+  a fixed list of millimetre values breaks on an inch machine and
+  ground-to-fit shanks exist — the nearest standard supplies the proportions.
 
 - [x] **Item 3 — the three-piece entry, confirmed in AXIS by greatEndian
   2026-08-02** — `168f703` `9474185` `f4698ed`. The approach copies the

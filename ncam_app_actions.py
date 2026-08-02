@@ -190,7 +190,8 @@ class NCamAppActionsMixin:
                 pane.set_tool(nose_r, orient, cl_deg, included_deg,
                               ncam.TOOL_TABLE.get_tool_front_angle(tn),
                               ncam.TOOL_TABLE.get_tool_back_angle(tn),
-                              ncam.TOOL_TABLE.get_flank_len())
+                              ncam.TOOL_TABLE.get_flank_len(),
+                              ncam.TOOL_TABLE.get_shank_h())
                 pane.refresh(fname)
             except Exception as e :
                 print(_('Preview: could not refresh: %s') % str(e))

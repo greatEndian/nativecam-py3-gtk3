@@ -808,6 +808,26 @@ class Tools(object):
         """
         return getattr(self, 'saved_flank_len', 0.0)
 
+    def save_shank_h(self, value):
+        """Remember the shank height of the holder loaded from here on.
+
+        The one number an operator always knows about a turning holder, and
+        the one everything else about its size follows from - overall length
+        and insert size both come off it by the ISO relationships in
+        ncam_preview.shank_dims. Like the flank length it describes the TOOL,
+        so it belongs on the Tool Change, and there is no tool-table column
+        for it.
+        """
+        self.saved_shank_h = max(get_float(value), 0.0)
+
+    def get_shank_h(self):
+        """Shank height of the last tool change, 0 when none was given.
+
+        0 means "unknown", and the preview then falls back to the flank-length
+        outline it drew before this existed rather than inventing a holder.
+        """
+        return getattr(self, 'saved_shank_h', 0.0)
+
     def save_back_clear(self, value):
         """Remember the back-angle clearance of the tool loaded from here on.
 

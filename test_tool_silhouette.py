@@ -280,6 +280,123 @@ def main():
               w1 and abs(w1 - FLANK * 6.0) <= 3,
               '%d px for a %g mm tool at 6 px/mm' % (w1, FLANK))
 
+        # and the shank is really put on the canvas, not merely computed. A
+        # point 20 mm behind and 20 mm out is well past the 12.6 mm insert,
+        # so it is background unless the block is drawn.
+        W = H = 500
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
+        cr = cairo.Context(surf)
+        P.draw_tool(cr, POS, 'ZX', 6.0, 120.0, 60.0, R, ORIENT, 45.0, 60.0,
+                    FRONT, BACK, FLANK, 25.0)
+        surf.flush()
+        data, stride = surf.get_data(), surf.get_stride()
+        px = int((POS[2] + 20.0) * 6.0 + 120.0)
+        py = int((POS[0] + 20.0) * 6.0 + 60.0)
+        check('the shank is drawn, not just computed',
+              data[py * stride + px * 4 + 3] > 0,
+              'nothing at (20, 20) mm, which is inside the block and outside '
+              'the insert')
+
+    # --- the shank: what actually bounds the tool -------------------------
+    # Without one the outline closes on a Z-perpendicular cap a flank length
+    # back, and both cutting edges are EXTENDED to reach it. The front edge is
+    # the steep one, so it climbs radially far faster than it travels in Z and
+    # the drawn tool grows without limit. A real tool is bounded by its insert
+    # and by the block it is clamped in, neither of which the flank governs.
+    check('no shank height, no dimensions', P.shank_dims(0.0) is None)
+    for h, l1, edge in P.SHANK_TABLE:
+        got = P.shank_dims(h)
+        check('a %g mm shank is a %g mm holder carrying a %g mm insert'
+              % (h, l1, edge),
+              got is not None and abs(got[0] - l1) < 1e-9 and got[1] == edge,
+              'got %s' % (got,))
+    lens = [P.shank_dims(h)[0] for h in [6.0 + 0.5 * i for i in range(80)]]
+    check('holder length never goes backwards as the shank grows',
+          all(b >= a - 1e-9 for a, b in zip(lens, lens[1:])),
+          'a bigger shank came out with a shorter holder')
+    inch = P.shank_dims(25.4)
+    check('an inch shank is a little longer than the 25 mm one, not equal to it',
+          inch is not None and P.shank_dims(25.0)[0] < inch[0]
+          < P.shank_dims(32.0)[0],
+          'got %s' % (inch,))
+    check('but it carries the same standard insert, not a 12.2 mm one',
+          inch is not None and inch[1] == P.shank_dims(25.0)[1])
+
+    SH = 25.0
+    edge = P.shank_dims(SH)[1]
+    ins = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK, shank_h=SH)
+    check('a shank height gives a silhouette', ins is not None)
+    if ins:
+        t_f, t_b, e_b, e_f = ins[0], ins[-3], ins[-2], ins[-1]
+        check('the back edge runs exactly one insert edge length',
+              abs(math.hypot(e_b[0] - t_b[0], e_b[1] - t_b[1]) - edge) < 1e-9,
+              'measured %.4f, wanted %g'
+              % (math.hypot(e_b[0] - t_b[0], e_b[1] - t_b[1]), edge))
+        check('and so does the front edge',
+              abs(math.hypot(e_f[0] - t_f[0], e_f[1] - t_f[1]) - edge) < 1e-9,
+              'measured %.4f, wanted %g'
+              % (math.hypot(e_f[0] - t_f[0], e_f[1] - t_f[1]), edge))
+        rad = max(p[1] for p in ins) - min(p[1] for p in ins)
+        old = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK)
+        old_rad = max(p[1] for p in old) - min(p[1] for p in old)
+        check('so the insert is bounded by itself, not by the flank',
+              rad < old_rad,
+              '%.2f mm radially with a shank, %.2f without - no better'
+              % (rad, old_rad))
+        check('and no bigger than the edge that draws it',
+              rad <= edge * 1.05,
+              '%.2f mm radially for a %g mm insert' % (rad, edge))
+        far = P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK * 4, shank_h=SH)
+        check('the flank length no longer changes the drawn insert at all',
+              far == ins,
+              'quadrupling the flank moved it, so it is still the bound')
+
+    sh = P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH)
+    check('the shank comes back as its own outline', sh is not None)
+    if sh:
+        l1 = P.shank_dims(SH)[0]
+        dz = max(p[0] for p in sh) - min(p[0] for p in sh)
+        dx = max(p[1] for p in sh) - min(p[1] for p in sh)
+        check('it is the full holder length in Z', abs(dz - l1) < 1e-9,
+              '%.1f mm, wanted %.1f' % (dz, l1))
+        check('and the shank height radially', abs(dx - SH) < 1e-9,
+              '%.1f mm, wanted %g' % (dx, SH))
+        # The corner sits on the INSERT, not on the tip: the insert stands
+        # proud of the block it is clamped in. Anchored on the tip, the block's
+        # top face lies at the cutting radius and sweeps the whole part behind
+        # the tool - 50 collisions on a program with none, and the same 50 for
+        # a 12 mm shank as for a 25 mm one.
+        near_z = min(p[0] for p in sh)
+        near_x = min(p[1] for p in sh)
+        check('its corner is behind the insert in Z, not on the tip',
+              abs(near_z - max(p[0] for p in ins)) < 1e-9,
+              'starts at Z%.4f, the insert ends at Z%.4f'
+              % (near_z, max(p[0] for p in ins)))
+        check('and outside it radially, so the insert stands proud',
+              abs(near_x - max(p[1] for p in ins)) < 1e-9
+              and near_x > POS[0] + 1e-9,
+              'starts at r%.4f, the insert reaches r%.4f'
+              % (near_x, max(p[1] for p in ins)))
+        check('lying the way the body does, behind the tip',
+              max(p[0] for p in sh) > POS[2]
+              and min(p[1] for p in sh) >= POS[0] - 1e-9,
+              'the holder is on the cutting side of its own insert')
+        stub = P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH, length=SH * P.SHANK_STUB)
+        s_dz = max(p[0] for p in stub) - min(p[0] for p in stub)
+        check('a stub is drawn shorter than the holder really is',
+              s_dz < dz and abs(s_dz - SH * P.SHANK_STUB) < 1e-9,
+              '%.1f mm stub against a %.1f mm holder' % (s_dz, dz))
+        check('and asking for more than the holder has gives the holder',
+              max(p[0] for p in P.tool_shank(POS, R, ORIENT, FRONT, BACK, SH,
+                                             length=l1 * 10)) - POS[2]
+              <= l1 + max(p[0] for p in sh) - min(p[0] for p in sh) + 1e-9)
+    check('no shank height, no shank drawn',
+          P.tool_shank(POS, R, ORIENT, FRONT, BACK, 0.0) is None,
+          'it invented a holder')
+    for o in (6, 8):
+        check('orientation %d has no corner to hang a shank on' % o,
+              P.tool_shank(POS, R, o, FRONT, BACK, SH) is None)
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))
