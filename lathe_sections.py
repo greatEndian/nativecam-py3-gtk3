@@ -1401,7 +1401,7 @@ def _corner_arc(vertex, start, end, radius):
 #   #[ptr + 2i]     point i, Z          #[ptr + 2i + 1]  point i, radius
 #
 # Pass 0 is the pre-finish pass; 1..n are the finish passes in order.
-CAM_BASE = 4400
+CAM_BASE = 4600
 # Numbered parameters above roughly #5060 are LinuxCNC's own - #5061+ are probe
 # results, #5161+ home positions, #5221+ the coordinate-system offsets, #5401+
 # the tool table. Writing a table through them would corrupt live machine state,
@@ -1550,6 +1550,10 @@ FC_TOP = 4200
 # are bounded and both refuse rather than run into their neighbour.
 ENTRY_BASE = 4200
 ENTRY_TOP = 4400
+# the STOP contour - see build_stop_contour_gcode. Carved out of the
+# In-CAM range, which had 600 slots and has never needed more than 200.
+STOP_BASE = 4400
+STOP_TOP = 4600
 
 
 def entry_contour(points, dist, rough_dir=0):
@@ -1639,6 +1643,55 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     for i, (z, x) in enumerate(env):
         lines.append('#%d = %s' % (ENTRY_BASE + 2 * i, _fmt(z)))
         lines.append('#%d = %s' % (ENTRY_BASE + 2 * i + 1, _fmt(x)))
+    return '\n'.join(lines)
+
+
+def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                             flank_len=0.0, clearance=0.0):
+    """Where a roughing level may STOP: the pre-finish contour.
+
+    The pre-finish pass traces the final shape plus the finish offset, and
+    roughing should reach that surface rather than standing off it. It was
+    stopping on the ROUGHING FLOOR instead - one whole depth of cut further
+    out again, once "Space passes from = Final contour" has rounded the
+    pre-finish allowance up - which left a constant gap between every level end
+    and the pre-finish pass, right across the part.
+
+    A table rather than a smaller allowance, because the allowance the
+    subroutine scans with is not only the stop: the same number drives its
+    block test and its multi-crossing scan, and halving it let levels run on
+    through material they were being held out of - 487 mm of cut became 875.6
+    and ten level ends finished inside the contour. So the scan keeps the floor
+    allowance and the stop is looked up here.
+    """
+    p = polyline_feature.get_param('param_f_off')
+    fin_off = _to_float(p.get_ngc_value()) if p is not None else 0.0
+    if fin_off <= 0:
+        return ''
+    pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
+                               clearance)
+    if not pts or len(pts) < 2:
+        return ''
+    d = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
+                        fin_off, rough_dir)
+    if len(env) < 2:
+        return ''
+    top = STOP_BASE + 2 * len(env)
+    if top > STOP_TOP:
+        return ('(WARNING - the stop contour needs %d parameter slots and only '
+                '%d are free, so roughing levels will stop on the floor '
+                'allowance as before.)' % (top - STOP_BASE,
+                                           STOP_TOP - STOP_BASE))
+    lines = ['(where a roughing level may STOP: the pre-finish contour, the)',
+             '(surface the pre-finish pass itself traces. Reaching it is what)',
+             '(closes the constant gap between every level end and that pass)',
+             '#<_pl_stop_base> = %d' % STOP_BASE,
+             '#<_pl_stop_n>    = %d' % len(env)]
+    for i, (z, x) in enumerate(env):
+        lines.append('#%d = %s' % (STOP_BASE + 2 * i, _fmt(z)))
+        lines.append('#%d = %s' % (STOP_BASE + 2 * i + 1, _fmt(x)))
     return '\n'.join(lines)
 
 

@@ -155,43 +155,25 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   measured at the finish offset (0.508) rather than the floor allowance
   (1.016).
 
-  **Attempt 1 tried and reverted, 2026-08-02.** The obvious one-liner -
-  `lvl_d = dirsign * (rough_target - final_radius)`, which is exactly the
-  finish offset - closes the gap but breaks the passes:
+  **DONE, 2026-08-02.** A second Python table - the reachable contour offset
+  by the finish offset - emitted at `_pl_stop_base`, walked by
+  `lathe_level_pass` to extend its stop. The scan keeps the floor allowance.
 
   | | before | after |
   |---|---|---|
-  | end gap, mean / max | 1.112 / 1.509 mm | 0.556 / 0.756 mm |
-  | roughing cut length | 487.0 mm | **875.6 mm** |
-  | gouges into the reachable contour | 0 | **10** |
-  | level cuts | 27 | 28 |
-  | starts | - | **also moved** |
+  | end gap, mean / max | 1.112 / 1.509 mm | **0.558 / 0.756 mm** |
+  | roughing cut length | 487.0 mm | **502.0 mm** |
+  | gouges | 0 | **0** |
+  | moves / cutting / level cuts | 243 / 147 / 27 | **unchanged** |
+  | starts | - | **unchanged** |
 
-  So `cross_t` is not only the stop: the same value drives the block test and
-  the multi-crossing scan, so halving it lets levels run on through material
-  they were being held out of, nearly doubling the cut and putting ten level
-  ends inside the contour. (The gouge count may partly be the check reading a
-  vertical wall by its top - worth confirming - but the doubled cut length is
-  not measurement error.)
-
-  **So the stop needs the Python table after all**, as first planned: a second
-  offset contour at the finish offset, emitted beside the entry one and walked
-  by `lathe_level_pass` for its stop alone, leaving `cross_t` to go on driving
-  the block test and the scan at the floor allowance. Table space is the
-  constraint - 4200-4400 holds the entry table (76 slots used), so the stop
-  table needs its own bounded range and `test_table_layout` extended.
-
-  Note this supersedes the earlier "the stop keeps the floor allowance" call -
-  that was about not moving the stop *while* the start moved, and the start is
-  now done.
-
-  **Python first**: `entry_contour()` already builds an offset contour and a
-  table, and `lathe_level_pass` already walks one for `z_start`. The stop wants
-  the same shape - a second table at the finish offset, walked the same way -
-  rather than a new allowance threaded through the scan. Table space is the
-  constraint: 4200-4400 holds the entry table (38 points on testing_15_2, 76
-  slots), so a stop table needs its own bounded range carved out and
-  `test_table_layout` extended.
+  **Attempt 1, reverted first**, and worth keeping as the reason for the table:
+  the obvious one-liner - `lvl_d` from `rough_target` rather than
+  `step_target`, which is exactly the finish offset - closes the gap the same
+  amount but nearly doubles the cut, 487.0 to **875.6 mm**, puts **10** level
+  ends inside the contour and moves the starts too. `cross_t` is not only the
+  stop: the same value drives the block test and the multi-crossing scan, so
+  halving it lets levels run on through material they were held out of.
 
 - [ ] **Item 3 of the lead-in spec - the three-piece entry.** Straight *real
   lead-in* through air, tangent *lead-in radius* arc, then a constant-length

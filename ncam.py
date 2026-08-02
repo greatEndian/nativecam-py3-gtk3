@@ -2635,6 +2635,8 @@ class Preferences(object):
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")
             self.default += ("#<_pl_min_pass>            = 0.0\n")
+            self.default += ("#<_pl_stop_base>           = 0.0\n")
+            self.default += ("#<_pl_stop_n>              = 0.0\n")
             self.default += ("#<_pl_entry_base>          = 0.0\n")
             self.default += ("#<_pl_entry_z>             = 0.0\n")
             self.default += ("#<_pl_entry_n>             = 0.0\n")

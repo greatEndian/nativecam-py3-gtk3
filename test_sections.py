@@ -478,6 +478,7 @@ def test_table_layout():
                ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
                ('finish contour', L.FC_BASE, L.FC_TOP),
                ('entry contour', L.ENTRY_BASE, L.ENTRY_TOP),
+               ('stop contour', L.STOP_BASE, L.STOP_TOP),
                ('In-CAM offsets', L.CAM_BASE, L.CAM_TOP)]
     for i in range(len(regions) - 1):
         n0, _b0, t0 = regions[i]

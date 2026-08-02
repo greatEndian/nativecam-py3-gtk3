@@ -288,6 +288,43 @@ o<lathe_level_pass> sub
 		o<e_ok> endif
 	o<ent> endif
 
+	(Extend the STOP to the pre-finish contour, when Python emitted one.)
+	(The scan above keeps the FLOOR allowance - it is not only the stop, it)
+	(also decides whether this level is blocked at all, and halving it let)
+	(levels run on through material they were being held out of: 487 mm of)
+	(cut became 875.6 and ten ends finished inside the contour. So the scan)
+	(is left alone and the stop is looked up in a table lathe_sections built)
+	(at generation time. Bounded by w_to, and only ever extended - never)
+	(pulled back - so a level cannot reach further than its window allows.)
+	o<stp> if [[#<_pl_stop_n> GT 0] AND [#<found>]]
+		#<s_i>    = 0
+		#<s_best> = 0
+		#<s_have> = 0
+		#<s_pz> = #[#<_pl_stop_base>]
+		#<s_px> = #[#<_pl_stop_base> + 1]
+		o<s_w> while [#<s_i> LT [#<_pl_stop_n> - 1]]
+			#<s_i> = [#<s_i> + 1]
+			#<s_cz> = #[#<_pl_stop_base> + #<s_i> * 2]
+			#<s_cx> = #[#<_pl_stop_base> + #<s_i> * 2 + 1]
+			o<s_cross> if [[[#<s_px> - #<l_eff>] * [#<s_cx> - #<l_eff>]] LT 0]
+				#<s_z> = [#<s_pz> + [#<s_cz> - #<s_pz>] * [#<l_eff> - #<s_px>] / [#<s_cx> - #<s_px>]]
+				(only a crossing further along the cut than the scan found,)
+				(and still inside the window - the nearest such)
+				o<s_fwd> if [[[#<z_dir> * [#<s_z> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_z> - #<w_to>]] GT -0.0001]]
+					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_z> - #<s_best>]] GT 0]]
+						#<s_best> = #<s_z>
+						#<s_have> = 1
+					o<s_near> endif
+				o<s_fwd> endif
+			o<s_cross> endif
+			#<s_pz> = #<s_cz>
+			#<s_px> = #<s_cx>
+		o<s_w> endwhile
+		o<s_ok> if [#<s_have>]
+			#<z_end> = #<s_best>
+		o<s_ok> endif
+	o<stp> endif
+
 	(exposed for callers doing their own disjoint-interval scanning after this)
 	(call - e.g. lathe_level_next_start needs to know where THIS pass actually)
 	(stopped cutting, to search for a further interval past it)
