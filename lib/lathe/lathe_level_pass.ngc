@@ -25,6 +25,14 @@ o<lathe_level_pass> sub
 	(sets it: LinuxCNC pre-parses the whole file at load and a named)
 	(parameter first assigned in a branch reads as "not defined".)
 	#<z_start>   = #<w_from>
+	(the profile-angle approach segment, resolved with z_start below)
+	#<pa_on>     = 0
+	#<pa_z>      = 0
+	#<pa_x>      = 0
+	#<e_bdz>     = 0
+	#<e_bdx>     = 0
+	#<e_sdz>     = 0
+	#<e_sdx>     = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -272,10 +280,16 @@ o<lathe_level_pass> sub
 			#<e_cx> = #[#<_pl_entry_base> + #<e_i> * 2 + 1]
 			o<e_cross> if [[[#<e_px> - #<l_eff>] * [#<e_cx> - #<l_eff>]] LT 0]
 				#<e_z> = [#<e_pz> + [#<e_cz> - #<e_pz>] * [#<l_eff> - #<e_px>] / [#<e_cx> - #<e_px>]]
+				(this table segment's own direction - the profile angle the)
+				(approach copies, taken from the contour rather than assumed)
+				#<e_sdz> = [#<e_cz> - #<e_pz>]
+				#<e_sdx> = [#<e_cx> - #<e_px>]
 				(only a crossing the cut has not reached yet, and the nearest)
 				o<e_bef> if [[#<z_dir> * [#<e_z> - #<w_from>]] GT 0.0001]
 					o<e_near> if [[#<e_have> EQ 0] OR [[#<z_dir> * [#<e_z> - #<e_best>]] LT 0]]
 						#<e_best> = #<e_z>
+						#<e_bdz> = #<e_sdz>
+						#<e_bdx> = #<e_sdx>
 						#<e_have> = 1
 					o<e_near> endif
 				o<e_bef> endif
@@ -285,6 +299,16 @@ o<lathe_level_pass> sub
 		o<e_w> endwhile
 		o<e_ok> if [#<e_have>]
 			#<z_start> = #<e_best>
+			(the approach copies the contour's own angle here, running one)
+			(roughing depth of cut of PROJECTED length back from the entry)
+			(point, then turning onto the level. Arriving parallel to the)
+			(surface it is about to leave beats driving in at 45 degrees.)
+			o<e_ang> if [[ABS[#<e_bdz>] GT 0.000001] AND [#<_rough_cut> GT 0]]
+				#<e_slope> = [#<e_bdx> / #<e_bdz>]
+				#<pa_z> = [#<z_start> + #<z_dir> * #<_rough_cut>]
+				#<pa_x> = [#<level> + #<z_dir> * #<_rough_cut> * #<e_slope>]
+				#<pa_on> = 1
+			o<e_ang> endif
 		o<e_ok> endif
 	o<ent> endif
 
@@ -495,6 +519,11 @@ o<lathe_level_pass> sub
 		o<li_fsw> if [#<li_feed> NE #<pass_feed>]
 			F#<pass_feed>
 		o<li_fsw> endif
+		o<pa_cut> if [#<pa_on>]
+			(down the contour's own angle, then the turn onto the level)
+			G1 X[#<pa_x> * #<_diameter_mode>] Z#<pa_z>
+			G1 X[#<level> * #<_diameter_mode>] Z#<z_start>
+		o<pa_cut> endif
 		o<li_arc> if [#<_flt_ok>]
 			(tangent blend from the lead-in line into the pass's own)
 			(direction, instead of a sharp corner)

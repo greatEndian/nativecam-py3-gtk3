@@ -175,22 +175,17 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   stop: the same value drives the block test and the multi-crossing scan, so
   halving it lets levels run on through material they were held out of.
 
-- [ ] **Item 3 of the lead-in spec - the three-piece entry.** Straight *real
-  lead-in* through air, tangent *lead-in radius* arc, then a constant-length
-  straight segment copying the profile at its own angle, meeting the contour
-  tangentially. Items 1 and 2 are done; this is the part
-  `photo/leadInNewAndRight_1.png` labels.
+- [x] **Item 3 - the three-piece entry. DONE.** Reading 1, projected length
+  one roughing depth of cut. The approach copies the contour's own angle,
+  taken from the entry table rather than assumed, and turns onto the level at
+  the entry point. Measured behind the peak:
 
-  **Answered 2026-08-02**: **reading 1** - the segment runs at the profile
-  angle and **turns onto the level** at the entry point, corner and all, so
-  the tool arrives travelling parallel to the surface it is about to leave.
-  Its **projected length is one roughing depth of cut**.
+      Z-48.696 R29.769 -> Z-49.203 R29.652   0.5080 mm of Z, 13.00 deg
+      Z-50.896 R29.261 -> Z-51.404 R29.144   0.5080 mm of Z, 13.00 deg
 
-  Also confirmed the same day: **the endings fix is right in AXIS.**
-
-  Everything else is ready: `z_start` already puts the pass start on the entry
-  contour, and `lathe_sections` already emits the contour the angle would be
-  read from.
+  0.508 is the roughing depth of cut, 13.00 deg is the ramp. 243 moves -> 261,
+  the 18 being two feeds on each of the nine entries; level cuts, cut length
+  and gouge count all unchanged.
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
