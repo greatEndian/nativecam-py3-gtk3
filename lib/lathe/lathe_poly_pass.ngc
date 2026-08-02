@@ -55,6 +55,10 @@ o<lathe_poly_pass> sub
 	(exactly where the comp'd contour actually starts - otherwise compensation)
 	(establishes from an unshifted position and the first segment comes out at)
 	(the wrong offset, and a tight blend radius trips the concave-corner check)
+	(declared before the branch: a local first assigned inside one reads as)
+	(not defined under load-time pre-parse, whichever way the branch goes)
+	#<_2z> = [#<entry_z> - #<z_dir>]
+	#<_2x> = #<entry_x>
 	o<ent_dir> if [#<rec_count> GE 2]
 		#<_2z> = #[#<pds> + 9]  (second record: lathe Z)
 		#<_2x> = #[#<pds> + 10] (second record: lathe X radius)
@@ -63,10 +67,33 @@ o<lathe_poly_pass> sub
 		#<_line_cos> = [-#<z_dir>]
 		#<_line_sin> = 0
 	o<ent_dir> endif
-	#<_ent_nz> = [#<z_dir> * #<_line_sin>]
-	#<_ent_nx> = [-#<z_dir> * #<_line_cos>]
-	#<comp_ez> = [#<entry_z> + #<comp_r> * #<_ent_nz>]
-	#<comp_ex> = [#<entry_x> + #<comp_r> * #<_ent_nx>]
+	(offset side is above the contour: right of travel - 42 - entering from the)
+	(front, left - 41 - entering from the back. The shared o<tip_comp_on> guards)
+	(on a real diameter, so a nose-comp-off pass emits nothing. Resolved here,)
+	(before the approach, because the arc-entry branch turns comp on itself)
+	#<c_side> = 41
+	o<c_sd> if [#<z_dir> GT 0]
+		#<c_side> = 42
+	o<c_sd> endif
+	o<c_sd_id> if [#<_pl_side> EQ 1]
+		(material is outside the profile on a bore, so the offset goes)
+		(the other way - the inversion boring.ngc makes against taper.ngc)
+		#<c_side> = [83 - #<c_side>]
+	o<c_sd_id> endif
+
+	(WHERE COMPENSATION ACTUALLY WANTS THE TOOL. This used to be the entry)
+	(point plus comp_r along the plain normal to the first segment, which is)
+	(not the rule the interpreter follows: with an L word the offset is)
+	(ORIENTATION AWARE, and on a wall parallel to Z an orientation-2 tool sits)
+	(on the surface with no radial shift at all. Landing 0.4 mm off it made)
+	(the first cut the compensation entry move, and the wall came out tapered)
+	(- r20.4000 at Z+1.0 falling to r20.0074 at Z-20.0 on testing_15_2, where)
+	(the wall is programmed dead straight at r20.000. o<tip_comp_vec> is the)
+	(same vector the parametric ops offset with, taken with the same side that)
+	(o<tip_comp_on> is about to be given, so the two cannot disagree.)
+	o<tip_comp_vec> CALL [#<c_side>] [#<_2z> - #<entry_z>] [#<_2x> - #<entry_x>] [0]
+	#<comp_ez> = [#<entry_z> + #<_tip_off_z>]
+	#<comp_ex> = [#<entry_x> + #<_tip_off_x>]
 
 	(safe approach: retract above stock, rapid back in Z)
 	o<ap_side> if [#<_pl_side> EQ 1]
@@ -86,19 +113,6 @@ o<lathe_poly_pass> sub
 	(rule actually asks for: a straight feed of at least the nose radius in)
 	(free air. Everything downstream is then identical, and a straight record 2)
 	(never enters this branch at all)
-	(offset side is above the contour: right of travel - 42 - entering from the)
-	(front, left - 41 - entering from the back. The shared o<tip_comp_on> guards)
-	(on a real diameter, so a nose-comp-off pass emits nothing. Resolved here,)
-	(before the approach, because the arc-entry branch turns comp on itself)
-	#<c_side> = 41
-	o<c_sd> if [#<z_dir> GT 0]
-		#<c_side> = 42
-	o<c_sd> endif
-	o<c_sd_id> if [#<_pl_side> EQ 1]
-		(material is outside the profile on a bore, so the offset goes)
-		(the other way - the inversion boring.ngc makes against taper.ngc)
-		#<c_side> = [83 - #<c_side>]
-	o<c_sd_id> endif
 	#<comp_done> = 0
 
 	#<arc_entry> = 0

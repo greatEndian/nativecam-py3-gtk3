@@ -52,9 +52,15 @@ o<tip_comp_dia> sub
 		#<_tip_cam_r> = [#<tc_nd> / 2]
 		#<_tip_cam_l> = #<tc_or>
 	o<n_on> elseif [#<nose_on> GT 0]
+		(_tip_cam stays 0 - this is not CAM mode - but the nose geometry is)
+		(published anyway, because o<tip_comp_vec> is the only place that knows)
+		(the ORIENTATION-AWARE offset and native callers need it too: the)
+		(polyline has to land its entry on the point the interpreter will)
+		(compensate to, and a plain normal is not that point. Zeroing these)
+		(here is what left it guessing.)
 		#<_tip_cam> = 0
-		#<_tip_cam_r> = 0
-		#<_tip_cam_l> = 0
+		#<_tip_cam_r> = [#<tc_nd> / 2]
+		#<_tip_cam_l> = #<tc_or>
 		#<_tip_comp_d> = [2 * #<extra_r> + #<tc_nd>]
 		#<_tip_comp_l> = #<tc_or>
 	o<n_on> else
