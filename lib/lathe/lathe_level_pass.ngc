@@ -33,6 +33,8 @@ o<lathe_level_pass> sub
 	#<e_bdx>     = 0
 	#<e_sdz>     = 0
 	#<e_sdx>     = 0
+	#<e_asl>     = 0
+	#<pa_dz>     = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -305,9 +307,21 @@ o<lathe_level_pass> sub
 			(surface it is about to leave beats driving in at 45 degrees.)
 			o<e_ang> if [[ABS[#<e_bdz>] GT 0.000001] AND [#<_rough_cut> GT 0]]
 				#<e_slope> = [#<e_bdx> / #<e_bdz>]
-				#<pa_z> = [#<z_start> + #<z_dir> * #<_rough_cut>]
-				#<pa_x> = [#<level> + #<z_dir> * #<_rough_cut> * #<e_slope>]
-				#<pa_on> = 1
+				#<e_asl>   = ABS[#<e_slope>]
+				(the depth of cut is a RADIAL quantity, so it is PROJECTED)
+				(onto the contour's own angle rather than used as a length:)
+				(one depth of cut of radius costs doc/sin of the angle along)
+				(the segment and doc/tan of it in Z. On a 13 degree ramp that)
+				(is 2.20 mm of Z for a 0.508 mm cut, not 0.508.)
+				o<e_proj> if [#<e_asl> GT 0.000001]
+					#<pa_dz> = [#<_rough_cut> / #<e_asl>]
+					(never longer than the cut it is entering)
+					o<e_cap> if [#<pa_dz> LT ABS[#<z_end> - #<z_start>]]
+						#<pa_z> = [#<z_start> + #<z_dir> * #<pa_dz>]
+						#<pa_x> = [#<level> + #<z_dir> * #<pa_dz> * #<e_slope>]
+						#<pa_on> = 1
+					o<e_cap> endif
+				o<e_proj> endif
 			o<e_ang> endif
 		o<e_ok> endif
 	o<ent> endif

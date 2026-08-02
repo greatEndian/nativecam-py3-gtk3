@@ -180,8 +180,13 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   taken from the entry table rather than assumed, and turns onto the level at
   the entry point. Measured behind the peak:
 
-      Z-48.696 R29.769 -> Z-49.203 R29.652   0.5080 mm of Z, 13.00 deg
-      Z-50.896 R29.261 -> Z-51.404 R29.144   0.5080 mm of Z, 13.00 deg
+      dZ 2.2004   dR 0.5080   length 2.2583   13.00 deg
+
+  The depth of cut is a RADIAL quantity, so it is **projected** onto the
+  contour's angle rather than used as a length: one depth of cut of radius
+  costs `doc/sin` along the segment and `doc/tan` in Z - 2.2583 and 2.2004 for
+  a 0.508 mm cut on a 13 degree ramp. The first version used 0.508 as the Z
+  extent directly, which is the same number in the wrong place.
 
   0.508 is the roughing depth of cut, 13.00 deg is the ramp. 243 moves -> 261,
   the 18 being two feeds on each of the nine entries; level cuts, cut length
