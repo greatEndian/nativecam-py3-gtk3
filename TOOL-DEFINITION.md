@@ -1,8 +1,9 @@
 # The lathe tool, as NativeCAM defines it
 
-What the drawn tool is, line by line, where every number comes from, and what
-the collision check does and does not treat as tool. Valid as of `c21dccd`,
-confirmed in AXIS by greatEndian 2026-08-02.
+What the drawn tool is, line by line, where every number comes from, what the
+collision check does and does not treat as tool, and what the machine does with
+the nose radius. Valid as of `c21dccd`, confirmed in AXIS by greatEndian
+2026-08-02.
 
 This is the **current** definition. It is expected to be replaced wholesale
 when the CAM-template rework lands — see the open point of that name in
@@ -147,7 +148,116 @@ returns **None** and `draw_tool` falls back to a schematic wedge. A silhouette
 drawn at invented dimensions is a claim about the tool that nothing supports,
 and this one is used to judge clearance.
 
-## 7. Known wrong
+## 7. Tool tip radius compensation
+
+The nose radius is a **tool** property, so what the machine does with it belongs
+in this file too. Everything below is in `lib/lathe/`, wired per operation from
+the `.cfg`.
+
+### The three modes
+
+Each op that offers compensation carries a `PARAM_N_COMP` combo, threaded as a
+**trailing** `[CALL]` argument (`#7` on the tapers and boring, `#14` on facing):
+
+| value | mode | what happens |
+|---|---|---|
+| 0 | Off | no nose compensation at all; the nose-off branch reproduces the original code verbatim, so it is a provable no-op |
+| 1 | Native LinuxCNC (**default**) | `G41.1`/`G42.1 D… L…` — the interpreter offsets, no geometry of ours in the path |
+| 2 | In CAM | we offset the toolpath here and the machine runs uncompensated |
+
+### The three shared subroutines
+
+- **`tip_comp_dia.ngc CALL [extra_r] [nose_on]`** — resolves the nose diameter
+  (tool table `#5410`, else `#<_tip_nose_dia>`) and orientation (`#5413`, else
+  `#<_tip_orient>`) into `#<_tip_comp_d>` / `#<_tip_comp_l>`, and sets
+  `#<_tip_lead_w>` = nose_dia × `#<_diameter_mode>`, the minimum radial
+  clearance a comp entry or exit needs. Split out from the switch-on because the
+  polyline needs the diameter *before* comp goes on.
+- **`tip_comp_on.ngc CALL [side]`** — emits `G41.1`/`G42.1 D#<_tip_comp_d>
+  L#<_tip_comp_l>`, guarded on D > 0.0001.
+- **`tip_comp_off.ngc`** — `G40`.
+- **`tip_comp_vec.ngc CALL [side] [dz] [dx] [extra]`** — the In CAM path: turns a
+  travel direction into `#<_tip_off_z>` / `#<_tip_off_x>`, the vector the op adds
+  to its own coordinates. Returns a zero offset when there is no radius.
+
+### Comp side is per operation, and inverted between OD and ID
+
+Do not copy one rule to another op.
+
+| sub | default | flips to |
+|---|---|---|
+| `taper.ngc` (OD) | 42 | 41 when `begin_z LT end_z` |
+| `taper_id.ngc` | 41 | 42 when `begin_z LT end_z` |
+| `boring.ngc` | 41 | 42 when `begin_z LT end_z` |
+| `facing.ngc` | 41 | 42 when `z_factor GT 0` |
+
+### Which operation does what, as of `c21dccd`
+
+| op | Off | Native | In CAM |
+|---|---|---|---|
+| `taper_oda`, `taper_odl` | yes | yes | yes |
+| `taper_ida`, `taper_idl` | yes | yes | yes |
+| `boring` | yes | yes | yes |
+| `facing` | yes | yes | **refused by validation** |
+| `polyline` finish pass | yes | yes | yes, needs a nose radius and orientation of 1–9 |
+| `turning` | — | built in, `#<comp>` = 41/42/40 | — |
+| `radius_od` | — | built in, `#<comp>` = 41/42 | — |
+| grooving, drilling | not implemented |
+
+`turning` and `radius_od` have **no comp parameter at all**. Their native comp
+was proven geometrically correct rather than rewritten. Two notes on `turning`:
+its straight cuts are uncompensated by design — comp resolves to `G40` when the
+radius is ≤ the nose — so only its corner-radius modes (2 and 3) compensate; and
+both it and `radius_od` error with a large nose, "concave corner cannot be
+reached without gouging".
+
+Facing refuses In CAM because *its approach moves place the tool past the
+finished face before the cut, and the tangency proof reports a gouge there that
+Native does not*. The cutting coordinates themselves match.
+
+### The entry rule, and what it costs
+
+**A comp entry move must be a straight feed of at least the nose radius, in
+free air.** An arc cannot establish compensation, and entering comp on the
+workpiece gouges it. That single rule is behind three op-specific behaviours:
+
+- `facing.ngc` **skips its lead-in and lead-out arcs** when `n_comp > 0`, in
+  favour of a straight run-in beyond the OD. This changes the produced motion,
+  so it is stated in the parameter tooltip.
+- On ID work (`taper_id`, `boring`) the post-comp radial retract is **widened by
+  `#<_tip_lead_w>`**, or the trailing round nose swings back into the finished
+  wall at the deep corner — a ~0.9 mm gouge.
+- It is the likely root of the open **1.4929 mm ID lead-in/out gouge**.
+
+Sidestepping it is the main argument for In CAM, and is why the CNC-versus-CAM
+question in `openPoints.md` is still open rather than settled by preference.
+
+### Proving a change
+
+`prove_tip_comp.py` is the acceptance test, not code review: it runs `rs274`,
+places the nose circle at each compensated control point, and asserts tangency
+to the target profile with no gouge and full coverage. The correct side must
+PASS **and** the wrong `--freeside` must FAIL — a single profile line is tangent
+from both sides, so without the free-side flag a wrong side passes. Test the
+finish pass only (`_tool_usage=2`) so uncompensated roughing does not pollute the
+check.
+
+Three traps that have each cost a session: the control-point → nose-centre offset
+for a 90° insert corner is **R√2**, and it is a raw vector — normalising it to
+R·unit mis-measures. `rs274` runs with `cwd` = the ini directory, so a
+repo-relative `--tbl` silently aborts the run at `T<n> M6`. And the live
+`lathe.var` is rewritten by the running GUI, so copy it in a retry loop and pass
+it with `--var`; a truncated var also aborts at `T<n> M6`, with no error in the
+output.
+
+### Where compensation and the drawn tool disagree
+
+Nothing above feeds the silhouette, and the silhouette feeds nothing above. The
+nose radius and orientation are the only two numbers they share. In particular
+the collision check knows nothing about the compensated path — it tests the
+programmed one. That is a gap, not a decision.
+
+## 8. Known wrong
 
 A front or back angle over 90° leans the edge the other way and the shape stops
 meaning what it means for a normal insert. It is bounded now, but a bounded

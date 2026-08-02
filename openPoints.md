@@ -15,48 +15,11 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `c21dccd`.
+Branch: `liveTooling`. Last pushed: `a7047ed`.
 
 ---
 
 ## Next — before anything else
-
-- [ ] **Roughing pass ENDINGS stand off the pre-finish contour, everywhere.**
-  greatEndian in AXIS, 2026-08-02, after step 2b landed: the behind-boss entry
-  is now tangent to the artificial section and correct. The remaining gap is at
-  the other end, and it is **across the whole part, not only behind the boss**.
-
-  The number is the same constant step 1 identified. The stop uses the floor
-  allowance `lvl_d` = **1.016 mm** of radius = finish offset 0.508 + one whole
-  roughing depth of cut 0.508, the second from *Space passes from = Final
-  contour*. The **pre-finish contour sits at final + 0.508**, so roughing stops
-  exactly one roughing depth of cut outside it - a constant radial gap that
-  becomes 1.017 to 1.509 mm of Z on the front slope and 1.016 mm against the
-  end wall.
-
-  Wanted: the ending **in contact with the pre-finish contour**, i.e. the stop
-  measured at the finish offset (0.508) rather than the floor allowance
-  (1.016).
-
-  **DONE, 2026-08-02.** A second Python table - the reachable contour offset
-  by the finish offset - emitted at `_pl_stop_base`, walked by
-  `lathe_level_pass` to extend its stop. The scan keeps the floor allowance.
-
-  | | before | after |
-  |---|---|---|
-  | end gap, mean / max | 1.112 / 1.509 mm | **0.558 / 0.756 mm** |
-  | roughing cut length | 487.0 mm | **502.0 mm** |
-  | gouges | 0 | **0** |
-  | moves / cutting / level cuts | 243 / 147 / 27 | **unchanged** |
-  | starts | - | **unchanged** |
-
-  **Attempt 1, reverted first**, and worth keeping as the reason for the table:
-  the obvious one-liner - `lvl_d` from `rough_target` rather than
-  `step_target`, which is exactly the finish offset - closes the gap the same
-  amount but nearly doubles the cut, 487.0 to **875.6 mm**, puts **10** level
-  ends inside the contour and moves the starts too. `cross_t` is not only the
-  stop: the same value drives the block test and the multi-crossing scan, so
-  halving it lets levels run on through material they were held out of.
 
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
@@ -133,8 +96,16 @@ Branch: `liveTooling`. Last pushed: `c21dccd`.
 
 ## Lathe G-code
 
+> Compensation as it stands — the three modes, the shared subroutines, the
+> per-op side table, which op supports what, and the entry rule — is written up
+> in **`TOOL-DEFINITION.md` §7**. The open points below are what is left.
+
 - [ ] **NEEDS A CALL — is tool radius compensation done by the CNC or by the
-  CAM?** Raised by greatEndian 2026-08-02. Today it is **always the control**:
+  CAM?** Raised by greatEndian 2026-08-02. **Both modes already exist** — the
+  `Tool nose comp` combo is Off / Native LinuxCNC / In CAM, and In CAM is built
+  for both tapers, boring and the polyline. What is not decided is which is the
+  DEFAULT and which one the project commits to. Today the default is
+  **the control**:
   `taper`/`taper_id`/`boring`/`facing` switch native comp on through
   `tip_comp_on.ngc` (`G41.1`/`G42.1 D#<_tip_comp_d> L#<_tip_comp_l>`),
   `turning` and `radius_od` use plain `G41`/`G42`, and the polyline finish pass
@@ -172,8 +143,22 @@ Branch: `liveTooling`. Last pushed: `c21dccd`.
 - [ ] **ID lead-in/out gouge, 1.4929 mm native** — open since the tip-comp
   work. Very likely a consequence of the entry rule in the point above; if
   compensation moves into Python it disappears rather than gets fixed.
-- [ ] **In-CAM comp is still refused on the five parametric ops**: facing
-  refuses outright; tapers and boring accept it. Blocked on the same call.
+- [ ] **In CAM comp is refused on FACING only** — corrected 2026-08-02 by
+  reading the code rather than the note. The `.cfg` validation blocks mode 2
+  outright: *"it produces the same cutting coordinates as Native LinuxCNC, but
+  its approach moves place the tool past the finished face before the cut and
+  the tangency proof reports a gouge there that Native does not"*. Both tapers,
+  boring and the polyline accept it. The earlier wording here said "the five
+  parametric ops" and was wrong.
+
+- [ ] **`turning` and `radius_od` have no Tool nose comp parameter at all.**
+  They carry pre-existing native comp chosen inside the subroutine
+  (`#<comp>` = 41 / 42 / 40, `G#<comp>`), proven geometrically rather than
+  rewritten, and there is no way to ask them for In CAM or for Off. Deliberate
+  so far — worth deciding whether they join the other ops.
+
+- [ ] **Grooving and drilling have no compensation story** because neither
+  exists yet; whatever is decided below has to cover them when they are built.
 - [ ] **Grooving** is not implemented — the menu icon is a placeholder, left
   deliberately so it is not forgotten.
 - [ ] **Drilling** — same, placeholder only.
@@ -205,6 +190,45 @@ Branch: `liveTooling`. Last pushed: `c21dccd`.
 ---
 
 ## Done
+
+- [x] **Roughing pass ENDINGS — CLOSED**, confirmed in AXIS by greatEndian
+  2026-08-02. Originally: *the endings stand off the pre-finish contour,
+  everywhere.*
+  greatEndian in AXIS, 2026-08-02, after step 2b landed: the behind-boss entry
+  is now tangent to the artificial section and correct. The remaining gap is at
+  the other end, and it is **across the whole part, not only behind the boss**.
+
+  The number is the same constant step 1 identified. The stop uses the floor
+  allowance `lvl_d` = **1.016 mm** of radius = finish offset 0.508 + one whole
+  roughing depth of cut 0.508, the second from *Space passes from = Final
+  contour*. The **pre-finish contour sits at final + 0.508**, so roughing stops
+  exactly one roughing depth of cut outside it - a constant radial gap that
+  becomes 1.017 to 1.509 mm of Z on the front slope and 1.016 mm against the
+  end wall.
+
+  Wanted: the ending **in contact with the pre-finish contour**, i.e. the stop
+  measured at the finish offset (0.508) rather than the floor allowance
+  (1.016).
+
+  **DONE, 2026-08-02.** A second Python table - the reachable contour offset
+  by the finish offset - emitted at `_pl_stop_base`, walked by
+  `lathe_level_pass` to extend its stop. The scan keeps the floor allowance.
+
+  | | before | after |
+  |---|---|---|
+  | end gap, mean / max | 1.112 / 1.509 mm | **0.558 / 0.756 mm** |
+  | roughing cut length | 487.0 mm | **502.0 mm** |
+  | gouges | 0 | **0** |
+  | moves / cutting / level cuts | 243 / 147 / 27 | **unchanged** |
+  | starts | - | **unchanged** |
+
+  **Attempt 1, reverted first**, and worth keeping as the reason for the table:
+  the obvious one-liner - `lvl_d` from `rough_target` rather than
+  `step_target`, which is exactly the finish offset - closes the gap the same
+  amount but nearly doubles the cut, 487.0 to **875.6 mm**, puts **10** level
+  ends inside the contour and moves the starts too. `cross_t` is not only the
+  stop: the same value drives the block test and the multi-crossing scan, so
+  halving it lets levels run on through material they were held out of.
 
 - [x] **Lead-in shape after a boss segment — CLOSED**, confirmed in
   AXIS by greatEndian 2026-08-02, all four parts.  Originally: greatEndian's call:
