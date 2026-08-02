@@ -181,31 +181,12 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   tangentially. Items 1 and 2 are done; this is the part
   `photo/leadInNewAndRight_1.png` labels.
 
-  **NEEDS A CALL before any code** - one thing in the picture does not carry
-  over to a roughing level, and getting it wrong is a motion change nobody
-  would spot in a backplot:
+  **Answered 2026-08-02**: **reading 1** - the segment runs at the profile
+  angle and **turns onto the level** at the entry point, corner and all, so
+  the tool arrives travelling parallel to the surface it is about to leave.
+  Its **projected length is one roughing depth of cut**.
 
-  A roughing level is a **horizontal cut at constant diameter**. The picture's
-  yellow segment runs at the **profile's own angle** - 13° on that ramp - and
-  meets the contour tangentially. Those two cannot both be true of the same
-  move: a segment at 13° that ends on the contour does not end travelling
-  horizontally, so there is a corner where it meets the level. So which is it:
-
-  1. the segment runs at the profile angle and **turns onto the level** at the
-     entry point, corner and all - the tool arrives parallel to the surface it
-     is about to leave, which is what "tangential connection to prefinish
-     contoure" reads as; or
-  2. the segment runs at the profile angle and **blends into the level with a
-     second radius**, so there is no corner at all; or
-  3. it is tangential to the LEVEL rather than to the contour - i.e. the
-     segment is horizontal and the "profile angle" refers only to the lead-in
-     line before the radius.
-
-  Reading 1 matches the labels most closely. Reading 3 is what the existing
-  `fillet_lead` already builds, which would make item 3 mostly a length change.
-
-  Also to settle: **how long** is "constant length" - a fixed millimetre value,
-  a new parameter, or one roughing depth of cut?
+  Also confirmed the same day: **the endings fix is right in AXIS.**
 
   Everything else is ready: `z_start` already puts the pass start on the entry
   contour, and `lathe_sections` already emits the contour the angle would be
