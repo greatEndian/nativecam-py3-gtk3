@@ -27,6 +27,7 @@ not against the cfg text.
 """
 
 import math
+import lathe_comp
 
 EPS = 0.0001
 
@@ -1264,12 +1265,11 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
 # this is a third option and never a replacement for native.
 #
 # Where the nose sits relative to the programmed control point, as (X, Z)
-# multiples of the nose radius. LinuxCNC's own table, from rs274/glcanon.py
-# StatCanon.lathe_shapes - kept here as well so this module needs no import.
-# 1-4 are the diagonal corners at R*sqrt(2), and that is a RAW vector:
-# normalising it to R mis-places the tool, which CLAUDE.md already flags.
-NOSE_OFFSET = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
-               (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
+# multiples of the nose radius. ONE table, in lathe_comp - it used to be
+# written out here, in ncam_preview, in ncam_app_actions and by hand inside
+# tip_comp_vec.ngc, and four transcriptions of a table whose diagonal entries
+# are R*sqrt2 rather than R is a gouge waiting to happen.
+NOSE_OFFSET = lathe_comp.NOSE_OFFSET
 
 
 def _unit(dz, dx):

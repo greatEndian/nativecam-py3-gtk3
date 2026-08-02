@@ -47,6 +47,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import lathe_comp
 
 
 # One move. `op` and `tool` are GROUND TRUTH - NativeCAM writes the
@@ -1473,11 +1474,9 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
     cr.stroke()
 
 
-# which way the nose sits from the control point, as (Z, radius) signs. Same
-# table as lathe_sections.NOSE_OFFSET and lib/lathe/tip_comp_vec.ngc, written
-# here in (Z, x) order because that is the order this module plots in.
-NOSE_DIR = [None, (-1, 1), (1, 1), (1, -1), (-1, -1),
-            (-1, 0), (0, 1), (1, 0), (0, -1), (0, 0)]
+# which way the nose sits from the control point, as (Z, radius) signs -
+# lathe_comp's one table, transposed there into the order this module plots in.
+NOSE_DIR = lathe_comp.NOSE_DIR
 
 
 # ---------------------------------------------------------------------------

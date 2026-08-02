@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import time
 import webbrowser
+
+import lathe_comp
 import tkinter as Tkinter
 
 import ncam
@@ -825,8 +827,7 @@ class NCamAppActionsMixin:
     # (X, Z) reading is confirmed by the glVertex3f(radius*dx, 0, radius*dy)
     # call that consumes it. Note 1-4 put the centre a diagonal away, R * sqrt2,
     # which is the same offset prove_tip_comp.py works with.
-    LATHE_NOSE_OFFSET = [None, (1, -1), (1, 1), (-1, 1), (-1, -1),
-                         (0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)]
+    LATHE_NOSE_OFFSET = lathe_comp.NOSE_OFFSET
 
     # the centre-line angle LinuxCNC's own figure labels each position with,
     # measured clockwise from a line parallel to Z+
