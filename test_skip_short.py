@@ -18,14 +18,21 @@ just entered for. On testing_15_2 that is
 A wasted air move would be a nuisance; a feed into the part for no cut is a
 mark on the workpiece. The gate now runs before any motion is written.
 
-The trap in testing this: with the option OFF nothing is skipped, so a test
-that only ran the default would pass against the broken code. Both states are
-generated here, and the OFF one is checked as well - moving the gate moved the
-lead-out resolution with it, and that block runs whether or not anything is
-skipped.
+Two traps in testing this, and both have been walked into:
+
+  - With the option OFF nothing is skipped, so a test that only ran the default
+    would pass against the broken code. Both states are generated, and the OFF
+    one is checked as well - moving the gate moved the lead-out resolution with
+    it, and that block runs whether or not anything is skipped.
+  - With no level SHORT ENOUGH to skip, every check passes vacuously. That is
+    what happened to this test when the entry extension lengthened all of
+    testing_15_2's levels past the limit. PROJECTS now names a project that
+    must skip, and it is a failure if it stops doing so.
 
 Verified to fail against the previous lathe_level_pass.ngc: it reports the lone
-entry feed above, and the stray rapid that follows it.
+entry feed above, and the stray rapid that follows it. The detector is also
+checked against those four moves spliced into a clean run, so "no faults found"
+cannot mean "the detector is broken".
 """
 import os
 import re
@@ -50,11 +57,22 @@ def check(name, cond, detail=''):
         FAILED.append(name)
 
 
-def generate(out, skip):
+# The projects this runs on. testing_11 is the one that MUST skip - it is
+# what makes every check below mean something; testing_15_2 is the project the
+# bug was found on and is kept as its own regression, even though the entry
+# extension has since lengthened all of its levels past the limit so nothing
+# there is short any more.
+PROJECTS = (
+    ('testing_11.xml', (), True),
+    ('testing_15_2.xml', ('tool_change:param_flank_len=16.0',), False),
+)
+
+
+def generate(project, extra, out, skip):
     r = subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
-                        'testing_15_2.xml', '--out', out, '--config-copy',
-                        '--set', 'polyline:param_skip_short=%d' % skip,
-                        '--set', 'tool_change:param_flank_len=16.0'],
+                        project, '--out', out, '--config-copy',
+                        '--set', 'polyline:param_skip_short=%d' % skip]
+                       + [a for e in extra for a in ('--set', e)],
                        capture_output=True, text=True)
     return out if (r.returncode == 0 and os.path.isfile(out)) else None
 
@@ -66,12 +84,20 @@ def main():
     if not shutil.which('rs274'):
         print('SKIP  rs274 is not installed')
         return
+    for project, extra, must_skip in PROJECTS:
+        print('--- %s' % project)
+        run(project, extra, must_skip)
+        print()
+    verdict()
+
+
+def run(project, extra, must_skip):
     import ncam_preview as P
 
     d = tempfile.mkdtemp(prefix='skip_short_')
     try:
-        off = generate(os.path.join(d, 'off.ngc'), 0)
-        on = generate(os.path.join(d, 'on.ngc'), 1)
+        off = generate(project, extra, os.path.join(d, 'off.ngc'), 0)
+        on = generate(project, extra, os.path.join(d, 'on.ngc'), 1)
         check('both variants generate', off is not None and on is not None)
         if off is None or on is None:
             return
@@ -96,18 +122,23 @@ def main():
             return [m for m in tp.moves
                     if m.op == 'Lathe Polyline' and not m.subs]
         r_off, r_on = rough(tp_off), rough(tp_on)
-        # The entry extension (lathe_sections.entry_contour) lengthened every
-        # level on this project past 2.5x the nose diameter, so there is no
-        # longer a short pass here to skip. Said out loud rather than quietly
-        # downgraded: the orphan-entry check below is the real regression
-        # guard and still runs, but the "does it skip at all" control is
-        # currently unexercised and openPoints.md records that it needs a
-        # project that still has a short level.
-        if len(r_on) < len(r_off):
+        # Without a level short enough to skip, every check below passes
+        # vacuously - which is exactly what happened to this test when the
+        # entry extension (lathe_sections.entry_contour) lengthened all of
+        # testing_15_2's levels past the limit. One project in PROJECTS is
+        # required to skip, and it is a FAILURE if it stops doing so.
+        if must_skip:
+            check('turning it on actually skips something',
+                  len(r_on) < len(r_off),
+                  '%d roughing moves either way - nothing here is short '
+                  'enough any more, so this test proves nothing. Find a '
+                  'project with a short level.' % len(r_on))
+        elif len(r_on) < len(r_off):
             check('turning it on actually skips something', True)
         else:
-            print('SKIP  nothing is short enough to skip on this project any '
-                  'more - %d roughing moves either way' % len(r_on))
+            print('SKIP  nothing short to skip here - %d roughing moves '
+                  'either way; the OFF path below is what this project '
+                  'guards' % len(r_on))
 
         # THE point: every feed in the roughing phase must belong to a pass
         # that goes somewhere. A skipped level used to leave a lone entry feed
@@ -137,6 +168,25 @@ def main():
                     out.append((run[0].a, run[-1].b, len(run)))
                 i = j
             return out
+
+        # THE NEGATIVE CONTROL. A detector that never fires reads exactly like
+        # a program with no fault in it. These are the four moves the bug left
+        # behind on testing_15_2, spliced into a clean run: a retract, two
+        # rapids to the lead start, and a feed into the part that then walks
+        # away without cutting.
+        import ncam_preview as _P
+        broken = list(r_on) + [
+            _P.Move('rapid', (24.5720, 0.0, -68.2371), (31.8160, 0.0, -67.5300),
+                    'Lathe Polyline', 1, None, ()),
+            _P.Move('rapid', (31.8160, 0.0, -67.5300), (25.2791, 0.0, -67.5300),
+                    'Lathe Polyline', 1, None, ()),
+            _P.Move('feed', (25.2791, 0.0, -67.5300), (24.5720, 0.0, -68.2371),
+                    'Lathe Polyline', 1, None, ()),
+            _P.Move('rapid', (24.5720, 0.0, -68.2371), (31.8160, 0.0, -68.2371),
+                    'Lathe Polyline', 1, None, ())]
+        check('the orphan detector fires on the pattern it was written for',
+              bool(lone_entries(broken)),
+              'the bug itself goes unreported, so a clean result means nothing')
 
         lone = lone_entries(r_on)
         check('no roughing feed enters the part without cutting a pass',
@@ -169,7 +219,8 @@ def main():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
-    print()
+
+def verdict():
     if FAILED:
         print('FAILED: %d' % len(FAILED))
         for f in FAILED:

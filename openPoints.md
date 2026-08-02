@@ -15,21 +15,49 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `a7047ed`.
+Branch: `liveTooling`. Last pushed: `4fe9aca`.
 
 ---
 
 ## Next — before anything else
 
-- [ ] **Check the same lead-in on the pre-finish and finish passes** once
-  roughing is done - deferred deliberately, not forgotten.
+- [ ] **The comp entry drives into the wall on ID work, 0.2929 mm.** Found by
+  the pre-finish / finish lead-in check below, 2026-08-02. On an OD profile the
+  entry is harmless; on a bore it is not.
 
-- [ ] **`test_skip_short` has lost its case.** The entry extension lengthened
-  every level on testing_15_2 past 2.5x the nose diameter, so nothing is short
-  enough to skip there any more and the "does it skip at all" control is
-  unexercised - it now prints SKIP with the reason rather than passing
-  silently. The orphan-entry check, which is the real regression guard, still
-  runs. Needs a project that still has a short level.
+  With `li_len` and `li_rad` both 0, `lathe_poly_pass` takes its plunge branch -
+  rapid clear, rapid to the entry radius, switch comp on, trace from record 2 -
+  and LinuxCNC's own compensation entry then moves the control point **1.0000 mm
+  diagonally at 45 degrees** to reach the compensated start. Measured on
+  testing_14_inside, a 34 mm bore, 0.5 mm nose:
+
+  | pass | rapid lands | entry ends | finished wall | overshoot |
+  |---|---|---|---|---|
+  | pre-finish | r 16.0778 | Z −0.7071, **r 16.7849** | r 16.492 | **0.2929 mm** |
+  | finish | r 16.5858 | Z −0.7071, **r 17.2929** | r 17.000 | **0.2929 mm** |
+
+  The same figure on both, so it is the compensation entry vector and not a
+  contour artefact. For a bore the metal is at LARGER radius, so 0.2929 mm past
+  the wall is 0.2929 mm into it, and it happens 0.7071 mm inside the mouth.
+  Note this is the **control point** crossing the wall as `rs274` reports it;
+  what it does to the surface depends on the nose geometry and has not been put
+  through `prove_tip_comp.py` yet.
+
+  Almost certainly the same fault as the **1.4929 mm ID lead-in/out gouge**
+  already open under Lathe G-code, seen on a different op.
+
+  **The fix has a precedent**: `boring.ngc` and `taper_id.ngc` already widen
+  their post-comp radial retract by `#<_tip_lead_w>` for exactly this reason -
+  the round nose swinging back into the finished wall. The polyline's plunge
+  approach needs the same widening on the ENTRY side, so the diagonal happens
+  in the bore's open space instead of in the wall. That is a change to
+  `lib/lathe/lathe_poly_pass.ngc` - motion, ID, and comp - so it is not being
+  made without a word first.
+
+- [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
+  (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
+  end of the finish pass on testing_15_2. Harmless, and noise in every move
+  count taken from these programs.
 
 ## Tool shape
 
@@ -190,6 +218,42 @@ Branch: `liveTooling`. Last pushed: `a7047ed`.
 ---
 
 ## Done
+
+- [x] **The lead-in on the pre-finish and finish passes — CHECKED**,
+  2026-08-02. Deferred from the roughing lead-in work; the answer is that the
+  roughing fault does not exist there, and a different one does.
+
+  The contour passes do **not** re-enter behind a boss. They trace the
+  reachable contour in one continuous run - on testing_15_2 the pre-finish pass
+  is 38 feeds and the finish pass 22 feeds, each spanning Z −69.89…+1.71 and
+  Z −70.40…+1.71 without a break - so there is no staircase of short entries to
+  start on the contour, which was the whole of the roughing problem.
+
+  What they do have is a **1.0000 mm feed at 45°** at the entry, from
+  LinuxCNC's own compensation entry. Measured on four projects:
+
+  | project | entry | verdict |
+  |---|---|---|
+  | testing_15_2 (OD) | 1.0000 mm at −135° | both ends in air, beyond the face |
+  | testing_13_arcs (OD) | 1.0000 mm at −135° | both ends in air |
+  | testing_11 (OD) | 1.0000 mm at −135° | both ends in air |
+  | testing_14_inside (ID) | 1.0000 mm at +135° | starts in air, **ends in metal** |
+
+  On OD work the contour itself starts beyond the stock face, so the whole
+  approach is in free air and the first cut runs along the profile - nothing to
+  fix. On ID work it is a real fault, now its own open point above. The lead-OUT
+  is in air on both, OD (outward past the OD) and ID (inward into the bore).
+
+- [x] **`test_skip_short` has its case back** — `testing_11.xml`, 578 → 566
+  roughing moves with the option on. The test now runs over a list of projects
+  and **fails** if the one marked `must_skip` stops skipping, instead of
+  printing SKIP and passing. testing_15_2 is kept as its own regression for the
+  option-off path, since that is the project the bug was found on.
+
+  A negative control went in with it: the four moves the bug left behind are
+  spliced into a clean run and the orphan detector must report them. Without
+  that, "no faults found" and "the detector is broken" look identical - which is
+  exactly the state this test had drifted into.
 
 - [x] **Roughing pass ENDINGS — CLOSED**, confirmed in AXIS by greatEndian
   2026-08-02. Originally: *the endings stand off the pre-finish contour,
