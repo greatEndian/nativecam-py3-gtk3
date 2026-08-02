@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `7ed2b8c`.
+Branch: `liveTooling`. Last pushed: `b2f9eba`.
 
 ---
 
@@ -330,11 +330,24 @@ Branch: `liveTooling`. Last pushed: `7ed2b8c`.
 
   | | |
   |---|---|
-  | right-hand reference | Z +12.598 from the tip, one line of constant Z |
+  | near side | Z −10.000, the vertical tangent to the nose circle — the tip's own Z |
+  | right-hand reference | Z +2.598, one line of constant Z |
   | bottom | r +37.598 from the tip = insert 12.6 + shank 25 |
-  | joined by | the front cutting edge, run on to the bottom line |
   | closing points | 4, up from 3 |
   | radial extent at a 20 mm shank | 32.60 mm — **exactly 5 mm less**, the shank difference and nothing else |
+
+  **The two sides are parallel constant-Z lines.** The first attempt ran the
+  **front cutting edge** down to the bottom instead, which put the near side on
+  a slant of the front angle — 9.8 mm of Z over 37.6 mm of radius. greatEndian
+  in AXIS, `photo/toolFlank_3_0.png` against the "then" panel: *"you do not
+  have two parallel vertical lines now, near radius is angled by front angle
+  which is wrong"*. In a plan view a holder has straight sides. The near side
+  is now the vertical tangent to the nose circle — the same line the
+  flank-length outline already used as its leading cap — and the arc starts at
+  its tangent point rather than at the front edge's, which also picked up a 15°
+  sliver of nose that had been outside the outline. The holder face is no
+  longer drawn over the top: with a shank it is wholly inside the body and only
+  left a visible seam.
 
   The collision check still uses the **full 160 mm block**, which the picture
   no longer shows: what fouls a shoulder is the holder running back to the

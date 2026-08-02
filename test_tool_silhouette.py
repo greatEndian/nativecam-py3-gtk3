@@ -339,7 +339,9 @@ def main():
     if ins:
         # arc ... back tangent, back edge end, the corner, the front edge down
         # at the bottom line
-        t_f, t_b, e_b = ins[0], ins[-4], ins[-3]
+        # ins[0] is the arc start, which with a shank is the NEAR VERTICAL's
+        # tangent point on the nose - not the front cutting edge's
+        t_f, t_b, e_b = prt['t_f'], ins[-4], ins[-3]
         corner, down = ins[-2], ins[-1]
         check('the outline closes on four points, not three',
               prt.get('tail') == 4, 'tail = %s' % prt.get('tail'))
@@ -365,10 +367,21 @@ def main():
         check('the bottom sits one shank height below the insert',
               abs(corner[1] - (prt['e_f'][1] + SH)) < 1e-9,
               'r%.4f, wanted r%.4f' % (corner[1], prt['e_f'][1] + SH))
-        check('the point on the bottom line is on the front cutting edge',
-              abs((down[0] - t_f[0]) * (prt['e_f'][1] - t_f[1])
-                  - (down[1] - t_f[1]) * (prt['e_f'][0] - t_f[0])) < 1e-6,
-              'the bottom line is joined by something other than the edge')
+        # The two sides are PARALLEL CONSTANT-Z LINES. Running the front
+        # cutting edge down to the bottom instead put the near side on a slant
+        # of the front angle - 9.8 mm of Z over 37.6 mm of radius - which is
+        # photo/toolFlank_3_0.png, and is not what a holder looks like from
+        # above.
+        check('the near side is a line of constant Z too',
+              abs(down[0] - ins[0][0]) < 1e-9,
+              'bottom at Z%.4f, the outline starts at Z%.4f'
+              % (down[0], ins[0][0]))
+        check('and it is tangent to the nose circle, not on the front edge',
+              abs(down[0] - (cz - R)) < 1e-9,
+              'Z%.4f, the nose tangent is at Z%.4f' % (down[0], cz - R))
+        check('so the two sides are parallel, and apart',
+              abs(down[0] - corner[0]) > R,
+              'they are %.4f mm apart' % abs(down[0] - corner[0]))
 
         # The tool is bigger than the old flank outline, and that is the point:
         # it now includes the block it is clamped in. What matters is that it

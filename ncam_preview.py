@@ -1244,6 +1244,12 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     # the nose arc, from one tangent point round the exposed side to the other
     a_f = math.atan2(t_f[1] - cx, t_f[0] - cz)
     a_b = math.atan2(t_b[1] - cx, t_b[0] - cz)
+    if dims is not None:
+        # With a shank the arc starts at the NEAR VERTICAL's tangent point
+        # instead of at the front edge's, because that vertical is what closes
+        # the tool on this side - see below. Leaving it at the front tangent
+        # left a 15 degree sliver of nose outside the outline.
+        a_f = math.pi if zdir > 0 else 0.0
     span = (a_b - a_f) % (2 * math.pi)
     if span > math.pi:              # take the short way, over the cutting side
         span -= 2 * math.pi
@@ -1273,22 +1279,25 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     # greatEndian, photo/toolFlank_3.png - drawn as a separate square it read
     # as a second object floating clear of the tool it belongs to, which is
     # exactly what it looked like in AXIS.
-    z_ref = max(p[0] for p in ins) if zdir > 0 else min(p[0] for p in ins)
-    x_far = max(p[1] for p in ins) if xdir > 0 else min(p[1] for p in ins)
+    #
+    # BOTH SIDES ARE CONSTANT-Z LINES, and they are parallel. The near one is
+    # `z_lead`, the vertical tangent to the nose circle on the cutting side -
+    # the same line the flank-length outline already used as its leading cap.
+    # Running the FRONT CUTTING EDGE down to the bottom instead put the near
+    # side on a slant of the front angle, 9.8 mm of Z over 37.6 mm of radius,
+    # which is what photo/toolFlank_3_0.png shows and is not what a holder
+    # looks like from above.
+    cand = list(arc) + [e_f, e_b]
+    z_ref = (max if zdir > 0 else min)(p[0] for p in cand)
+    x_far = (max if xdir > 0 else min)(p[1] for p in cand)
     x_bot = x_far + xdir * shank_h
-    if abs(d_f[1]) < 1e-9:
-        return ins                  # a front edge parallel to Z never gets down
-    k = (x_bot - t_f[1]) / d_f[1]
-    if k <= 0:
-        return ins
-    down = (t_f[0] + d_f[0] * k, x_bot)
-    if (down[0] - z_ref) * zdir > 0:
-        # a shallow front edge would run out past the right-hand reference
-        # before it ever reached the bottom one; the reference wins
-        down = (z_ref, x_bot)
     if parts is not None:
-        parts.update(z_ref=z_ref, x_bot=x_bot, tail=4)
-    return arc + [e_b, (z_ref, x_bot), down]
+        # four closing points for the collision body: back tangent, back edge
+        # end, the corner, the bottom line's near end. The near VERTICAL is
+        # left out for the same reason the front cutting edge was - it is the
+        # side facing the cut, and testing it reports every pass as a crash.
+        parts.update(z_ref=z_ref, z_near=z_lead, x_bot=x_bot, tail=4)
+    return arc + [e_b, (z_ref, x_bot), (z_lead, x_bot)]
 
 
 def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
@@ -1380,9 +1389,13 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         outline = (tool_silhouette(pos, nose_r, orient, front_deg, back_deg,
                                    flank_len, cl_deg, None, shank_h)
                    if plane == 'ZX' else None)
+        # The holder face is only drawn on the FLANK-LENGTH outline. Once a
+        # shank closes the tool on its two vertical references that sliver is
+        # wholly inside the body, and drawing it again only put a visible
+        # seam across it.
         holder = (tool_holder(pos, nose_r, orient, front_deg, back_deg,
-                              flank_len, cl_deg, shank_h)
-                  if plane == 'ZX' else None)
+                              flank_len, cl_deg)
+                  if plane == 'ZX' and not shank_dims(shank_h) else None)
         # the shank is NOT drawn as a block of its own - the silhouette above
         # already closes on its two reference lines. See tool_silhouette.
         if holder:
