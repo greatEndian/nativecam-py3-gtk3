@@ -47,7 +47,7 @@ def _fmt(val):
     return '%0.8f' % val
 
 
-def resolve_points(polyline_feature):
+def resolve_points(polyline_feature, vertices=None):
     """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
     in (diameter units as typed - see module docstring in the plan:
@@ -71,6 +71,15 @@ def resolve_points(polyline_feature):
     origin sits above or below the whole recorded profile is exactly what
     the ceiling's clamp against start_radius in poly_lathe_mill.ngc is
     already for - this function has no need to duplicate that.
+
+    `vertices`, when a list is passed, is filled with the points that are an
+    ITEM'S OWN ENDPOINT rather than a sub-point of a densified arc. Those are
+    the profile's real corners, and _min_segment must never drop one: dropping
+    a chord out of the middle of an arc costs that chord's sagitta, while
+    dropping the point where the arc MEETS the next item shortcuts the whole
+    corner. On testing_13_arcs that cost 0.94 mm of radius - see the note on
+    _min_segment. Collected before apply_merge_radii, so a vertex that a merge
+    radius rounds away simply never matches, which is harmless.
 
     Returns None if any child item is of a kind this module cannot resolve,
     or if a param is missing - callers must treat None as "can't safely
@@ -106,6 +115,8 @@ def resolve_points(polyline_feature):
 
         for i, (z, r) in enumerate(span):
             points.append((z, r * DIAMETER_MODE))
+            if vertices is not None and i == len(span) - 1:
+                vertices.append(points[-1])
             # the merge radius rounds the vertex where this item BEGINS, so
             # it belongs to the first sub-point only; apply_merge_radii reads
             # merges[j + 1] as the radius rounding points[j]
@@ -1702,7 +1713,8 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     Returns the hard contour and soft=False when nothing constrains it: no back
     angle, the flank switch off, or an envelope that comes out identical.
     """
-    points = resolve_points(polyline_feature)
+    corners = []
+    points = resolve_points(polyline_feature, corners)
     if not points or len(points) < 2:
         return points, False
     if back_deg is None or back_deg <= 0:
@@ -1738,7 +1750,7 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     # still refused. This only ever runs on a profile that HAS an unreachable
     # region - a fully reachable one is returned untouched above - so the blast
     # radius is exactly the parts that would otherwise abort.
-    return _min_segment(_clean_ramp(env, points), 2.4 * nose_r), True
+    return _min_segment(_clean_ramp(env, points), 2.4 * nose_r, corners), True
 
 
 def _upper_hull(pts):
@@ -1794,7 +1806,7 @@ def _clean_ramp(env, hard, tol=1e-4):
     return out
 
 
-def _min_segment(pts, limit):
+def _min_segment(pts, limit, protect=()):
     """Drop points that would leave a segment shorter than `limit`.
 
     Cutter compensation shrinks each segment by R*tan(deficit/2) at a concave
@@ -1810,13 +1822,32 @@ def _min_segment(pts, limit):
 
     The endpoints are always kept, so the ramp still starts and ends where it
     meets the drawn profile.
+
+    `protect` holds points that must survive whatever their spacing - the
+    profile's real corners, from resolve_points' `vertices`. Keeping only the
+    two ENDPOINTS is not enough, and the difference is not small. A densified
+    arc's last chord is whatever the sweep leaves over, so it is routinely
+    shorter than the limit; drop that point and the path runs from the last
+    chord vertex straight to the NEXT ITEM'S far end, cutting the corner off.
+    Measured on testing_13_arcs, three arcs, all three truncated:
+
+        R4   16 x 5.625 deg densified, kept every 3rd, remainder 0.3925 mm
+        R6   20 x 4.500 deg densified, kept every 3rd, remainder 0.9423 mm
+        R10  25 x 3.600 deg densified, kept every 2nd, remainder 0.6282 mm
+
+    against a limit of 2.4 x 0.4 = 0.960 mm. The R6 misses by 18 um and costs
+    0.9386 mm of radius: its 90 degree sweep stopped at 81 degrees and the
+    following 19 mm cylinder at r 28.000 was cut as a ramp from r 27.061. That
+    is what made In CAM look 0.8875 mm worse than Native on that project when
+    Native was the one in the wrong.
     """
     if limit <= 0 or len(pts) < 3:
         return list(pts)
+    safe = set(protect)
     keep = [pts[0]]
     for q in pts[1:-1]:
-        if math.hypot(q[0] - keep[-1][0],
-                      (q[1] - keep[-1][1]) / DIAMETER_MODE) >= limit:
+        if q in safe or math.hypot(q[0] - keep[-1][0],
+                                   (q[1] - keep[-1][1]) / DIAMETER_MODE) >= limit:
             keep.append(q)
     keep.append(pts[-1])
     return keep
