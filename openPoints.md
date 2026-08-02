@@ -15,44 +15,11 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `4fe9aca`.
+Branch: `liveTooling`. Last pushed: `73e216b`.
 
 ---
 
 ## Next — before anything else
-
-- [ ] **The comp entry drives into the wall on ID work, 0.2929 mm.** Found by
-  the pre-finish / finish lead-in check below, 2026-08-02. On an OD profile the
-  entry is harmless; on a bore it is not.
-
-  With `li_len` and `li_rad` both 0, `lathe_poly_pass` takes its plunge branch -
-  rapid clear, rapid to the entry radius, switch comp on, trace from record 2 -
-  and LinuxCNC's own compensation entry then moves the control point **1.0000 mm
-  diagonally at 45 degrees** to reach the compensated start. Measured on
-  testing_14_inside, a 34 mm bore, 0.5 mm nose:
-
-  | pass | rapid lands | entry ends | finished wall | overshoot |
-  |---|---|---|---|---|
-  | pre-finish | r 16.0778 | Z −0.7071, **r 16.7849** | r 16.492 | **0.2929 mm** |
-  | finish | r 16.5858 | Z −0.7071, **r 17.2929** | r 17.000 | **0.2929 mm** |
-
-  The same figure on both, so it is the compensation entry vector and not a
-  contour artefact. For a bore the metal is at LARGER radius, so 0.2929 mm past
-  the wall is 0.2929 mm into it, and it happens 0.7071 mm inside the mouth.
-  Note this is the **control point** crossing the wall as `rs274` reports it;
-  what it does to the surface depends on the nose geometry and has not been put
-  through `prove_tip_comp.py` yet.
-
-  Almost certainly the same fault as the **1.4929 mm ID lead-in/out gouge**
-  already open under Lathe G-code, seen on a different op.
-
-  **The fix has a precedent**: `boring.ngc` and `taper_id.ngc` already widen
-  their post-comp radial retract by `#<_tip_lead_w>` for exactly this reason -
-  the round nose swinging back into the finished wall. The polyline's plunge
-  approach needs the same widening on the ENTRY side, so the diagonal happens
-  in the bore's open space instead of in the wall. That is a change to
-  `lib/lathe/lathe_poly_pass.ngc` - motion, ID, and comp - so it is not being
-  made without a word first.
 
 - [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
   (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
@@ -122,6 +89,60 @@ Branch: `liveTooling`. Last pushed: `4fe9aca`.
 - [ ] `Regenerate on rewind` as an option (currently always on).
 - [ ] `Programmed Point` toggle (the control-point cross is always drawn).
 
+## ID work — PAUSED at greatEndian's word, 2026-08-02
+
+Nothing here is being worked on. Each item says what finishing it would take,
+so picking it up again does not start from a blank page.
+
+- [ ] **The comp entry drives into the wall on ID work, 0.2929 mm.** Found by
+  the pre-finish / finish lead-in check below, 2026-08-02. On an OD profile the
+  entry is harmless; on a bore it is not.
+
+  With `li_len` and `li_rad` both 0, `lathe_poly_pass` takes its plunge branch -
+  rapid clear, rapid to the entry radius, switch comp on, trace from record 2 -
+  and LinuxCNC's own compensation entry then moves the control point **1.0000 mm
+  diagonally at 45 degrees** to reach the compensated start. Measured on
+  testing_14_inside, a 34 mm bore, 0.5 mm nose:
+
+  | pass | rapid lands | entry ends | finished wall | overshoot |
+  |---|---|---|---|---|
+  | pre-finish | r 16.0778 | Z −0.7071, **r 16.7849** | r 16.492 | **0.2929 mm** |
+  | finish | r 16.5858 | Z −0.7071, **r 17.2929** | r 17.000 | **0.2929 mm** |
+
+  The same figure on both, so it is the compensation entry vector and not a
+  contour artefact. For a bore the metal is at LARGER radius, so 0.2929 mm past
+  the wall is 0.2929 mm into it, and it happens 0.7071 mm inside the mouth.
+  Note this is the **control point** crossing the wall as `rs274` reports it;
+  what it does to the surface depends on the nose geometry and has not been put
+  through `prove_tip_comp.py` yet.
+
+  Almost certainly the same fault as the **1.4929 mm ID lead-in/out gouge**
+  already open under Lathe G-code, seen on a different op.
+
+  **The fix has a precedent**: `boring.ngc` and `taper_id.ngc` already widen
+  their post-comp radial retract by `#<_tip_lead_w>` for exactly this reason -
+  the round nose swinging back into the finished wall. The polyline's plunge
+  approach needs the same widening on the ENTRY side, so the diagonal happens
+  in the bore's open space instead of in the wall. That is a change to
+  `lib/lathe/lathe_poly_pass.ngc` - motion, ID, and comp - so it is not being
+  made without a word first.
+
+  **To finish**: widen the polyline's plunge approach by `#<_tip_lead_w>` on the
+  ID side in `lib/lathe/lathe_poly_pass.ngc`, the way `boring.ngc` and
+  `taper_id.ngc` already widen their post-comp retract; regenerate
+  testing_14_inside and confirm the entry ends inside the bore's open space
+  rather than 0.2929 mm past the wall; then put it through
+  `prove_tip_comp.py --op boring` to show the surface itself is clean, which has
+  never been done for this case.
+
+- [ ] **ID lead-in/out gouge, 1.4929 mm native** — open since the tip-comp work.
+  Very likely the same fault as the item above, seen on a different op.
+
+  **To finish**: measure it again first - the 1.4929 mm figure predates both the
+  entry-contour work and the stop table, and no baseline in this project has
+  survived that long. Then it is the same one-line widening, or it disappears
+  with the item above and only needs confirming.
+
 ## Lathe G-code
 
 > Compensation as it stands — the three modes, the shared subroutines, the
@@ -168,9 +189,61 @@ Branch: `liveTooling`. Last pushed: `4fe9aca`.
   of `lib/lathe` stays. Nothing else should be built on top of comp until it is
   taken.
 
-- [ ] **ID lead-in/out gouge, 1.4929 mm native** — open since the tip-comp
-  work. Very likely a consequence of the entry rule in the point above; if
-  compensation moves into Python it disappears rather than gets fixed.
+  ### Measured, 2026-08-02 — what surface each mode actually leaves
+
+  All three modes generated and measured in one run, OD projects only (ID is
+  paused). The real nose circle is swept along each mode's own finish pass and
+  the outer radius it leaves is compared to the programmed contour. Samples
+  within 1.0 mm of a profile vertex are dropped — a round nose leaves a fillet
+  at every corner and counting that as error would penalise a correct mode.
+
+  | project | mode | worst | mean |
+  |---|---|---|---|
+  | testing_15_2 | Off | 0.1094 | 0.0649 |
+  | | Native | **0.3727** | 0.0751 |
+  | | In CAM | **0.0080** | 0.0024 |
+  | testing_11 | Off | 0.1058 | 0.0828 |
+  | | Native | **0.3624** | 0.0380 |
+  | | In CAM | **0.0079** | 0.0033 |
+  | testing_13_arcs | Off | 0.0211 | 0.0131 |
+  | | Native | 0.2268 | 0.0049 |
+  | | In CAM | **0.8875** | 0.3299 |
+
+  **Native has a systematic entry defect.** Its worst error is always at the
+  START of the contour and always the same shape. On testing_15_2 the finish
+  pass's first cut runs along a wall programmed dead straight at r 20.000, and
+  `rs274` reports the control point going from **r 20.4000 at Z +1.0 to
+  r 20.0074 at Z −20.0** — 0.39 mm of taper on a straight wall. The cause is
+  stated in `lathe_poly_pass.ngc`'s own comment: comp is switched on at the
+  entry point and the trace starts at record 2, *"making the long
+  record1-to-record2 cut the entry move"*. The compensation entry move is
+  therefore the first cut, in the material, and the surface ramps from
+  uncompensated to compensated along it. Same signature on all three projects:
+  0.3727, 0.3624, 0.2268 mm, each at the first segment.
+
+  **In CAM has no entry ramp at all** — it runs `G40` throughout — and on the
+  two projects without arcs it is an order of magnitude more accurate than
+  Native and 13× better than Off.
+
+  **On the arc project In CAM is much worse, and it is not yet clear it is
+  wrong.** The two modes trace materially different contours around Z −51:
+  Off/Native end an arc at **r 27.06** and In CAM at **r 28.00**, about 0.94 mm
+  apart, which is the whole of In CAM's 0.8875 error there. The measurement's
+  target is built from Off's own path, so if Off is the one flattening the arc
+  short then In CAM is right and the number is an artefact of the yardstick.
+  **This has to be settled against the profile definition, not against another
+  toolpath, before the table above is used to decide anything.**
+
+  Two more facts for the decision:
+
+  - In CAM emits 2–3× the points: 70 against 38 on testing_15_2, 99 against 45
+    on testing_13_arcs. The file grows 25,656 → 31,603 bytes.
+  - The polyline's In CAM is already **Python** —
+    `lathe_sections.build_cam_comp_gcode` emits a point table and the `.ngc`
+    walks it, which is the standing rule exactly. The parametric ops' In CAM is
+    **O-code**: `tip_comp_vec.ngc` computes the offset vector at run time. If
+    In CAM becomes the default, those want moving to Python.
+
 - [ ] **In CAM comp is refused on FACING only** — corrected 2026-08-02 by
   reading the code rather than the note. The `.cfg` validation blocks mode 2
   outright: *"it produces the same cutting coordinates as Native LinuxCNC, but
