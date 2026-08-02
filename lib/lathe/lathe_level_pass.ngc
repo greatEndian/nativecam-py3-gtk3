@@ -462,6 +462,18 @@ o<lathe_level_pass> sub
 			G0 X[#<_wp_dia_od> + #<_x_clear>]
 		o<rt_side> endif
 	o<ret_md> endif
+	(where the approach LANDS: the start of the profile-angle segment when)
+	(there is one, else the pass start itself. Both the lead-in branch and)
+	(the plain-rapid branch use it, because the segment is NOT part of the)
+	(lead-in - it is there whether or not a lead-in was asked for, and the)
+	(project that wanted it has lead-in length and radius both 0.)
+	#<ap_z> = #<z_start>
+	#<ap_x> = #<level>
+	o<ap_use> if [#<pa_on>]
+		#<ap_z> = #<pa_z>
+		#<ap_x> = #<pa_x>
+	o<ap_use> endif
+
 	o<lead_in> if [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
 		(a level pass always travels along Z at constant X, so the toolpath's)
 		(own direction at the entry is always pure Z - no profile lookup needed)
@@ -495,15 +507,15 @@ o<lathe_level_pass> sub
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<_li_reff> GT 0]
-			o<fillet_lead> CALL [#<z_start>] [#<level>] [-#<z_dir>] [0] [#<li_bz>] [#<li_bx>] [#<_li_reff>] [#<z_dir>]
+			o<fillet_lead> CALL [#<ap_z>] [#<ap_x>] [-#<z_dir>] [0] [#<li_bz>] [#<li_bx>] [#<_li_reff>] [#<z_dir>]
 		o<li_geom> endif
 
 		o<li_base> if [#<_flt_ok>]
 			#<li_baz> = #<_flt_t1z>
 			#<li_bax> = #<_flt_t1x>
 		o<li_base> else
-			#<li_baz> = #<z_start>
-			#<li_bax> = #<level>
+			#<li_baz> = #<ap_z>
+			#<li_bax> = #<ap_x>
 		o<li_base> endif
 
 		G0 Z[#<li_baz> + #<_li_leff> * #<li_bz>]
@@ -519,25 +531,28 @@ o<lathe_level_pass> sub
 		o<li_fsw> if [#<li_feed> NE #<pass_feed>]
 			F#<pass_feed>
 		o<li_fsw> endif
-		o<pa_cut> if [#<pa_on>]
-			(down the contour's own angle, then the turn onto the level)
-			G1 X[#<pa_x> * #<_diameter_mode>] Z#<pa_z>
-			G1 X[#<level> * #<_diameter_mode>] Z#<z_start>
-		o<pa_cut> endif
 		o<li_arc> if [#<_flt_ok>]
 			(tangent blend from the lead-in line into the pass's own)
 			(direction, instead of a sharp corner)
 			o<li_arc_d> if [#<_flt_cw>]
-				G2 X[#<level> * #<_diameter_mode>] Z#<z_start> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+				G2 X[#<ap_x> * #<_diameter_mode>] Z#<ap_z> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
 			o<li_arc_d> else
-				G3 X[#<level> * #<_diameter_mode>] Z#<z_start> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
+				G3 X[#<ap_x> * #<_diameter_mode>] Z#<ap_z> I[#<_flt_cx> - #<li_bax>] K[#<_flt_cz> - #<li_baz>]
 			o<li_arc_d> endif
 		o<li_arc> endif
 		F#<pass_feed>
 	o<lead_in> else
-		G0 Z[#<z_start> + #<z_dir> * #<_pl_z_clear>]
-		G0 X[#<level> * #<_diameter_mode>]
+		G0 Z[#<ap_z> + #<z_dir> * #<_pl_z_clear>]
+		G0 X[#<ap_x> * #<_diameter_mode>]
 	o<lead_in> endif
+
+	(the profile-angle approach, outside the lead-in branch on purpose)
+	o<pa_cut> if [#<pa_on>]
+		F#<pass_feed>
+		G1 X[#<ap_x> * #<_diameter_mode>] Z#<ap_z>
+		(the turn onto the level, at the entry point)
+		G1 X[#<level> * #<_diameter_mode>] Z#<z_start>
+	o<pa_cut> endif
 
 
 	G1 Z#<z_end_cut>

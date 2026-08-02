@@ -187,6 +187,14 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   the 18 being two feeds on each of the nine entries; level cuts, cut length
   and gouge count all unchanged.
 
+  **First version did nothing in AXIS** - greatEndian, same day. The segment
+  had been put INSIDE the `o<lead_in>` branch, which only runs when a lead-in
+  length or radius is set, and the project that wants it has **both at 0**. It
+  is not part of the lead-in and is now emitted outside it, with both the
+  lead-in branch and the plain-rapid branch landing on the segment's start.
+  Verified in the failing configuration itself - `li_len=0 li_rad=0` - not
+  only in the default one.
+
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
 
