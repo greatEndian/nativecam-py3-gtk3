@@ -129,6 +129,13 @@ Global defaults `#<_tip_nose_dia>` / `#<_tip_orient>` come from prefs via `creat
 
 `prove_tip_comp.py` is the acceptance test, not code review: it runs `rs274`, places the nose circle at each compensated control point, and asserts tangency to the target profile with no gouge and full coverage. Correct side must PASS **and** the wrong `--freeside` must FAIL — a single profile line is tangent from both sides, so without the free-side flag a wrong side passes. Test the finish pass only (`_tool_usage=2`) so uncompensated roughing does not pollute the check. Three traps that have each cost a session: the control-point→nose-centre offset for a 90° insert corner is **R√2**, and it is a raw vector — normalising it to R·unit mis-measures; `rs274` runs with `cwd` = the ini dir, so a repo-relative `--tbl` silently aborts the run at `T<n> M6` (omit it and let the ini resolve, or pass an absolute path); and the live `lathe.var` is rewritten by the running GUI, so copy it in a retry loop to get a complete snapshot and pass it with `--var` (a truncated var also aborts at `T<n> M6`, with no error in the output).
 
+## Session records
+
+Before every compaction, automatic or manual, write `session_N.md` at the repo
+root: what that session delivered, with the measured numbers and commit hashes,
+what was decided, and what went wrong. `openPoints.md` records what is LEFT;
+the session files record what HAPPENED. Neither replaces the other.
+
 ## Working conventions
 
 - Keep responses concise — action points over prose, no restating the request back.
