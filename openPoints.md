@@ -93,6 +93,24 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   - On testing_15_2 the table comes out 38 points, and **motion is
     byte-identical**: 244 calls before and after, because nothing reads it yet.
 
+  **A silent factor of two, found by cross-checking rather than by reading.**
+  The first version offset the profile in the DIAMETERS `resolve_points`
+  returns, using a RADIUS offset. A perpendicular offset is not the same
+  construction in the two spaces - the ramp that measures 13° in radius
+  measures 24.78° in diameter - so it landed at **Z-48.161 where the
+  interpreter's own scan at the same allowance gives Z-49.203**, exactly half
+  the shift, with nothing to show for it. Fixed by offsetting in radius.
+
+  | level r | Python entry Z | interpreter scan | error |
+  |---|---|---|---|
+  | 29.652 | -49.208 | -49.203 | 0.005 mm |
+  | 29.144 | -51.408 | -51.404 | 0.004 mm |
+  | 28.636 | -53.609 | -53.604 | 0.005 mm |
+
+  The residual is the scan's own `l_eff` epsilon: 0.001 mm of radius over
+  sin 13° is 0.0044 mm of Z. **So the Python construction and the subroutine's
+  now agree to within their own tolerance**, which is what step 2b needs.
+
   **Step 2b — what is left.** `lathe_level_pass` gains `z_start`, used ONLY for
   the approach, the lead-in geometry and the pass-length tests; its scan, its
   stop and its block test keep the floor allowance untouched, which is what

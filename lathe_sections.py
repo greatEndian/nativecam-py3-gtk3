@@ -1576,9 +1576,17 @@ def entry_contour(points, dist, rough_dir=0):
     stop are compared against each other, so they have to be measured off the
     same construction.
 
-    `dist` is a radius, in the same units as the points. `rough_dir` picks the
-    outward side the way flank_sides does, so front-to-back and back-to-front
-    both come out right.
+    **`points` must be in RADIUS, not in the diameters resolve_points works
+    in.** A perpendicular offset is not the same construction in the two
+    spaces: the ramp that measures 13 degrees in radius measures 24.78 in
+    diameter, so offsetting there and halving afterwards gives 1.129 mm of Z
+    where 2.258 is wanted. That is the same trap flank_slope documents when it
+    scales its slope by DIAMETER_MODE, and it cost this function a silent
+    factor of two - the entry landed at Z-48.161 against the Z-49.203 the
+    interpreter's own scan produces at the same allowance.
+
+    `dist` is a radius. `rough_dir` picks the outward side the way flank_sides
+    does, so front-to-back and back-to-front both come out right.
     """
     if not points or len(points) < 2 or dist <= 0:
         return list(points)
@@ -1610,7 +1618,10 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
         return ''
     d = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
-    env = entry_contour(pts, _to_float(entry_off), rough_dir)
+    # into RADIUS before offsetting - see entry_contour. The table is written
+    # in radius too, so there is no second conversion on the way out.
+    env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
+                        _to_float(entry_off), rough_dir)
     if len(env) < 2:
         return ''
     top = ENTRY_BASE + 2 * len(env)
@@ -1627,8 +1638,7 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
              '#<_pl_entry_n>    = %d' % len(env)]
     for i, (z, x) in enumerate(env):
         lines.append('#%d = %s' % (ENTRY_BASE + 2 * i, _fmt(z)))
-        lines.append('#%d = %s' % (ENTRY_BASE + 2 * i + 1,
-                                   _fmt(x / DIAMETER_MODE)))
+        lines.append('#%d = %s' % (ENTRY_BASE + 2 * i + 1, _fmt(x)))
     return '\n'.join(lines)
 
 

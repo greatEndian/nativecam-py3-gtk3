@@ -437,6 +437,24 @@ def test_entry_contour():
         check('an offset of %g moves the contour %g' % (d, d),
               abs(got - d) < 1e-9, 'moved %.6f' % got)
 
+    # THE trap, and it was live: the profile arrives in DIAMETERS and the
+    # offset is a RADIUS. A perpendicular offset is not the same construction
+    # in the two spaces - a ramp that measures 13 degrees in radius measures
+    # 24.78 in diameter - so offsetting there and halving afterwards gives
+    # 1.129 mm of Z where 2.258 is wanted. Silent, and exactly half.
+    ramp = [(0.0, 20.0), (-40.0, 20.0 - 40.0 * math.tan(math.radians(13.0)))]
+    off = L.entry_contour(ramp, 0.508, 0)
+    # where the offset ramp reaches the radius the bare one has at Z-20
+    r_at = ramp[0][1] - 20.0 * math.tan(math.radians(13.0))
+    (z0, r0), (z1, r1) = off[0], off[1]
+    z_off = z0 + (z1 - z0) * (r_at - r0) / (r1 - r0)
+    shift = abs(z_off - (-20.0))
+    want = 0.508 / math.sin(math.radians(13.0))
+    check('a 0.508 offset shifts a 13 deg ramp by 2.258 mm of Z',
+          abs(shift - want) < 1e-6,
+          'shifted %.4f, wanted %.4f - the diameter/radius factor is back'
+          % (shift, want))
+
     check('no offset, no contour change', L.entry_contour(prof, 0.0, 0) == prof)
     check('a degenerate profile comes back untouched',
           L.entry_contour([(0.0, 1.0)], 1.0, 0) == [(0.0, 1.0)])
