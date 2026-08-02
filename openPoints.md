@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `b2f9eba`.
+Branch: `liveTooling`. Last pushed: `5b14d7f`.
 
 ---
 
@@ -330,24 +330,33 @@ Branch: `liveTooling`. Last pushed: `b2f9eba`.
 
   | | |
   |---|---|
-  | near side | Z −10.000, the vertical tangent to the nose circle — the tip's own Z |
+  | short front cutting edge | 6.077 mm at 75° from Z, nose → holder face |
+  | near side, the holder face | Z −8.400, tangent to the nose on the side **away** from the cut |
   | right-hand reference | Z +2.598, one line of constant Z |
   | bottom | r +37.598 from the tip = insert 12.6 + shank 25 |
-  | closing points | 4, up from 3 |
+  | closing points | 5, up from 3 |
   | radial extent at a 20 mm shank | 32.60 mm — **exactly 5 mm less**, the shank difference and nothing else |
 
-  **The two sides are parallel constant-Z lines.** The first attempt ran the
-  **front cutting edge** down to the bottom instead, which put the near side on
-  a slant of the front angle — 9.8 mm of Z over 37.6 mm of radius. greatEndian
-  in AXIS, `photo/toolFlank_3_0.png` against the "then" panel: *"you do not
-  have two parallel vertical lines now, near radius is angled by front angle
-  which is wrong"*. In a plan view a holder has straight sides. The near side
-  is now the vertical tangent to the nose circle — the same line the
-  flank-length outline already used as its leading cap — and the arc starts at
-  its tangent point rather than at the front edge's, which also picked up a 15°
-  sliver of nose that had been outside the outline. The holder face is no
-  longer drawn over the top: with a shank it is wholly inside the body and only
-  left a visible seam.
+  **The two sides are parallel constant-Z lines, and the front edge is short.**
+  Two wrong versions on the way, both corrected in AXIS by greatEndian:
+
+  1. The **front cutting edge run down to the bottom line** put the near side
+     on a slant of the front angle — 9.8 mm of Z over 37.6 mm of radius.
+     `photo/toolFlank_3_0.png` against the "then" panel: *"you do not have two
+     parallel vertical lines now, near radius is angled by front angle which is
+     wrong"*. In a plan view a holder has straight sides.
+  2. Closing on the **tangent nearest the cut** and dropping the front edge
+     altogether gave two parallel sides but lost the edge: *"you are missing
+     the opposite radius side feature which is creating small/short cutting
+     edge from front by front angle"*.
+
+  Both are answered by the same line — the tangent to the nose on the side
+  **opposite** the cut, which `tool_holder` has always used as the holder's
+  front face. The front edge leaves the nose at the front angle and runs only
+  as far as that face, 6.077 mm on a 0.8 mm nose at 15°; the holder takes over
+  from there. The face is no longer drawn on top of the body as a separate
+  triangle — it is the body's own near side now, and drawing it twice only left
+  a visible seam.
 
   The collision check still uses the **full 160 mm block**, which the picture
   no longer shows: what fouls a shoulder is the holder running back to the

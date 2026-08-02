@@ -337,14 +337,12 @@ def main():
     prt = {}
     P.tool_silhouette(POS, R, ORIENT, FRONT, BACK, FLANK, parts=prt, shank_h=SH)
     if ins:
-        # arc ... back tangent, back edge end, the corner, the front edge down
-        # at the bottom line
-        # ins[0] is the arc start, which with a shank is the NEAR VERTICAL's
-        # tangent point on the nose - not the front cutting edge's
-        t_f, t_b, e_b = prt['t_f'], ins[-4], ins[-3]
-        corner, down = ins[-2], ins[-1]
-        check('the outline closes on four points, not three',
-              prt.get('tail') == 4, 'tail = %s' % prt.get('tail'))
+        # arc ... back tangent, back edge end, the two bottom corners, the foot
+        # of the short front cutting edge
+        t_f, t_b, e_b = prt['t_f'], ins[-5], ins[-4]
+        far_c, near_c, cross = ins[-3], ins[-2], ins[-1]
+        check('the outline closes on five points',
+              prt.get('tail') == 5, 'tail = %s' % prt.get('tail'))
         check('the back edge runs exactly one insert edge length',
               abs(math.hypot(e_b[0] - t_b[0], e_b[1] - t_b[1]) - edge) < 1e-9,
               'measured %.4f, wanted %g'
@@ -359,29 +357,49 @@ def main():
         # bottom - greatEndian, photo/toolFlank_3.png, where the separate
         # square read as a second object floating clear of its own tool.
         check('the right-hand reference is one line of constant Z',
-              abs(corner[0] - e_b[0]) < 1e-9,
-              'Z%.4f against Z%.4f' % (corner[0], e_b[0]))
+              abs(far_c[0] - e_b[0]) < 1e-9,
+              'Z%.4f against Z%.4f' % (far_c[0], e_b[0]))
         check('and the bottom is one line of constant radius',
-              abs(corner[1] - down[1]) < 1e-9,
-              'r%.4f against r%.4f' % (corner[1], down[1]))
+              abs(far_c[1] - near_c[1]) < 1e-9,
+              'r%.4f against r%.4f' % (far_c[1], near_c[1]))
         check('the bottom sits one shank height below the insert',
-              abs(corner[1] - (prt['e_f'][1] + SH)) < 1e-9,
-              'r%.4f, wanted r%.4f' % (corner[1], prt['e_f'][1] + SH))
+              abs(far_c[1] - (prt['e_f'][1] + SH)) < 1e-9,
+              'r%.4f, wanted r%.4f' % (far_c[1], prt['e_f'][1] + SH))
         # The two sides are PARALLEL CONSTANT-Z LINES. Running the front
         # cutting edge down to the bottom instead put the near side on a slant
         # of the front angle - 9.8 mm of Z over 37.6 mm of radius - which is
         # photo/toolFlank_3_0.png, and is not what a holder looks like from
         # above.
         check('the near side is a line of constant Z too',
-              abs(down[0] - ins[0][0]) < 1e-9,
-              'bottom at Z%.4f, the outline starts at Z%.4f'
-              % (down[0], ins[0][0]))
-        check('and it is tangent to the nose circle, not on the front edge',
-              abs(down[0] - (cz - R)) < 1e-9,
-              'Z%.4f, the nose tangent is at Z%.4f' % (down[0], cz - R))
+              abs(near_c[0] - cross[0]) < 1e-9,
+              'bottom corner at Z%.4f, the edge foot at Z%.4f'
+              % (near_c[0], cross[0]))
+        check('and it is tangent to the nose circle on the side away from '
+              'the cut',
+              abs(near_c[0] - (cz + R)) < 1e-9,
+              'Z%.4f, the far nose tangent is at Z%.4f' % (near_c[0], cz + R))
         check('so the two sides are parallel, and apart',
-              abs(down[0] - corner[0]) > R,
-              'they are %.4f mm apart' % abs(down[0] - corner[0]))
+              abs(near_c[0] - far_c[0]) > R,
+              'they are %.4f mm apart' % abs(near_c[0] - far_c[0]))
+
+        # That face is what makes the front cutting edge SHORT: the edge leaves
+        # the nose at the front angle and stops where the face begins. Dropping
+        # the face altogether lost the short edge with it - greatEndian, "you
+        # are missing the opposite radius side feature which is creating
+        # small/short cutting edge from front by front angle".
+        seg = math.hypot(cross[0] - t_f[0], cross[1] - t_f[1])
+        check('a short front cutting edge runs from the nose to that face',
+              seg > 1e-6, 'there is no front edge left at all')
+        check('at the table front angle, like the insert edge it is part of',
+              abs((math.degrees(math.atan2(cross[1] - t_f[1],
+                                           cross[0] - t_f[0])) % 180.0)
+                  - (90.0 - FRONT)) < 1e-6,
+              '%.4f deg' % (math.degrees(math.atan2(cross[1] - t_f[1],
+                                                    cross[0] - t_f[0]))
+                            % 180.0))
+        check('and short - shorter than the insert edge, not the whole tool',
+              seg < edge,
+              '%.4f mm against a %g mm insert edge' % (seg, edge))
 
         # The tool is bigger than the old flank outline, and that is the point:
         # it now includes the block it is clamped in. What matters is that it

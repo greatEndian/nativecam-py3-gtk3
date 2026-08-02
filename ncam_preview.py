@@ -1244,12 +1244,6 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     # the nose arc, from one tangent point round the exposed side to the other
     a_f = math.atan2(t_f[1] - cx, t_f[0] - cz)
     a_b = math.atan2(t_b[1] - cx, t_b[0] - cz)
-    if dims is not None:
-        # With a shank the arc starts at the NEAR VERTICAL's tangent point
-        # instead of at the front edge's, because that vertical is what closes
-        # the tool on this side - see below. Leaving it at the front tangent
-        # left a 15 degree sliver of nose outside the outline.
-        a_f = math.pi if zdir > 0 else 0.0
     span = (a_b - a_f) % (2 * math.pi)
     if span > math.pi:              # take the short way, over the cutting side
         span -= 2 * math.pi
@@ -1280,24 +1274,44 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     # as a second object floating clear of the tool it belongs to, which is
     # exactly what it looked like in AXIS.
     #
-    # BOTH SIDES ARE CONSTANT-Z LINES, and they are parallel. The near one is
-    # `z_lead`, the vertical tangent to the nose circle on the cutting side -
-    # the same line the flank-length outline already used as its leading cap.
-    # Running the FRONT CUTTING EDGE down to the bottom instead put the near
-    # side on a slant of the front angle, 9.8 mm of Z over 37.6 mm of radius,
-    # which is what photo/toolFlank_3_0.png shows and is not what a holder
-    # looks like from above.
+    # BOTH SIDES ARE CONSTANT-Z LINES, and they are parallel. The far one is
+    # the shank's near face. The NEAR one is `z_face`, the vertical tangent to
+    # the nose circle on the side OPPOSITE the cut - the tool tip mirrored
+    # through the nose centre, the line tool_holder has always used as the
+    # front face of the holder.
+    #
+    # That line is what makes the front cutting edge SHORT: the edge leaves the
+    # nose at the front angle and runs only as far as the face, six-odd
+    # millimetres on a 0.8 mm nose at 15 degrees, and the holder takes over
+    # from there. Running the front edge all the way down to the bottom instead
+    # put the near side on a slant of the front angle - 9.8 mm of Z over 37.6 mm
+    # of radius, photo/toolFlank_3_0.png - and dropping it altogether lost the
+    # short edge with it.
     cand = list(arc) + [e_f, e_b]
     z_ref = (max if zdir > 0 else min)(p[0] for p in cand)
     x_far = (max if xdir > 0 else min)(p[1] for p in cand)
     x_bot = x_far + xdir * shank_h
+    z_face = cz + zdir * nose_r
+    if abs(d_f[0]) < 1e-9 or (z_face - z_ref) * zdir >= 0:
+        return ins                  # no face to cut the front edge short on
+    k = (z_face - t_f[0]) / d_f[0]
+    if k <= 0:
+        return ins
+    cross = (z_face, t_f[1] + d_f[1] * k)
+    if (cross[1] - x_bot) * xdir >= 0:
+        # a shallow front edge reaches the bottom before it ever reaches the
+        # face: there is no near vertical then, only the edge
+        return ins
     if parts is not None:
-        # four closing points for the collision body: back tangent, back edge
-        # end, the corner, the bottom line's near end. The near VERTICAL is
-        # left out for the same reason the front cutting edge was - it is the
-        # side facing the cut, and testing it reports every pass as a crash.
-        parts.update(z_ref=z_ref, z_near=z_lead, x_bot=x_bot, tail=4)
-    return arc + [e_b, (z_ref, x_bot), (z_lead, x_bot)]
+        # five closing points for the collision body: back tangent, back edge
+        # end, the two bottom corners, and the foot of the short front edge.
+        # That covers the back edge, the shank reference, the bottom and the
+        # holder face - every surface that is not an edge. The short front edge
+        # itself is left out, as the front edge always was: it cuts, and
+        # testing it reports every pass as a crash.
+        parts.update(z_ref=z_ref, z_face=z_face, x_bot=x_bot, cross=cross,
+                     tail=5)
+    return arc + [e_b, (z_ref, x_bot), (z_face, x_bot), cross]
 
 
 def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
