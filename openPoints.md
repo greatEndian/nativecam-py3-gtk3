@@ -138,6 +138,41 @@ Branch: `liveTooling`. Last pushed: `be094c2`.
   `lib/lathe` is on disk AT THAT MOMENT. Generate and parse both sides in one
   run, with the file state you mean.*
 
+- [ ] **Roughing pass ENDINGS stand off the pre-finish contour, everywhere.**
+  greatEndian in AXIS, 2026-08-02, after step 2b landed: the behind-boss entry
+  is now tangent to the artificial section and correct. The remaining gap is at
+  the other end, and it is **across the whole part, not only behind the boss**.
+
+  The number is the same constant step 1 identified. The stop uses the floor
+  allowance `lvl_d` = **1.016 mm** of radius = finish offset 0.508 + one whole
+  roughing depth of cut 0.508, the second from *Space passes from = Final
+  contour*. The **pre-finish contour sits at final + 0.508**, so roughing stops
+  exactly one roughing depth of cut outside it - a constant radial gap that
+  becomes 1.017 to 1.509 mm of Z on the front slope and 1.016 mm against the
+  end wall.
+
+  Wanted: the ending **in contact with the pre-finish contour**, i.e. the stop
+  measured at the finish offset (0.508) rather than the floor allowance
+  (1.016).
+
+  Note this supersedes the earlier "the stop keeps the floor allowance" call -
+  that was about not moving the stop *while* the start moved, and the start is
+  now done.
+
+  **Python first**: `entry_contour()` already builds an offset contour and a
+  table, and `lathe_level_pass` already walks one for `z_start`. The stop wants
+  the same shape - a second table at the finish offset, walked the same way -
+  rather than a new allowance threaded through the scan. Table space is the
+  constraint: 4200-4400 holds the entry table (38 points on testing_15_2, 76
+  slots), so a stop table needs its own bounded range carved out and
+  `test_table_layout` extended.
+
+- [ ] **Item 3 of the lead-in spec - the three-piece entry.** Straight *real
+  lead-in* through air, tangent *lead-in radius* arc, then a constant-length
+  straight segment copying the profile at its own angle, meeting the contour
+  tangentially. Items 1 and 2 are done; this is the part
+  `photo/leadInNewAndRight_1.png` labels.
+
 - [ ] **Check the same lead-in on the pre-finish and finish passes** once
   roughing is done - deferred deliberately, not forgotten.
 
