@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `73e216b`.
+Branch: `liveTooling`. Last pushed: `e750ee3`.
 
 ---
 
@@ -260,9 +260,15 @@ so picking it up again does not start from a blank page.
 
 - [ ] **Grooving and drilling have no compensation story** because neither
   exists yet; whatever is decided below has to cover them when they are built.
-- [ ] **Grooving** is not implemented — the menu icon is a placeholder, left
-  deliberately so it is not forgotten.
-- [ ] **Drilling** — same, placeholder only.
+- [ ] **Grooving and drilling stay OPEN until the outside polyline is
+  finished** — greatEndian, 2026-08-03. Both are planned in full (see the
+  compensation plan's steps 6 and 7: the plunge and peck schedules computed in
+  Python and walked as tables, the insert-width refusal when the tool
+  description carries no `W` token, and a lathe peck cycle written out because
+  `G81`/`G83` drill along the axis normal to the plane, which is Y in G18).
+  Neither is started. Grooving is **absent** rather than a placeholder - no
+  `.cfg`, no `lib/lathe/` sub, no menu item; drilling has a menu placeholder at
+  `catalogs/lathe/menu.xml:17` and nothing behind it.
 
 ## Consequences of decisions taken, worth a look in AXIS
 
@@ -291,6 +297,50 @@ so picking it up again does not start from a blank page.
 ---
 
 ## Done
+
+- [x] **Compensation, steps 1 to 5 — DONE**, 2026-08-02/03. The measured
+  surface each mode leaves, against the programmed contour with corners
+  excluded:
+
+  | project | Off | Native | In CAM |
+  |---|---|---|---|
+  | testing_15_2 | 0.1094 | 0.3727 → **0.0080** | 0.0080 |
+  | testing_11 | 0.1058 | 0.3624 → **0.0079** | 0.0079 |
+  | testing_13_arcs | 0.0211 → **0.0013** | 0.2268 → **0.0014** | 0.8875 → **0.0014** |
+
+  Native and In CAM now agree to the last digit on all three - two independent
+  implementations of the same geometry converging. **Accuracy no longer decides
+  the CNC-versus-CAM question**; it is now about tool-table behaviour,
+  testability and the preview.
+
+  - `a0e189a` **the arc truncation**, and it was in the NATIVE path.
+    `_min_segment` kept only the first and last points of the whole contour, so
+    the vertex where an arc meets the next item was dropped: R6, remainder
+    0.9423 mm against a 0.960 mm limit, missed by 18 µm, cost 0.9386 mm of
+    radius. In CAM escaped it only because `build_cam_comp_gcode` asks for
+    nose_r 0. So In CAM was right and the yardstick was the broken one.
+  - `c16df1f` **the entry ramp**. `lathe_poly_pass` pre-shifted by the plain
+    normal instead of the orientation-aware vector, so the first CUT became the
+    compensation entry move and a wall programmed straight at r 20.000 came out
+    r 20.4000 → r 20.0074.
+  - `27cdcc3` **`lathe_comp.py`** - the orientation table was in four places and
+    the side rule in five, OD and ID inverted. One table, one `offset_vector`,
+    one `lead_width`, and an op registry that is the seam for `turning` and
+    `radius_od`: a row, not a refactor. Plus **`/tnrc`**, a compressed knowledge
+    pack queried offline.
+  - `e750ee3` **the polyline's entry takes its table from Python**. Motion
+    byte-identical, which is the acceptance test for a refactor.
+  - `test_quadrants.py` **both outside quadrants, every mode**. Orientations 1
+    (+X,−Z), 2 (+X,+Z) and 7 (+X,0), both sides, eight surfaces: the nose lands
+    on surface + R·normal to 1e-12 for every orientation, and compensating to
+    the WRONG side gouges - a control that re-measured the same circle would
+    have been a tautology. Uncompensated is exact on a cylinder and a face and
+    out by 0.4000 mm on a 45° taper for orientation 2, 0.1657 mm for
+    orientation 1.
+
+  Still open in this area: the **default mode** is greatEndian's call;
+  `tip_comp_vec.ngc` still has four callers (two ID and paused, `facing` whose
+  X references resolve at runtime, and the OD taper).
 
 - [x] **The lead-in on the pre-finish and finish passes — CHECKED**,
   2026-08-02. Deferred from the roughing lead-in work; the answer is that the
