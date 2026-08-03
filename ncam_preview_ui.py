@@ -45,7 +45,8 @@ class PreviewPane(object):
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
-                 profile_cb=None, soft_cb=None):
+                 profile_cb=None, soft_cb=None, comp_cb=None,
+                 comp_mode_cb=None):
         self.ini_path = ini_path
         self.plane = plane
         # from the ini's own limit, in mm/min. MAX_LINEAR_VELOCITY is per
@@ -61,6 +62,11 @@ class PreviewPane(object):
         # feature the operator has since edited.
         self.profile_cb = profile_cb
         self.soft_cb = soft_cb
+        # where the tool CONTROL POINT should travel once compensation is
+        # applied. A callback like the others, so it follows the operator's
+        # edits without anything having to remember to refresh it.
+        self.comp_cb = comp_cb
+        self.comp_mode_cb = comp_mode_cb
         self.colorize = 'plain'
         self.leftover = 0.0
         self.tolerance = 0.01
@@ -542,6 +548,14 @@ class PreviewPane(object):
             parts += [swatch(*names[p]) for p in found if p in names]
         if self.contour_btn.get_active() and self.soft_cb is not None:
             parts.append(swatch(col['soft'], _('reachable')))
+        # the compensated path, and WHICH MODE produced it. The mode is the
+        # part that answers the question: a polyline with nose comp off has no
+        # compensation in its path at all, and every saved test project had it
+        # off, which is what "we see uncompensated" turned out to mean.
+        if self.contour_btn.get_active() and self.comp_mode_cb is not None:
+            mode = self._comp_mode()
+            if mode:
+                parts.append(swatch(col['comp'], _('comp: %s') % mode))
         return '   '.join(parts)
 
     # -- simulation ---------------------------------------------------------
@@ -663,6 +677,20 @@ class PreviewPane(object):
             return None
         try:
             return cb()
+        except Exception:
+            return None
+
+    COMP_MODES = {0: 'off', 1: 'CNC', 2: 'CAM'}
+
+    def _comp_mode(self):
+        """'CNC' / 'CAM' / 'off' for the polyline, or None when there is none.
+
+        Read live rather than cached: the operator changes it on the feature
+        and the legend has to follow, the same reason every contour here is a
+        callback.
+        """
+        try:
+            return self.COMP_MODES.get(int(self.comp_mode_cb()))
         except Exception:
             return None
 
@@ -839,7 +867,8 @@ class PreviewPane(object):
                                    moves=moves, move_colour=self._move_colour(),
                                    points=self.points_btn.get_active(),
                                    hard=self._contour(self.profile_cb),
-                                   soft=self._contour(self.soft_cb))
+                                   soft=self._contour(self.soft_cb),
+                                   comp=self._contour(self.comp_cb))
         return False
 
 
@@ -865,7 +894,9 @@ class NCamPreviewMixin(object):
         plane = 'ZX' if getattr(self, 'catalog_dir', '') == 'lathe' else 'XY'
         self.preview_pane = PreviewPane(ini, plane, self._preview_stock,
                                        self._preview_profile,
-                                       self._preview_soft_profile)
+                                       self._preview_soft_profile,
+                                       self._preview_comp_profile,
+                                       self._preview_comp_mode)
 
         paned = gtk.Paned(orientation=gtk.Orientation.VERTICAL)
         self.preview_paned = paned
@@ -902,6 +933,57 @@ class NCamPreviewMixin(object):
                 ncam.TOOL_TABLE.get_flank_len(),
                 ncam.TOOL_TABLE.get_back_clear())
             return pts if soft else None
+        except Exception:
+            return None
+
+    def _preview_comp_mode(self):
+        """The polyline's Tool nose comp setting as 0/1/2, or None."""
+        f = self._find_feature('polyline')
+        if f is None:
+            return None
+        p = f.get_param('param_n_comp')
+        return None if p is None else int(float(p.get_ngc_value()))
+
+    def _preview_comp_profile(self):
+        """Where the tool CONTROL POINT travels once compensation is applied.
+
+        The same offset the machine gets: lathe_sections.offset_contour, which
+        is what In CAM mode already emits, at the nose radius and the side the
+        pass compensates to. Drawing it beside the programmed profile makes
+        the compensation visible instead of implied - and drawing it beside
+        the ACTUAL toolpath makes it a check, since the two should coincide.
+
+        Returns None when compensation is OFF, deliberately. A line lying
+        exactly on the profile would say a compensation is happening that is
+        not; nothing is the honest picture. It follows the contour the passes
+        follow - the reachable one where the back angle constrains it, the
+        drawn one otherwise - because that is what the finish pass traces.
+        """
+        try:
+            mode = self._preview_comp_mode()
+            if mode not in (1, 2):
+                return None
+            import lathe_sections
+            import ncam
+            f = self._find_feature('polyline')
+            if f is None:
+                return None
+            nose_r, orient = ncam.tip_comp_inputs()
+            if nose_r <= 0 or not 0 < int(orient) < 10:
+                return None
+            pts, _soft = lathe_sections.finish_profile(
+                f, ncam.TOOL_TABLE.get_back_angle(), 0.0,
+                ncam.TOOL_TABLE.get_flank_len(),
+                ncam.TOOL_TABLE.get_back_clear())
+            if not pts or len(pts) < 2:
+                return None
+            # a bore has its material on the other side, the same inversion
+            # build_cam_comp_gcode makes
+            sp = f.get_param('param_side')
+            side = -1 if (sp is not None
+                          and int(float(sp.get_ngc_value())) == 1) else 1
+            out = lathe_sections.offset_contour(pts, nose_r, int(orient), side)
+            return out if out and len(out) >= 2 else None
         except Exception:
             return None
 

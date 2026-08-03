@@ -15,22 +15,19 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `49aa60c`.
+Branch: `liveTooling`. Last pushed: `cfb5ccd`.
 
 ---
 
 ## Next — before anything else
 
-- [ ] **The preview's contour overlays are the UNCOMPENSATED profile.**
-  greatEndian, 2026-08-03, raised while reporting the pre-finish start. The
-  tool itself is already drawn at the interpreter's own compensated positions -
-  `parse_program` reads the canon, which is post-comp - so the simulation moves
-  on the real path. What is uncompensated is the finish / pre-finish /
-  reachable **lines**, which come from `lathe_sections` and are the programmed
-  profile. So the gap is a missing overlay, not a wrong tool position.
-  Deferred at greatEndian's word - *"just change the starting point"* - and the
-  three options considered were: add a compensated-path overlay alongside the
-  programmed one, replace the programmed one, or a Display-menu toggle.
+- [ ] **NEEDS A CALL — should the saved projects be switched to Native?**
+  Every project in the repo has `Tool nose comp = 0`: testing_11, both
+  polylines of testing_13_arcs, both of testing_15_2, and one of two in
+  testing_15_3. The default for a NEW polyline is 1, the CNC side, so this is
+  only the saved ones. It matters because with all of them Off the Native path
+  is exercised only by the measurement harness and never by anyone opening a
+  project — and Off is why the preview looked uncompensated.
 
 - [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
   (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
@@ -276,6 +273,19 @@ so picking it up again does not start from a blank page.
 ---
 
 ## Done
+
+- [x] **Compensation is visible in the preview** — 2026-08-03, teal overlay
+  plus the mode in the legend. Established first that the drawn toolpath is
+  ALREADY the compensated path and the simulated tool already moves on it -
+  Off 0.1094 against Native 0.0080 from the same nose-sweep code, so the
+  difference is in the path. What was missing was the line and, more usefully,
+  any statement of which mode is in effect: every saved project has it **off**,
+  which is what "we see uncompensated" turned out to mean. Draws nothing when
+  off, deliberately. `test_comp_overlay.py` makes it a self-check - Python's
+  prediction against the interpreter's actual path, **34 contour points, worst
+  0.0001 mm**; the five lead moves are excluded and the test fails if they ever
+  stop being the only ones that differ. Working in
+  `analysis/002-compensated-path-overlay.md`.
 
 - [x] **Pre-finish pass started on the finish contour** — reported from AXIS
   2026-08-03, `photo/prefinishLeadInIssue_0.png`, fixed same day. A regression

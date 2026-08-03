@@ -638,6 +638,11 @@ COL = {
     'tool_body': (0.42, 0.40, 0.46),
     'prefinish': (0.35, 0.60, 1.00),     # the pre-finish contour pass
     'finish':    (1.00, 0.60, 0.15),     # the finishing pass, in any op
+    # teal - the COMPENSATED path, where the control point actually travels.
+    # Deliberately far from 'finish' orange, 'prefinish' blue and 'soft'
+    # magenta: the whole value of this line is being told apart from the
+    # profile it is offset from.
+    'comp':      (0.30, 0.90, 0.85),
 }
 
 
@@ -670,7 +675,7 @@ def _fit(tp, stock, plane, width, height, margin):
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   view=None, tool=None, field=None, classes=None,
                   moves=None, move_colour=None, points=False,
-                  hard=None, soft=None):
+                  hard=None, soft=None, comp=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -754,6 +759,13 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
         _draw_profile(cr, hard, pt, COL['hard'], 1.2, [4.0, 3.0])
     if soft:
         _draw_profile(cr, soft, pt, COL['soft'], 2.0, None)
+    # The COMPENSATED path last, so it reads on top of the profile it is
+    # offset from. This is where the tool CONTROL POINT should travel; the
+    # drawn toolpath is where it actually did. The two lying on one another is
+    # the check - a visible gap between them is a bug, and that is how both
+    # compensation faults found on 2026-08-02/03 first showed.
+    if comp:
+        _draw_profile(cr, comp, pt, COL['comp'], 1.4, [6.0, 3.0])
 
     if points:
         cr.set_source_rgb(*COL['text'])
