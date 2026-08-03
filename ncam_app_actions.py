@@ -408,6 +408,44 @@ class NCamAppActionsMixin:
             parser.write(configfile)
 
 
+    def action_restart_ncam(self, *_a):
+        """Restart the NativeCAM panel without touching LinuxCNC.
+
+        NativeCAM runs as its own process inside a GladeVCP panel, embedded in
+        AXIS over XEmbed - which is why it can be replaced on its own. Killing
+        AXIS to get a fresh panel also stops the machine controller, and there
+        is no reason for a stuck GUI to cost that.
+
+        os.execv REPLACES this process rather than forking: same pid, so the
+        XEmbed socket AXIS is holding stays valid and the panel comes back in
+        the same place. A fork would leave the old process owning the socket
+        and the new one with nowhere to draw.
+
+        The project is saved first, and the restart is abandoned if that fails
+        - losing a feature tree to a convenience button would be a poor trade.
+        """
+        if not mess_yesno(_('Restart NativeCAM?\n\nThe current project is '
+                            'saved first. LinuxCNC and the machine are not '
+                            'touched.')):
+            return
+        try:
+            self.action_saveCurrent()
+        except Exception as e:
+            mess_dlg(_('Could not save before restarting:\n%s') % e)
+            return
+        # flushed, because execv does not run atexit handlers or flush buffers
+        try:
+            sys.stderr.write('[ncam-preview] restarting NativeCAM\n')
+            sys.stderr.flush()
+            sys.stdout.flush()
+        except Exception:
+            pass
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            # execv only returns on failure - if it worked we are already gone
+            mess_dlg(_('Could not restart NativeCAM:\n%s') % e)
+
     def action_preferences(self, *arg):
         old_quick_access_icon_size = ncam.quick_access_icon_size
         old_treeview_icon_size = ncam.treeview_icon_size
@@ -610,6 +648,11 @@ class NCamAppActionsMixin:
         self.actionUtilMenu = ca("UtilitiesMenu", None, _("_Utilities"), None, None, self.utilMenu_activate)
         self.actionLoadTools = ca("LoadTools", 'gtk-refresh', _("Reload Tool Table"), None, _("Reload Tool Table"), ncam.TOOL_TABLE.load_table)
         self.actionPreferences = ca("Preferences", 'gtk-preferences', _("Edit Preferences"), None, _("Edit Preferences"), self.action_preferences)
+        self.actionRestart = ca("RestartNCam", 'gtk-refresh',
+                                _("Restart NativeCAM"), None,
+                                _("Restart just this panel - LinuxCNC and the "
+                                  "machine keep running"),
+                                self.action_restart_ncam)
 
         self.actionAutoRefresh = cta("AutoRefresh", _("Auto-refresh"), _('Auto-refresh LinuxCNC'), self._autorefresh_toggled)
         self.actionAutoRefresh.set_active(False)

@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `79ec962`.
+Branch: `liveTooling`. Last pushed: `152baec`.
 
 ---
 
@@ -37,9 +37,24 @@ Branch: `liveTooling`. Last pushed: `79ec962`.
   is needed.** `NCAM_NO_TRACE=1` silences it. Working in
   `analysis/003-stop-button-freeze.md`.
 
-- [ ] **Contour bugs in compensation, Native and In CAM** — greatEndian
-  2026-08-03, reported alongside the freeze and deferred behind it. No detail
-  captured yet; needs the case and a screenshot before anything is measured.
+- [ ] **NATIVE: the pre-finish pass collapses onto the finish contour.**
+  greatEndian 2026-08-03. Reproduced and measured on testing_15_2 - separation
+  between the two passes is **min −0.4389, mean +0.0890** where it should be
+  +0.508. Negative means **the pre-finish pass cuts inside the finished
+  surface**, so this is not cosmetic. In CAM had the same symptom from a
+  different cause and is fixed; Off was always correct.
+
+  Cause: `tip_comp_dia` builds the D word as `2*extra_r + nose_dia`, but with a
+  non-zero **L** the interpreter takes D/2 to BE the nose radius and scales the
+  orientation term by it too - so an allowance folded into D cancels itself.
+  **An allowance cannot be carried in the D word while L is set.**
+
+  **To finish**: move the allowance into the programmed contour instead.
+  `poly_lathe_mill` already loads the pre-finish points from `_pl_fc_base`
+  through `cam_load`, so Python can emit that table pre-offset and pass
+  `shift_r = 0`, leaving D as the bare nose diameter. Check `taper`, `taper_id`
+  and `boring` for the same pattern while there. Working in
+  `analysis/004-prefinish-collapses-under-compensation.md`.
 
 
 - [ ] **NEEDS A CALL — should the saved projects be switched to Native?**
@@ -294,6 +309,22 @@ so picking it up again does not start from a blank page.
 ---
 
 ## Done
+
+- [x] **IN CAM: the pre-finish pass collapsed onto the finish contour** —
+  2026-08-03. `offset_contour` folded the allowance into the nose radius and so
+  scaled the normal AND the orientation term by `nose_r + extra`; on a surface
+  parallel to an axis those cancel and the allowance vanished. It now takes
+  `extra` separately, the rule `lathe_comp.offset_vector` already implemented.
+  Separation +0.5072/+0.5742 → **+0.5080/+0.5711**, matching Off. This is the
+  asymmetry recorded on 2026-08-02 as "masked because every caller passes
+  extra_r = 0" — **that note was wrong**, `build_cam_comp_gcode` passes a
+  non-zero extra for every pass but the last.
+
+- [x] **Restart NativeCAM, from Utilities** — 2026-08-03. `os.execv` replaces
+  the process rather than forking, so the pid and therefore the XEmbed socket
+  AXIS holds stay valid and the panel returns in place. The project is saved
+  first and the restart is abandoned if that fails. LinuxCNC and the machine
+  are untouched.
 
 - [x] **Compensation is visible in the preview** — 2026-08-03, teal overlay
   plus the mode in the legend. Established first that the drawn toolpath is

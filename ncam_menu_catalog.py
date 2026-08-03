@@ -268,6 +268,9 @@ class NCamMenuCatalogMixin:
 
         menu_utils.append(gtk.SeparatorMenuItem())
         menu_utils.append(self._create_menu_item(self.actionLoadTools))
+        # restarting the panel alone, so a stuck GUI does not cost the machine
+        # controller as well - see action_restart_ncam
+        menu_utils.append(self._create_menu_item(self.actionRestart))
         menu_utils.append(gtk.SeparatorMenuItem())
         menu_utils.append(self._create_menu_item(self.actionSaveUser))
         menu_utils.append(self._create_menu_item(self.actionDeleteUser))

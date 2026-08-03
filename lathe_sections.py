@@ -1277,7 +1277,7 @@ def _unit(dz, dx):
     return (dz / n, dx / n) if n > EPS else (0.0, 0.0)
 
 
-def offset_contour(points, nose_r, orient, side=1):
+def offset_contour(points, nose_r, orient, side=1, extra=0.0):
     """The control-point path that puts the nose circle tangent to the profile.
 
     With compensation off the machine positions the tool's CONTROL point, and
@@ -1306,9 +1306,20 @@ def offset_contour(points, nose_r, orient, side=1):
 
     points are (z, x) in the diameter units resolve_points works in; nose_r is a
     radius. Returns the same (z, diameter) form.
+
+    `extra` is an allowance held ON TOP of the nose - a pre-finish stock, a
+    pass step-down. IT SCALES THE NORMAL BUT NOT THE ORIENTATION TERM, which
+    is the rule the interpreter follows and the one lathe_comp.offset_vector
+    implements: the allowance moves the surface, the nose geometry does not
+    change with it. Folding it into nose_r instead scales both, and on a
+    surface parallel to an axis the two then cancel exactly - the allowance
+    vanishes and every pass lands on the finished contour. Measured on
+    testing_15_2: the pre-finish pass sat 0.0890 mm from the finish pass
+    instead of 0.508, and in places 0.4389 mm INSIDE it.
     """
-    if not points or len(points) < 2 or nose_r <= EPS:
+    if not points or len(points) < 2 or nose_r + extra <= EPS:
         return list(points)
+    roll = nose_r + extra
 
     off = NOSE_OFFSET[orient] if 0 < orient < len(NOSE_OFFSET) else None
     # the table is (X, Z); this module works in (z, radius)
@@ -1333,8 +1344,8 @@ def offset_contour(points, nose_r, orient, side=1):
         # The other rotation gets the cylinder right and both walls backwards.
         nz, nr = ur * side, -uz * side
         segs.append({'v0': (z0, r0), 'v1': (z1, r1), 'u': (uz, ur),
-                     'a': (z0 + nose_r * nz, r0 + nose_r * nr),
-                     'b': (z1 + nose_r * nz, r1 + nose_r * nr)})
+                     'a': (z0 + roll * nz, r0 + roll * nr),
+                     'b': (z1 + roll * nz, r1 + roll * nr)})
     if not segs:
         return list(points)
 
@@ -1350,7 +1361,7 @@ def offset_contour(points, nose_r, orient, side=1):
         if cross > EPS:
             # external: roll the nose around the shared vertex
             out.append(cur['b'])
-            out.extend(_corner_arc(cur['v1'], cur['b'], nxt['a'], nose_r))
+            out.extend(_corner_arc(cur['v1'], cur['b'], nxt['a'], roll))
         elif cross < -EPS:
             # internal: both offsets are trimmed back to where they cross
             hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
@@ -1360,7 +1371,7 @@ def offset_contour(points, nose_r, orient, side=1):
 
     # everything above is the NOSE CENTRE path - which is where the corner
     # geometry belongs, since it is the nose centre that rolls around a vertex
-    # at exactly nose_r. The control point is that path shifted by the constant
+    # at exactly roll. The control point is that path shifted by the constant
     # orientation vector, applied once here.
     res = [(z - nose_r * ozd, (r - nose_r * oxd) * DIAMETER_MODE) for z, r in out]
     # drop repeats the joins can leave behind
@@ -1482,7 +1493,7 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     pf_off = _off('param_pf_off') * (1 if _off('param_pf_on') else 0)
     offsets = cam_pass_offsets(fin_off, pf_off, _off('param_f_pass'))
 
-    paths = [offset_contour(points, nose_r + extra, int(orient), side)
+    paths = [offset_contour(points, nose_r, int(orient), side, extra)
              for extra in offsets]
     if any(len(p) < 2 for p in paths):
         return _refuse('the offset path collapsed - the nose radius is too '
