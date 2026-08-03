@@ -15,11 +15,39 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `152baec`.
+Branch: `liveTooling`. Last pushed: `8e50db1`.
 
 ---
 
 ## Next — before anything else
+
+- [ ] **The artificial back-angle section and compensation do not agree.**
+  greatEndian 2026-08-03, reported and NOT investigated - flagged here with
+  what was established so it does not start from nothing.
+
+  Two facts checked directly:
+
+  - **Roughing carries no compensation whatsoever.** `lathe_level_pass.ngc`
+    has zero references to `tip_comp_*` - no G41/G42, no D word. So what looks
+    like compensation in the wrong direction behind the boss is not
+    compensation; it is the ENTRY and STOP contour offsets
+    (`lathe_sections.entry_contour` and the stop table) together with the
+    back-angle ramp from `flank_envelope`, none of which know about the nose.
+  - **Pre-finish and finish ARE compensated** - both run through
+    `lathe_poly_pass.ngc`, 7 `tip_comp_*` references.
+
+  greatEndian's two observations - roughing offset the wrong way behind the
+  boss, and no compensation visible on the pre-finish artificial profile -
+  both land on the **artificial section**, which is a surface the TOOL leaves
+  rather than one the part has. Its offsets were written before compensation
+  existed.
+
+  **To start**: measure the artificial stretch (testing_15_2, Z−70.22 to
+  Z−35.77) separately from the drawn profile in all three modes, the way
+  `analysis/004` measured the pre-finish separation. Decide first whether that
+  section SHOULD be compensated at all - a back-angle shadow is not a
+  commanded surface - because that is a design question, not a bug.
+
 
 - [ ] **AXIS FROZE ON THE PREVIEW'S STOP BUTTON, cause unknown** —
   greatEndian 2026-08-03, AXIS had to be killed, no traceback. Ruled out by
