@@ -18,6 +18,7 @@ GTK thread with GLib.idle_add. Doing it inline would freeze the panel - inside
 AXIS, on a machine that may be cutting - every time Regenerate is pressed.
 """
 import os
+import sys
 import threading
 
 import gi
@@ -27,6 +28,33 @@ from gi.repository import Gdk            # noqa: E402
 from gi.repository import GLib            # noqa: E402
 
 import ncam_preview                        # noqa: E402
+
+
+def _trace(what):
+    """One line to stderr, flushed, naming a UI callback as it runs.
+
+    A FREEZE leaves no traceback - the process is alive and stuck, so there is
+    nothing to raise and nothing to catch. What it does leave is whatever was
+    already flushed, so the last line printed names the callback that did not
+    return. That is the only evidence a hang gives up, and it costs a handful
+    of lines per session because only the coarse callbacks are traced, never
+    the per-frame tick.
+
+    greatEndian hit Stop and had to kill AXIS - no traceback, and the stop path
+    audits as cheap: sim_t 0 short-circuits the field rebuild, rs274 runs on a
+    worker thread with -b and a 120 s timeout, and parse_program measures at
+    1.76 s / 17 MB on the live program. Reading found nothing, so the next
+    occurrence has to say where itself.
+
+    Set NCAM_NO_TRACE=1 to silence it.
+    """
+    if os.getenv('NCAM_NO_TRACE'):
+        return
+    try:
+        sys.stderr.write('[ncam-preview] %s\n' % what)
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 class PreviewPane(object):
@@ -385,6 +413,7 @@ class PreviewPane(object):
             # request and drop the rest, rather than queueing interpreter runs
             self._pending = fname
             return
+        _trace('refresh start')
         self._busy = True
         self._set_status(_('Reading toolpath...'))
         t = threading.Thread(target=self._worker, args=(fname,), daemon=True)
@@ -395,6 +424,7 @@ class PreviewPane(object):
         GLib.idle_add(self._done, tp)
 
     def _done(self, tp):
+        _trace('done')
         # the interpreter runs on a worker thread and hands the result back
         # with idle_add, so the panel can be gone by the time it lands
         if self.area.get_window() is None and self._acc is not None:
@@ -633,6 +663,7 @@ class PreviewPane(object):
         return self._field
 
     def _on_play(self, _btn):
+        _trace('play')
         self.sim_running = not self.sim_running
         if self.sim_running:
             if self.sim_t >= 0.999:
@@ -645,6 +676,7 @@ class PreviewPane(object):
 
     def _on_stop(self, _btn):
         """Rewind to uncut stock."""
+        _trace('stop')
         self._stop_sim()
         self.sim_t = 0.0
         self._reset_field()
@@ -652,6 +684,7 @@ class PreviewPane(object):
         self._sync_play_icon()
         self.area.queue_draw()
         self._render_info()
+        _trace('stop done')
 
     def _on_mode(self, item, mid):
         # a radio group fires twice per change - once for the item losing the
@@ -776,7 +809,14 @@ class PreviewPane(object):
         self.sim_t = min(1.0, self.sim_t + self.BASE_STEP * self.speed)
         self.sim_scale.set_value(self.sim_t)     # which redraws and re-informs
         if self.sim_t >= 1.0:
-            self._stop_sim()
+            # Returning False is what removes this source, so the id must be
+            # dropped WITHOUT calling GLib.source_remove on it - removing a
+            # source from inside its own dispatch and then returning False
+            # takes it away twice. It normally only logs, but it is a real
+            # double free of a source being dispatched and there is no reason
+            # to keep it.
+            self.sim_running = False
+            self._sim_source = None
             self._sync_play_icon()
             return False
         return True

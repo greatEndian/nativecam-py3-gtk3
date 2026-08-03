@@ -15,11 +15,32 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `cfb5ccd`.
+Branch: `liveTooling`. Last pushed: `79ec962`.
 
 ---
 
 ## Next — before anything else
+
+- [ ] **AXIS FROZE ON THE PREVIEW'S STOP BUTTON, cause unknown** —
+  greatEndian 2026-08-03, AXIS had to be killed, no traceback. Ruled out by
+  reading and by measurement: the stop path is cheap (`sim_t = 0`
+  short-circuits the field rebuild), `rs274` runs on a worker thread with `-b`
+  and a 120 s timeout, and `parse_program` on the live program measures
+  **1.76 s / 17 MB peak** — not memory. A double removal of the playback timer
+  source was found and fixed, but it fires at the END of playback, not on Stop,
+  so it is not claimed as the cause.
+
+  **`_trace()` now logs each coarse UI callback to stderr, flushed** — `play`,
+  `stop`, `stop done`, `refresh start`, `done`. A hang leaves only what was
+  already flushed, so the last `[ncam-preview]` line names the callback that
+  did not return. **Next time it freezes, the last few of those lines are what
+  is needed.** `NCAM_NO_TRACE=1` silences it. Working in
+  `analysis/003-stop-button-freeze.md`.
+
+- [ ] **Contour bugs in compensation, Native and In CAM** — greatEndian
+  2026-08-03, reported alongside the freeze and deferred behind it. No detail
+  captured yet; needs the case and a screenshot before anything is measured.
+
 
 - [ ] **NEEDS A CALL — should the saved projects be switched to Native?**
   Every project in the repo has `Tool nose comp = 0`: testing_11, both
