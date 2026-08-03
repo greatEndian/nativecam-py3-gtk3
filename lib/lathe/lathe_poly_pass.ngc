@@ -91,9 +91,42 @@ o<lathe_poly_pass> sub
 	(the wall is programmed dead straight at r20.000. o<tip_comp_vec> is the)
 	(same vector the parametric ops offset with, taken with the same side that)
 	(o<tip_comp_on> is about to be given, so the two cannot disagree.)
-	o<tip_comp_vec> CALL [#<c_side>] [#<_2z> - #<entry_z>] [#<_2x> - #<entry_x>] [0]
-	#<comp_ez> = [#<entry_z> + #<_tip_off_z>]
-	#<comp_ex> = [#<entry_x> + #<_tip_off_x>]
+	(control point = surface + r * normal - R * orientation. The ORIENTATION)
+	(term arrives as two numbers from lathe_comp.orient_terms_gcode, so the)
+	(nine-way table lives in Python and not in a hand transcription here. Only)
+	(the normal is computed at run time, because it turns on the direction of)
+	(the first segment of whichever record array this pass was handed - a)
+	(runtime fact. Rotating a unit vector is arithmetic; the table is not.)
+	(_line_cos/_line_sin are that unit direction, from the o<line> above.)
+	(_tip_cam_r is the driver, not comp_r: it is the nose radius in BOTH native)
+	(and In CAM mode and zero with compensation off, which is exactly the gate)
+	(o<tip_comp_vec> applied. Guarding on comp_r instead would have left the)
+	(orientation term applied to an already-offset In CAM path.)
+	#<pe_dz> = [#<_2z> - #<entry_z>]
+	#<pe_dx> = [#<_2x> - #<entry_x>]
+	#<pe_len> = SQRT[[#<pe_dz> * #<pe_dz>] + [#<pe_dx> * #<pe_dx>]]
+	(declared before the branch - a local first assigned inside one reads as)
+	(not defined under load-time pre-parse, however the branch goes)
+	#<pe_uz> = 0
+	#<pe_ux> = 0
+	#<pe_nz> = 0
+	#<pe_nx> = 0
+	#<comp_ez> = #<entry_z>
+	#<comp_ex> = #<entry_x>
+	o<pe_ok> if [[#<pe_len> GT 0.000001] AND [#<_tip_cam_r> GT 0.000001]]
+		#<pe_uz> = [#<pe_dz> / #<pe_len>]
+		#<pe_ux> = [#<pe_dx> / #<pe_len>]
+		(measured against rs274, not derived: 42 gives u_x, -u_z and 41 gives -u_x, u_z)
+		o<pe_sd> if [#<c_side> EQ 42]
+			#<pe_nz> = #<pe_ux>
+			#<pe_nx> = [-#<pe_uz>]
+		o<pe_sd> else
+			#<pe_nz> = [-#<pe_ux>]
+			#<pe_nx> = #<pe_uz>
+		o<pe_sd> endif
+		#<comp_ez> = [#<entry_z> + [#<_tip_cam_r> * #<pe_nz>] - #<_pl_nose_oz>]
+		#<comp_ex> = [#<entry_x> + [#<_tip_cam_r> * #<pe_nx>] - #<_pl_nose_ox>]
+	o<pe_ok> endif
 
 	(safe approach: retract above stock, rapid back in Z)
 	o<ap_side> if [#<_pl_side> EQ 1]

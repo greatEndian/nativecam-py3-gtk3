@@ -2683,6 +2683,9 @@ class Preferences(object):
             self.default += ("#<_tip_comp_d>              = 0.0\n")
             self.default += ("#<_tip_comp_l>              = 0.0\n")
             self.default += ("#<_tip_lead_w>              = 0.0\n\n")
+            self.default += ("#<_pl_nose_r>              = 0.0\n")
+            self.default += ("#<_pl_nose_oz>             = 0.0\n")
+            self.default += ("#<_pl_nose_ox>             = 0.0\n")
 
         if self.cat_name == 'mill' :
             self.default += ("#<_probe_func>              = 38." + self.ngc_probe_func + "\n")
@@ -2765,6 +2768,7 @@ if _ncam_real_dir not in sys.path:
 if __name__ == '__main__' :
     sys.modules.setdefault('ncam', sys.modules['__main__'])
 
+import lathe_comp
 import lathe_sections
 from ncam_feature_tree import NCamFeatureTreeMixin
 from ncam_project_io import NCamProjectIOMixin

@@ -150,3 +150,25 @@ def free_side(side):
     right of travel, so the tool is on the left.
     """
     return 'left' if int(side) == LEFT else 'right'
+
+
+def orient_terms_gcode(nose_r, orient, prefix='_pl_nose'):
+    """Literal G-code for the ORIENTATION TERM of the offset, as globals.
+
+    The one part of the offset that needs the nine-way table. Emitting it as
+    two numbers at generation time is what lets a subroutine place a
+    compensated entry point without a hand-transcribed copy of the table
+    inside it - the copy that was already a fourth transcription, and the kind
+    a Python test can never see.
+
+    The NORMAL is deliberately left to the caller: it turns on the direction of
+    the first segment of whichever record array a pass was handed, which is a
+    runtime fact. Rotating a unit vector is arithmetic; knowing where the nose
+    sits for orientation 6 is a table, and only the table belongs here.
+    """
+    ox, oz = nose_offset(orient)
+    r = max(float(nose_r or 0.0), 0.0)
+    return ('#<%s_r>  = %.8f (nose radius)\n'
+            '#<%s_oz> = %.8f (orientation term, Z)\n'
+            '#<%s_ox> = %.8f (orientation term, radius)'
+            % (prefix, r, prefix, r * oz, prefix, r * ox))
