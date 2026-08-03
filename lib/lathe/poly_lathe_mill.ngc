@@ -239,6 +239,10 @@ o<poly_lathe_mill> sub
         o<c_fc> if [#<_pl_fc_n> GT #<c_need>]
                 #<c_need> = #<_pl_fc_n>
         o<c_fc> endif
+        (and the native pre-finish contour, which shares the CAM window)
+        o<c_pf> if [#<_pl_pf_n> GT #<c_need>]
+                #<c_need> = #<_pl_pf_n>
+        o<c_pf> endif
         #<c_top> = #<c_pds>
         o<cam_alloc> if [#<c_need> GT 0]
                 #<c_top> = [#<c_pds> + #<c_need> * 8 + 1]
@@ -620,6 +624,15 @@ o<poly_lathe_mill> sub
                 o<pf_cam> if [#<nose_comp> EQ 2]
                         o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir>]] [#[#<_pl_cam_dir> + 1]] [#<rough_dir> EQ 1]
                         o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                o<pf_cam> elseif [#<_pl_pf_n> GT 0]
+                        (native: the allowance is IN THIS CONTOUR, not in the D)
+                        (word - with a non-zero L the interpreter takes D/2 to)
+                        (be the nose radius and scales the orientation term by)
+                        (it too, so an allowance folded into D cancels itself)
+                        (on any surface parallel to an axis. Pass 0 offset and)
+                        (let comp carry the bare nose. See analysis/004.)
+                        o<cam_load> CALL [#<c_pds>] [#<_pl_pf_base>] [#<_pl_pf_n>] [#<rough_dir> EQ 1]
+                        o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                 o<pf_cam> elseif [#<_pl_fc_n> GT 0]
                         (the drawn contour is not wholly reachable, so this)
                         (pass follows the soft one - the same surface the)

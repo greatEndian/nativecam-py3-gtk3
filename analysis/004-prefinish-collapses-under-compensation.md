@@ -2,8 +2,8 @@
 
 2026-08-03. greatEndian: *"if I switch from compensation Off to native/CAM the
 prefinish contour is at same place as the finishing contour, there is no offset
-present"*. **In CAM fixed. Native reproduced and NOT fixed** — it needs a
-design change, recorded below.
+present"*. **Both fixed**, by two different changes — the
+symptom was shared, the cause was not.
 
 ## Measured
 
@@ -17,6 +17,7 @@ finish, which is what leaves stock for it to take:
 | Native | **−0.4389** | +0.4467 | **+0.0890** |
 | In CAM, before | **−0.4318** | +0.1307 | **+0.0223** |
 | In CAM, after the fix | **+0.5080** | +3.4115 | **+0.5711** |
+| Native, after the fix | **+0.5080** | +3.3436 | **+0.5710** |
 
 The Offset per side is 0.508 mm. **Negative means the pre-finish pass cuts
 inside the finished surface** — this is not cosmetic.
@@ -41,9 +42,9 @@ last, so it was never masked — it was the live bug, sitting behind a comment
 saying it could not bite. A latent-bug note is only worth what its survey of
 callers is worth.
 
-## Native — reproduced, not fixed
+## Native — cause and fix
 
-Same symptom, different mechanism, and the fix is architectural.
+Same symptom, different mechanism.
 
 `tip_comp_dia` builds the D word as `2*extra_r + nose_dia` and hands the
 interpreter `G41.1 D<that> L<orientation>`. But **with a non-zero L the
@@ -53,19 +54,26 @@ by the same D/2. So the allowance folded into D gets cancelled by the
 orientation term for precisely the reason it did in Python — an allowance
 cannot be carried in the D word while L is set.
 
-**To finish**: the allowance has to move the programmed contour instead of the
-D word. `poly_lathe_mill` already loads the pre-finish pass's points from
-`_pl_fc_base` through `cam_load`, so Python can emit that table already offset
-by the allowance and pass `shift_r = 0`, leaving D as the bare nose diameter.
-That is generation-side work in `lathe_sections` plus the call sites in
-`poly_lathe_mill.ngc`, and it wants its own measurement run.
+**Fixed** by moving the allowance into the contour and leaving the D word the
+bare nose. `build_prefinish_contour_gcode` emits the finishing contour offset
+geometrically by the allowance - `offset_contour(pts, 0.0, orient, side,
+allowance)`, nose_r 0 so no orientation term - and `poly_lathe_mill` loads it
+through the `cam_load` it already uses, passing `shift_r = 0`.
 
-Note the same reasoning applies to any op that folds an allowance into D while
-setting L — worth checking `taper`, `taper_id` and `boring` when this is picked
-up.
+It is emitted into the **CAM parameter window**, 4600-5000. That window is read
+only under `nose_comp EQ 2` and this table only under `nose_comp EQ 1`, so the
+two are mutually exclusive and can share it. Without that the change would have
+needed a re-layout: FC 4000-4200, ENTRY 4200-4400, STOP 4400-4600, CAM
+4600-5000, and LinuxCNC reserves 5060 upward - there was nowhere else to put it.
+`c_need` in `poly_lathe_mill` now sizes the scratch array for this table too.
+
+The same reasoning applies to any op that folds an allowance into D while
+setting L. **`taper`, `taper_id` and `boring` are not checked** and should be -
+recorded in openPoints.
 
 ## Verified
 
+- Native separation +0.5080 min / +0.5710 mean
 - In CAM separation +0.5080 min / +0.5711 mean, matching Off's +0.5072 / +0.5742
 - the finish surface is unchanged: testing_15_2 Off 0.1094 / Native 0.0080 /
   In CAM 0.0080, so the last finish pass, which carries no allowance, is

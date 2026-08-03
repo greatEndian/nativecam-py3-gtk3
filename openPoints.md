@@ -37,33 +37,12 @@ Branch: `liveTooling`. Last pushed: `152baec`.
   is needed.** `NCAM_NO_TRACE=1` silences it. Working in
   `analysis/003-stop-button-freeze.md`.
 
-- [ ] **NATIVE: the pre-finish pass collapses onto the finish contour.**
-  greatEndian 2026-08-03. Reproduced and measured on testing_15_2 - separation
-  between the two passes is **min −0.4389, mean +0.0890** where it should be
-  +0.508. Negative means **the pre-finish pass cuts inside the finished
-  surface**, so this is not cosmetic. In CAM had the same symptom from a
-  different cause and is fixed; Off was always correct.
-
-  Cause: `tip_comp_dia` builds the D word as `2*extra_r + nose_dia`, but with a
-  non-zero **L** the interpreter takes D/2 to BE the nose radius and scales the
-  orientation term by it too - so an allowance folded into D cancels itself.
-  **An allowance cannot be carried in the D word while L is set.**
-
-  **To finish**: move the allowance into the programmed contour instead.
-  `poly_lathe_mill` already loads the pre-finish points from `_pl_fc_base`
-  through `cam_load`, so Python can emit that table pre-offset and pass
-  `shift_r = 0`, leaving D as the bare nose diameter. Check `taper`, `taper_id`
-  and `boring` for the same pattern while there. Working in
-  `analysis/004-prefinish-collapses-under-compensation.md`.
-
-
-- [ ] **NEEDS A CALL — should the saved projects be switched to Native?**
-  Every project in the repo has `Tool nose comp = 0`: testing_11, both
-  polylines of testing_13_arcs, both of testing_15_2, and one of two in
-  testing_15_3. The default for a NEW polyline is 1, the CNC side, so this is
-  only the saved ones. It matters because with all of them Off the Native path
-  is exercised only by the measurement harness and never by anyone opening a
-  project — and Off is why the preview looked uncompensated.
+- [ ] **Do `taper`, `taper_id` and `boring` fold an allowance into D too?**
+  Unchecked. The polyline's pre-finish collapse came from exactly that - with a
+  non-zero L the interpreter takes D/2 to BE the nose radius, so an allowance in
+  the D word cancels itself on any surface parallel to an axis. Those three ops
+  build D the same way through `tip_comp_dia`; whether any of them ever passes a
+  non-zero `extra_r` has not been established. `analysis/004` has the mechanism.
 
 - [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
   (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
@@ -309,6 +288,16 @@ so picking it up again does not start from a blank page.
 ---
 
 ## Done
+
+- [x] **NATIVE: the pre-finish pass collapsed onto the finish contour** —
+  2026-08-03. `tip_comp_dia` built D as `2*extra_r + nose_dia`, but with a
+  non-zero L the interpreter takes D/2 to BE the nose radius and scales the
+  orientation term by it too, so the allowance cancelled itself. Fixed by
+  moving the allowance into the CONTOUR - `build_prefinish_contour_gcode`
+  offsets it geometrically and the D word carries the bare nose. Separation
+  −0.4389/+0.0890 → **+0.5080/+0.5710**, matching Off and In CAM. The table
+  shares the CAM parameter window, which is free in Native mode; there was
+  nowhere else, since 5060 up is LinuxCNC's.
 
 - [x] **IN CAM: the pre-finish pass collapsed onto the finish contour** —
   2026-08-03. `offset_contour` folded the allowance into the nose radius and so

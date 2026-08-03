@@ -2661,6 +2661,8 @@ class Preferences(object):
             self.default += ("#<_pl_entry_z>             = 0.0\n")
             self.default += ("#<_pl_entry_n>             = 0.0\n")
             self.default += ("#<_pl_fc_base>             = 0.0\n")
+            self.default += ("#<_pl_pf_base>             = 0.0\n")
+            self.default += ("#<_pl_pf_n>                = 0.0\n")
             self.default += ("#<_pl_fc_n>                = 0.0\n")
             self.default += ("#<_pl_cam_dir>             = 0.0\n")
             self.default += ("#<_pl_cam_n>               = 0.0\n")

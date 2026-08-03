@@ -1928,6 +1928,62 @@ def _profile_x_at(z, points):
     return best
 
 
+def build_prefinish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                                  flank_len=0.0, clearance=0.0):
+    """The pre-finish pass's own contour, offset by the finishing allowance.
+
+    NATIVE COMPENSATION CANNOT CARRY AN ALLOWANCE IN THE D WORD. With a
+    non-zero L the interpreter takes D/2 to BE the nose radius and scales the
+    orientation term by it as well, so `D = 2*allowance + nose_dia` cancels
+    itself on any surface parallel to an axis: measured on testing_15_2, the
+    pre-finish pass sat 0.0890 mm from the finish pass instead of 0.508, and in
+    places 0.4389 mm INSIDE it - cutting the finished surface. See
+    analysis/004.
+
+    So the allowance moves the CONTOUR instead and the D word carries the bare
+    nose. This is that contour: a pure geometric offset, nose_r 0 so no
+    orientation term, which is what leaves the interpreter free to apply the
+    real nose comp on top.
+
+    Emitted into the CAM window. The two are mutually exclusive - _pl_cam_* is
+    read only under nose_comp 2 and this only under nose_comp 1 - so they can
+    share, and no other table has to move.
+    """
+    p = polyline_feature.get_param('param_n_comp')
+    if p is None or int(_to_float(p.get_ngc_value())) != 1:
+        return ''                      # native only; Off and In CAM are right
+    o = polyline_feature.get_param('param_f_off')
+    allowance = _to_float(o.get_ngc_value()) if o is not None else 0.0
+    if allowance <= EPS:
+        return ''
+    pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
+                               clearance)
+    if not pts or len(pts) < 2:
+        return ''
+    _nr, orient = 0.0, 0
+    tp = polyline_feature.get_param('param_side')
+    side = -1 if (tp is not None
+                  and int(_to_float(tp.get_ngc_value())) == 1) else 1
+    out = offset_contour(pts, 0.0, orient, side, allowance)
+    if not out or len(out) < 2:
+        return ''
+    top = CAM_BASE + 2 * len(out)
+    if top > CAM_TOP:
+        return ('(WARNING - the pre-finish contour needs %d parameter slots '
+                'and only %d are free, so the pre-finish pass will fall back '
+                'to the finish contour and leave no stock.)'
+                % (top - CAM_BASE, CAM_TOP - CAM_BASE))
+    lines = ['(the pre-finish contour: the finishing one offset by the)',
+             '(allowance, because native comp cannot hold an allowance in D)',
+             '#<_pl_pf_base> = %d' % CAM_BASE,
+             '#<_pl_pf_n>    = %d' % len(out)]
+    for i, (z, x) in enumerate(out):
+        lines.append('#%d = %s' % (CAM_BASE + 2 * i, _fmt(z)))
+        lines.append('#%d = %s' % (CAM_BASE + 2 * i + 1,
+                                   _fmt(x / DIAMETER_MODE)))
+    return '\n'.join(lines)
+
+
 def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
                                flank_len=0.0, clearance=0.0):
     """The soft contour as a point table, or '' when the hard one will do.
