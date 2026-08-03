@@ -189,60 +189,28 @@ so picking it up again does not start from a blank page.
   of `lib/lathe` stays. Nothing else should be built on top of comp until it is
   taken.
 
-  ### Measured, 2026-08-02 — what surface each mode actually leaves
+  ### Settled since — accuracy no longer decides it
 
-  All three modes generated and measured in one run, OD projects only (ID is
-  paused). The real nose circle is swept along each mode's own finish pass and
-  the outer radius it leaves is compared to the programmed contour. Samples
-  within 1.0 mm of a profile vertex are dropped — a round nose leaves a fillet
-  at every corner and counting that as error would penalise a correct mode.
+  Steps 1 to 5 in the Done section closed both defects that were making the
+  two modes look different. The surface each leaves now, corners excluded:
 
-  | project | mode | worst | mean |
+  | project | Off | Native | In CAM |
   |---|---|---|---|
-  | testing_15_2 | Off | 0.1094 | 0.0649 |
-  | | Native | **0.3727** | 0.0751 |
-  | | In CAM | **0.0080** | 0.0024 |
-  | testing_11 | Off | 0.1058 | 0.0828 |
-  | | Native | **0.3624** | 0.0380 |
-  | | In CAM | **0.0079** | 0.0033 |
-  | testing_13_arcs | Off | 0.0211 | 0.0131 |
-  | | Native | 0.2268 | 0.0049 |
-  | | In CAM | **0.8875** | 0.3299 |
+  | testing_15_2 | 0.1094 | **0.0080** | **0.0080** |
+  | testing_11 | 0.1058 | **0.0079** | **0.0079** |
+  | testing_13_arcs | 0.0013 | **0.0014** | **0.0014** |
 
-  **Native has a systematic entry defect.** Its worst error is always at the
-  START of the contour and always the same shape. On testing_15_2 the finish
-  pass's first cut runs along a wall programmed dead straight at r 20.000, and
-  `rs274` reports the control point going from **r 20.4000 at Z +1.0 to
-  r 20.0074 at Z −20.0** — 0.39 mm of taper on a straight wall. The cause is
-  stated in `lathe_poly_pass.ngc`'s own comment: comp is switched on at the
-  entry point and the trace starts at record 2, *"making the long
-  record1-to-record2 cut the entry move"*. The compensation entry move is
-  therefore the first cut, in the material, and the surface ramps from
-  uncompensated to compensated along it. Same signature on all three projects:
-  0.3727, 0.3624, 0.2268 mm, each at the first segment.
+  **Native and In CAM agree to the last digit on all three.** The earlier
+  reading - Native 0.37 and In CAM 0.89 - was two separate faults, each
+  inflating the OTHER mode's apparent error: the arc truncation was in the
+  native path and In CAM only escaped it by asking for nose_r 0, and the entry
+  ramp was Native's alone.
 
-  **In CAM has no entry ramp at all** — it runs `G40` throughout — and on the
-  two projects without arcs it is an order of magnitude more accurate than
-  Native and 13× better than Off.
-
-  **On the arc project In CAM is much worse, and it is not yet clear it is
-  wrong.** The two modes trace materially different contours around Z −51:
-  Off/Native end an arc at **r 27.06** and In CAM at **r 28.00**, about 0.94 mm
-  apart, which is the whole of In CAM's 0.8875 error there. The measurement's
-  target is built from Off's own path, so if Off is the one flattening the arc
-  short then In CAM is right and the number is an artefact of the yardstick.
-  **This has to be settled against the profile definition, not against another
-  toolpath, before the table above is used to decide anything.**
-
-  Two more facts for the decision:
-
-  - In CAM emits 2–3× the points: 70 against 38 on testing_15_2, 99 against 45
-    on testing_13_arcs. The file grows 25,656 → 31,603 bytes.
-  - The polyline's In CAM is already **Python** —
-    `lathe_sections.build_cam_comp_gcode` emits a point table and the `.ngc`
-    walks it, which is the standing rule exactly. The parametric ops' In CAM is
-    **O-code**: `tip_comp_vec.ngc` computes the offset vector at run time. If
-    In CAM becomes the default, those want moving to Python.
+  So this decision is now about **tool-table behaviour, testability and the
+  preview**, not correctness. The trade-off table above still stands on those
+  grounds. My reading remains **both, as a preference**, with the default the
+  open question - but it is a preference now, not a correctness call, which
+  makes it a smaller decision than it was.
 
 - [ ] **In CAM comp is refused on FACING only** — corrected 2026-08-02 by
   reading the code rather than the note. The `.cfg` validation blocks mode 2
