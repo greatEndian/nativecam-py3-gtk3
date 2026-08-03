@@ -98,10 +98,19 @@ o<lathe_poly_pass> sub
 	(the first segment of whichever record array this pass was handed - a)
 	(runtime fact. Rotating a unit vector is arithmetic; the table is not.)
 	(_line_cos/_line_sin are that unit direction, from the o<line> above.)
-	(_tip_cam_r is the driver, not comp_r: it is the nose radius in BOTH native)
-	(and In CAM mode and zero with compensation off, which is exactly the gate)
-	(o<tip_comp_vec> applied. Guarding on comp_r instead would have left the)
-	(orientation term applied to an already-offset In CAM path.)
+	(THE SCALE IS comp_r, AND THE ORIENTATION TERM IS SEPARATELY GATED. Those)
+	(are two different questions and gating both on _tip_cam_r conflated them:)
+	(  - HOW FAR the entry moves is comp_r = _tip_comp_d / 2 = shift_r + nose_r,)
+	(    the same D the interpreter is about to be given. With nose comp OFF the)
+	(    pass still runs G41.1 D[2 * shift_r] L0 to hold its allowance, so an)
+	(    entry that does not move is wrong by the whole allowance.)
+	(  - WHETHER the offset is orientation aware is the L word. L0 is a pure)
+	(    geometric offset and takes no orientation term; L1-9 does.)
+	(Gating the distance on _tip_cam_r - zero whenever nose comp is off - left)
+	(the pre-finish pass starting exactly on the FINISH contour instead of)
+	(0.508 mm outside it, which is photo/prefinishLeadInIssue_0.png. In CAM)
+	(needs no shift at all and gets none: its comp_r is 0 because the path is)
+	(already offset.)
 	#<pe_dz> = [#<_2z> - #<entry_z>]
 	#<pe_dx> = [#<_2x> - #<entry_x>]
 	#<pe_len> = SQRT[[#<pe_dz> * #<pe_dz>] + [#<pe_dx> * #<pe_dx>]]
@@ -113,7 +122,14 @@ o<lathe_poly_pass> sub
 	#<pe_nx> = 0
 	#<comp_ez> = #<entry_z>
 	#<comp_ex> = #<entry_x>
-	o<pe_ok> if [[#<pe_len> GT 0.000001] AND [#<_tip_cam_r> GT 0.000001]]
+	(the orientation term applies only when there is an L word to be aware of)
+	#<pe_oz> = 0
+	#<pe_ox> = 0
+	o<pe_or> if [#<_tip_comp_l> GT 0]
+		#<pe_oz> = #<_pl_nose_oz>
+		#<pe_ox> = #<_pl_nose_ox>
+	o<pe_or> endif
+	o<pe_ok> if [[#<pe_len> GT 0.000001] AND [#<comp_r> GT 0.000001]]
 		#<pe_uz> = [#<pe_dz> / #<pe_len>]
 		#<pe_ux> = [#<pe_dx> / #<pe_len>]
 		(measured against rs274, not derived: 42 gives u_x, -u_z and 41 gives -u_x, u_z)
@@ -124,8 +140,8 @@ o<lathe_poly_pass> sub
 			#<pe_nz> = [-#<pe_ux>]
 			#<pe_nx> = #<pe_uz>
 		o<pe_sd> endif
-		#<comp_ez> = [#<entry_z> + [#<_tip_cam_r> * #<pe_nz>] - #<_pl_nose_oz>]
-		#<comp_ex> = [#<entry_x> + [#<_tip_cam_r> * #<pe_nx>] - #<_pl_nose_ox>]
+		#<comp_ez> = [#<entry_z> + [#<comp_r> * #<pe_nz>] - #<pe_oz>]
+		#<comp_ex> = [#<entry_x> + [#<comp_r> * #<pe_nx>] - #<pe_ox>]
 	o<pe_ok> endif
 
 	(safe approach: retract above stock, rapid back in Z)

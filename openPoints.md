@@ -15,11 +15,22 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `e750ee3`.
+Branch: `liveTooling`. Last pushed: `49aa60c`.
 
 ---
 
 ## Next — before anything else
+
+- [ ] **The preview's contour overlays are the UNCOMPENSATED profile.**
+  greatEndian, 2026-08-03, raised while reporting the pre-finish start. The
+  tool itself is already drawn at the interpreter's own compensated positions -
+  `parse_program` reads the canon, which is post-comp - so the simulation moves
+  on the real path. What is uncompensated is the finish / pre-finish /
+  reachable **lines**, which come from `lathe_sections` and are the programmed
+  profile. So the gap is a missing overlay, not a wrong tool position.
+  Deferred at greatEndian's word - *"just change the starting point"* - and the
+  three options considered were: add a compensated-path overlay alongside the
+  programmed one, replace the programmed one, or a Display-menu toggle.
 
 - [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
   (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
@@ -265,6 +276,17 @@ so picking it up again does not start from a blank page.
 ---
 
 ## Done
+
+- [x] **Pre-finish pass started on the finish contour** — reported from AXIS
+  2026-08-03, `photo/prefinishLeadInIssue_0.png`, fixed same day. A regression
+  from Step 4: the entry placement was gated on `#<_tip_cam_r>`, which
+  `tip_comp_dia` sets to **0 whenever nose comp is off** - and testing_15_2 has
+  it off. An Off-mode pass still runs `G41.1 D[2*shift_r] L0` to hold its
+  allowance, so the entry has to move by it. Pre-finish first cut
+  r 20.7071 → **r 21.2151**, 0.5080 from the finish contour, which is the
+  project's Offset per side. With `Passes = 2` the first finish pass now starts
+  0.2540 out, half the offset, which nothing tested before. Full working in
+  `analysis/001-prefinish-entry-offset.md`.
 
 - [x] **Compensation, steps 1 to 5 — DONE**, 2026-08-02/03. The measured
   surface each mode leaves, against the programmed contour with corners
