@@ -73,3 +73,57 @@ it does not exist yet.
 Also not established: whether the roughing tables should carry the roughing
 ALLOWANCE through the same route now, as the pre-finish contour does since
 `8e50db1`.
+
+---
+
+## The acceptance measurement — added, and it proves it
+
+`test_rough_comp.py`. Sweep the real nose circle along the roughing moves only,
+and ask how far past the **pre-finish** contour the surface ends up.
+
+    Off      overcut 0.1116 mm at Z-64.4   (707 samples)
+    Native   overcut 0.0503 mm at Z 1.3
+    In CAM   overcut 0.0503 mm at Z 1.3
+
+**Uncompensated roughing cuts 0.1116 mm past the stock the pre-finish needs;
+compensated it cuts 0.0503 — 55% of it removed — and the two compensated modes
+agree to four decimals.** That is the claim, and it is now a test.
+
+The claim it rests on: roughing levels stop against the stop table.
+Uncompensated that table stops the imaginary TIP on the pre-finish contour, so
+the nose trails past it. Compensated the table carries the nose, so the NOSE
+stops there.
+
+### Two metrics were rejected before this one worked
+
+Both are worth keeping, because each failed in a way that looked like a result.
+
+1. **Against the FINAL profile**: reported 5.0452 mm on Off, the known-good
+   baseline. It was measuring the region behind the boss that the back angle
+   cannot reach and that roughing correctly leaves standing. Fixed by counting
+   only OVERCUT — surface *below* the target — so an unreachable stretch leaves
+   material above it and contributes exactly zero. No exclusion window has to
+   be guessed at.
+2. **Still confounded at vertical walls**: reported 4.7405 mm at Z−64.4… in
+   *every* mode including Off. At a near-vertical segment there is no single
+   radius at that Z, and comparing a swept surface against the outer one
+   reports the whole height of the wall. Fixed by returning the (min, max) span
+   and skipping any Z where it exceeds 0.5 mm.
+
+**A metric that fails the baseline is not a metric** — twice over.
+
+### And the threshold was wrong too
+
+The first assertion demanded Off exceed half the nose radius. That was a guess,
+not a bound: the overcut an uncompensated stop leaves is R·(1−cos) of the local
+surface angle, which on a 13° ramp is 0.0102 mm; only a steep wall approaches R.
+The real figure, 0.1116, is well above the field's quantisation and below the
+guessed threshold — **the assertion was wrong, not the code**. It now tests the
+margin between the modes, which is the actual claim.
+
+## Verified
+
+- the measurement above, three modes in one run
+- Off still byte-identical, 247 polyline moves, same hash
+- flake8 clean; `test_sections`, `test_arc_endpoint`, `test_offset_contour`,
+  `test_lathe_comp`, `test_flank_envelope`, `test_skip_short` green
