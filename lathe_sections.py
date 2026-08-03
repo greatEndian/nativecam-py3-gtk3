@@ -1578,7 +1578,7 @@ STOP_BASE = 4400
 STOP_TOP = 4600
 
 
-def entry_contour(points, dist, rough_dir=0):
+def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
     """The contour offset outward by `dist`, as a (z, radius) polyline.
 
     This is where a roughing level may BEGIN cutting. The level stops on the
@@ -1613,9 +1613,31 @@ def entry_contour(points, dist, rough_dir=0):
 
     `dist` is a radius. `rough_dir` picks the outward side the way flank_sides
     does, so front-to-back and back-to-front both come out right.
+
+    `nose_r` and `orient` compensate it. ROUGHING CARRIES NO INTERPRETER
+    COMPENSATION IN ANY MODE - lathe_level_pass has no tip_comp_* call at all
+    - so when compensation is on, the nose geometry has to be applied here, to
+    the table the subroutine walks. Same shape as taper.ngc uses for its
+    roughing and lathe_poly_pass for its entry: geometry we own, applied to
+    the points.
+
+    The normal carries `dist + nose_r`; the orientation term is subtracted
+    once at the end and scales with the BARE nose radius. That asymmetry is
+    the rule - see lathe_comp.offset_vector. Folding the nose into `dist`
+    would scale both and cancel on any surface parallel to an axis, which is
+    exactly how the pre-finish pass collapsed onto the finish contour, twice,
+    in analysis/004.
+
+    A LEVEL'S OWN DIAMETER NEEDS NO OFFSET and gets none: a level cut runs
+    parallel to Z, and there the two terms cancel. What moves is where the
+    level STARTS and STOPS against the contour, which is what this decides.
     """
-    if not points or len(points) < 2 or dist <= 0:
+    roll = dist + nose_r
+    if not points or len(points) < 2 or roll <= 0:
         return list(points)
+    ox, oz = (NOSE_OFFSET[orient] if 0 < orient < len(NOSE_OFFSET)
+              else (0.0, 0.0))
+    ozr, oxr = nose_r * oz, nose_r * ox
     z_dir = -1 if rough_dir == 1 else 1
     out = []
     for (z0, x0), (z1, x1) in zip(points, points[1:]):
@@ -1624,13 +1646,29 @@ def entry_contour(points, dist, rough_dir=0):
         if n < EPS:
             continue
         nz, nx = z_dir * dx / n, -z_dir * dz / n
-        out.append((z0 + dist * nz, x0 + dist * nx))
-        out.append((z1 + dist * nz, x1 + dist * nx))
+        out.append((z0 + roll * nz - ozr, x0 + roll * nx - oxr))
+        out.append((z1 + roll * nz - ozr, x1 + roll * nx - oxr))
     return out
 
 
+
+def _comp_nose(polyline_feature, nose_r, orient):
+    """(nose_r, orient) when this polyline compensates, (0, 0) when it does not.
+
+    Roughing has no interpreter compensation in any mode, so the tables it
+    walks carry the nose themselves - but only when the operation is actually
+    compensating. With Tool nose comp off they must come out exactly as before,
+    or every existing project's roughing moves for no reason.
+    """
+    p = polyline_feature.get_param('param_n_comp')
+    if p is None or int(_to_float(p.get_ngc_value())) not in (1, 2):
+        return 0.0, 0
+    if nose_r is None or nose_r <= EPS or not 0 < int(orient) < 10:
+        return 0.0, 0
+    return float(nose_r), int(orient)
+
 def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
-                              flank_len=0.0, clearance=0.0, entry_off=0.0):
+                              flank_len=0.0, clearance=0.0, entry_off=0.0, orient=0):
     """The entry contour as a point table, or '' when there is nothing to say.
 
     Emitted next to the finishing contour and read the same way. The runtime
@@ -1646,8 +1684,9 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
     # into RADIUS before offsetting - see entry_contour. The table is written
     # in radius too, so there is no second conversion on the way out.
+    _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
-                        _to_float(entry_off), rough_dir)
+                        _to_float(entry_off), rough_dir, _nr, _or)
     if len(env) < 2:
         return ''
     top = ENTRY_BASE + 2 * len(env)
@@ -1669,7 +1708,7 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 
 
 def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
-                             flank_len=0.0, clearance=0.0):
+                             flank_len=0.0, clearance=0.0, orient=0):
     """Where a roughing level may STOP: the pre-finish contour.
 
     The pre-finish pass traces the final shape plus the finish offset, and
@@ -1696,8 +1735,9 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
         return ''
     d = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
-                        fin_off, rough_dir)
+                        fin_off, rough_dir, _nr, _or)
     if len(env) < 2:
         return ''
     top = STOP_BASE + 2 * len(env)
