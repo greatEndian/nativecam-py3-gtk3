@@ -15,11 +15,23 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `8e50db1`.
+Branch: `liveTooling`. Last pushed: `8ce91d9`.
 
 ---
 
 ## Next — before anything else
+
+- [ ] **Compensation is all-or-nothing — the rest of the ops still are not.**
+  Standing rule, `CLAUDE.md` and memory: if an op is compensated then roughing
+  is too, and so are the artificial back-angle sections. The **OD taper** now
+  obeys it (`analysis/005`). Still open, in rough order of what it costs:
+  **`lathe_level_pass.ngc` — the polyline's roughing, zero `tip_comp_*`
+  references**, which is what greatEndian saw behind the boss; then
+  `taper_id`, `boring` and `facing`, which all switch comp on inside the
+  finishing loop only; then the **artificial sections**, which no op
+  compensates yet and which need the design question in the item above settled
+  first.
+
 
 - [ ] **The artificial back-angle section and compensation do not agree.**
   greatEndian 2026-08-03, reported and NOT investigated - flagged here with

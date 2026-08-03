@@ -37,6 +37,35 @@ o<taper> sub
 
 	M#<_cooling_mode>
 
+	(COMPENSATION IS ALL OR NOTHING - if it is on for this operation it is on)
+	(for the roughing passes too, not just the finish. A roughing wall that)
+	(ignores the nose is left in the wrong place, and on a taper that error is)
+	(the full R times 1 minus cos of the angle. Resolved here, above the)
+	(because the roughing loops below need the side and the vector.)
+	o<tip_comp_dia> CALL [0] [#<n_comp>]
+	#<t_side> = 42
+	o<t_sd> if [#<begin_z> LT #<end_z>]
+		#<t_side> = 41
+	o<t_sd> endif
+
+	(the roughing offset. Roughing has NO interpreter compensation in any mode)
+	(- lathe_level_pass has none either - so when compensation is on at all the)
+	(nose geometry is applied here, to the coordinates, exactly the way In CAM)
+	(does it for the finish wall. Cleared first: these are globals and a)
+	(CAM-mode feature earlier in the program would otherwise shift this one.)
+	#<_tip_off_z> = 0
+	#<_tip_off_x> = 0
+	#<r_ofz> = 0
+	#<r_ofx> = 0
+	o<tv_rgh> if [#<n_comp> GT 0]
+		o<tip_comp_vec> CALL [#<t_side>] [#<end_z> - #<begin_z>] [[#<begin_x> - #<end_x>] / #<_diameter_mode>] [0]
+		#<r_ofz> = #<_tip_off_z>
+		#<r_ofx> = [#<_tip_off_x> * #<_diameter_mode>]
+		(handed back to the finish block below, which sets them itself)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+	o<tv_rgh> endif
+
 	o123 if [#<_tool_usage> LE 1]
 		F#<_rough_feed>
 		#<pass> = 1
@@ -47,8 +76,8 @@ o<taper> sub
 			o13 repeat [#<rough_passes>]
 				G0 X[#<x> + #<_x_clear>] Z[#<begin_z>]
 				G0 X[#<x> - #<x_step>]
-				G1 Z[#<e_z>]
-				G1 X[#<x>] Z[#<e_z> - #<z_step>]
+				G1 Z[#<e_z> + #<r_ofz>]
+				G1 X[#<x> + #<r_ofx>] Z[#<e_z> - #<z_step> + #<r_ofz>]
 				G0 X[#<x> + #<_x_clear>]
 				#<x> = [#<x> - #<x_step>]
 				#<e_z> = [#<e_z> + #<z_step>]
@@ -61,7 +90,7 @@ o<taper> sub
 				#<x> = [#<x> - #<x_step>]
 				G0 X#<x>
 				G0 Z[#<begin_z>]
-				G1 X#<begin_x> Z[#<begin_z> - [#<z_step> * #<pass>]]
+				G1 X[#<begin_x> + #<r_ofx>] Z[#<begin_z> - [#<z_step> * #<pass>] + #<r_ofz>]
 				G0 X[#<begin_x> + #<_x_clear>]
 				#<pass> = [#<pass> + 1]
 			o12 endrepeat
@@ -79,11 +108,7 @@ o<taper> sub
 		(so the taper line itself is cut fully compensated. Side follows the OD)
 		(turning convention - toward the chuck = 42 - and is proven, not trusted,)
 		(by the tangency verifier)
-		o<tip_comp_dia> CALL [0] [#<n_comp>]
-		#<t_side> = 42
-		o<t_sd> if [#<begin_z> LT #<end_z>]
-			#<t_side> = 41
-		o<t_sd> endif
+		(nose geometry and t_side are already resolved above the roughing block)
 		(comp-on approach must be at least the nose radius out from the wall)
 		(start so the radial establishing feed is long enough for the interpreter)
 		#<t_appr> = #<_x_clear>

@@ -129,6 +129,28 @@ Global defaults `#<_tip_nose_dia>` / `#<_tip_orient>` come from prefs via `creat
 
 `prove_tip_comp.py` is the acceptance test, not code review: it runs `rs274`, places the nose circle at each compensated control point, and asserts tangency to the target profile with no gouge and full coverage. Correct side must PASS **and** the wrong `--freeside` must FAIL — a single profile line is tangent from both sides, so without the free-side flag a wrong side passes. Test the finish pass only (`_tool_usage=2`) so uncompensated roughing does not pollute the check. Three traps that have each cost a session: the control-point→nose-centre offset for a 90° insert corner is **R√2**, and it is a raw vector — normalising it to R·unit mis-measures; `rs274` runs with `cwd` = the ini dir, so a repo-relative `--tbl` silently aborts the run at `T<n> M6` (omit it and let the ini resolve, or pass an absolute path); and the live `lathe.var` is rewritten by the running GUI, so copy it in a retry loop to get a complete snapshot and pass it with `--var` (a truncated var also aborts at `T<n> M6`, with no error in the output).
 
+## Compensation is all-or-nothing — standing rule
+
+greatEndian, 2026-08-03: **if anything in an operation is compensated, then
+everything in it is compensated — roughing included. The artificial sections
+the back angle creates are compensated too.**
+
+There is no "the finish pass is the one that matters". A roughing pass that
+ignores the nose leaves its wall in the wrong place, and the artificial
+back-angle section is a surface the tool has to hit correctly whether or not
+the part drawing contains it.
+
+State as of 2026-08-03, so the gap is known rather than rediscovered:
+
+- `lathe_poly_pass.ngc` — pre-finish and finish, **compensated**
+- `lathe_level_pass.ngc` — polyline roughing, **NOT compensated** (zero
+  `tip_comp_*` references)
+- `taper.ngc` / `taper_id.ngc` / `boring.ngc` / `facing.ngc` — comp is switched
+  on inside the FINISHING loop only; the roughing loops above it run
+  uncompensated
+
+Closing that is ongoing work, not a decision still to be taken.
+
 ## Analysis records
 
 Every analysis that produces a finding — a measurement run, a root-cause hunt, a
