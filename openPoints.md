@@ -94,6 +94,36 @@ Branch: `liveTooling`. Last pushed: `6c7ac85`.
   −19.5310) — different arc subdivision, both clean.
 
 
+- [ ] **ROUGHING'S LEVEL START Z IS NOT COMPENSATED, while its stop is** —
+  greatEndian 2026-08-04, from the plot: pink (reachable) and green (roughing)
+  start positions. *"I added line segment 1 and it have to start from 1 if
+  compensation is on or off .. there is no way to play and same behaviour is
+  necessary for lead out"*.
+
+  **Measured on testing_15_2**, reachable contour START Z+1.0000 r20.0000:
+
+  | | tip starts | nose first cuts |
+  |---|---|---|
+  | green roughing, ALL modes | Z+1.0000 | Z+1.4000 - 0.4 over-reach |
+  | blue/magenta, Off | Z+1.0000 | Z+1.4000 |
+  | blue/magenta, Native / In CAM | Z+0.6000 | **Z+1.0000, exact** |
+
+  The contour passes are correct: a compensated TIP path must start 0.4 short
+  of the surface so the NOSE lands on it. Green never starts at Z1 in any mode.
+
+  **Cause located**: `#<z_start> = #<w_from>` (`lathe_level_pass.ngc:27`) - the
+  level falls back to the WINDOW start whenever the entry contour never crosses
+  that level, which is every level above the part. The stop table and entry
+  table both apply the nose through `_comp_nose`; the window table built by
+  `band_windows` does not - `_comp_nose` is used at `lathe_sections.py:1772`
+  and `:1823` only. Same asymmetry as the lead-out exit shift of
+  `analysis/009`, one level down.
+
+  **Not started**: `band_windows` feeds every level of every roughing pass and
+  interacts with sectioning, so this is not a two-line edit. Also unchecked:
+  roughing's lead-OUT retreat geometry (only the stop it retreats from has
+  been verified as compensated).
+
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
   still switch it on inside the finishing loop only.** Standing rule in
   `CLAUDE.md` and memory. Done: the **OD taper** (`analysis/005`) and the
