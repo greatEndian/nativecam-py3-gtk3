@@ -21,16 +21,41 @@ Branch: `liveTooling`. Last pushed: `8ce91d9`.
 
 ## Next — before anything else
 
-- [ ] **Compensation is all-or-nothing — the rest of the ops still are not.**
-  Standing rule, `CLAUDE.md` and memory: if an op is compensated then roughing
-  is too, and so are the artificial back-angle sections. The **OD taper** now
-  obeys it (`analysis/005`). Still open, in rough order of what it costs:
-  **`lathe_level_pass.ngc` — the polyline's roughing, zero `tip_comp_*`
-  references**, which is what greatEndian saw behind the boss; then
-  `taper_id`, `boring` and `facing`, which all switch comp on inside the
-  finishing loop only; then the **artificial sections**, which no op
-  compensates yet and which need the design question in the item above settled
-  first.
+- [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
+  still switch it on inside the finishing loop only.** Standing rule in
+  `CLAUDE.md` and memory. Done: the **OD taper** (`analysis/005`) and the
+  **polyline's roughing** (`analysis/006`, proved by `test_rough_comp.py` -
+  overcut past the pre-finish contour 0.1116 → 0.0503 mm).
+
+  **The pattern to copy, in order:**
+
+  1. Move `o<tip_comp_dia>` and the `#<x_side>` resolution **above** the
+     roughing loop — in all three they currently sit inside the finish block,
+     below it, which is why roughing structurally cannot use them.
+  2. Compute a roughing offset with `o<tip_comp_vec>` whenever `n_comp > 0`
+     (not just `EQ 2`), into locals, then clear `#<_tip_off_z>` /
+     `#<_tip_off_x>` so the finish block keeps setting them itself.
+  3. Apply it to the roughing coordinates. Roughing has **no interpreter
+     compensation in any mode**, so there is nothing to double up with — the
+     offset goes in the coordinates, as it does in `taper.ngc` now.
+  4. Measure with a standalone driver: **no saved project contains a taper,
+     boring or facing feature**, so there is nothing to regenerate. Call the
+     subroutine directly, the way `test_facing.py` and the OD-taper driver do.
+
+  **Watch for**, all three cost a run today: a comment line with no closing
+  paren, or with a nested paren, halts `rs274` silently; a local first assigned
+  inside a branch fails load-time pre-parse; and **comparing two move lists of
+  different length is not a measurement** — a compensated run emits an extra
+  establishing feed, which made an index-matched diff report 16.1588 mm of
+  drift that did not exist.
+
+  **`boring` and `taper_id` are ID work**, which greatEndian paused — they are
+  listed here for the pattern, but the pause takes precedence. `facing` is OD
+  and can be done now.
+
+  Also unchecked and named in `analysis/004`: whether any of the three folds an
+  allowance into the **D word** while setting L, which cancels itself the way
+  the polyline's pre-finish did.
 
 
 - [ ] **The artificial back-angle section and compensation do not agree.**
