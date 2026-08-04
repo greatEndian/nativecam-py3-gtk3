@@ -114,3 +114,48 @@ the part or the stock**. That is a testable statement and it has not been
 tested. Sweep the nose along the lead moves against the stock field, the way
 `test_rough_comp.py` does for roughing, and see whether any lead move's swept
 volume intersects material. That measurement does not exist yet.
+
+---
+
+## The corner trim: direction validated, one blocker left
+
+Second attempt, also reverted — but this one is close and the blocker is
+specific.
+
+Giving `entry_contour` the corner treatment `offset_contour` already has
+(outside corner rolls an arc about the vertex at the offset radius, inside
+corner trims both offsets back to `_isect`) took the reversals from
+
+    entry_contour  4 reversals  ->  1
+
+and the one remaining is the **same** reversal `offset_contour` has,
+−69.892 → −69.334, near the end wall. So the two now behave identically and
+the corner-connector bump is gone. `test_offset_contour`, `test_arc_endpoint`,
+`test_lathe_comp`, `test_flank_envelope`, `test_rough_comp` and
+`test_comp_overlay` all still pass.
+
+**What blocks it:** `test_sections` fails two assertions.
+
+- *"every segment contributes both its offset ends"* — this one **encodes the
+  old construction**. With corners trimmed a segment deliberately no longer
+  contributes both ends, so the assertion has to change with the behaviour.
+- *"every offset point is exactly the offset from its own segment", worst error
+  **1.783e+01*** — this one is a **real defect**, not a stale assertion. 17.83 mm
+  against an offset of about 0.5 can only be `_isect` returning a distant
+  crossing for two nearly-parallel segments: as the cross product approaches
+  zero the intersection runs away to infinity, and the `cross < -EPS` guard lets
+  it through because EPS is a tolerance on the cross product, not on the
+  distance to the hit.
+
+**To finish**: guard the inside-corner trim by the DISTANCE to the intersection,
+not only by the sign of the cross product — reject `_isect` and fall back to the
+butt join when the hit is further from either segment end than the offset
+itself. `offset_contour` carries the same latent hazard and should get the same
+guard; it has not bitten there only because its corners come from a densified
+arc where consecutive chords turn by a few degrees.
+
+Then update the first `test_sections` assertion to the new construction, and
+keep the second exactly as it is — it is the one that caught this.
+
+Acceptance stays: reversals at or below `offset_contour`'s, **and** all of
+`test_sections` passing.
