@@ -73,7 +73,7 @@ class PreviewPane(object):
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
-                 profile_cb=None, soft_cb=None, comp_cb=None,
+                 profile_cb=None, soft_cb=None, comp_cb=None, rough_cb=None,
                  comp_mode_cb=None):
         self.ini_path = ini_path
         self.plane = plane
@@ -94,6 +94,7 @@ class PreviewPane(object):
         # applied. A callback like the others, so it follows the operator's
         # edits without anything having to remember to refresh it.
         self.comp_cb = comp_cb
+        self.rough_cb = rough_cb
         self.comp_mode_cb = comp_mode_cb
         self.colorize = 'plain'
         self.leftover = 0.0
@@ -916,7 +917,8 @@ class PreviewPane(object):
                                    points=self.points_btn.get_active(),
                                    hard=self._contour(self.profile_cb),
                                    soft=self._contour(self.soft_cb),
-                                   comp=self._contour(self.comp_cb))
+                                   comp=self._contour(self.comp_cb),
+                                   rough=self._rough_contours())
         return False
 
 
@@ -940,11 +942,15 @@ class NCamPreviewMixin(object):
 
         ini = getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME')
         plane = 'ZX' if getattr(self, 'catalog_dir', '') == 'lathe' else 'XY'
+        # keyword-named from comp_cb on: rough_cb was inserted into the
+        # signature and a positional call silently handed _preview_comp_mode
+        # to the wrong parameter
         self.preview_pane = PreviewPane(ini, plane, self._preview_stock,
                                        self._preview_profile,
                                        self._preview_soft_profile,
-                                       self._preview_comp_profile,
-                                       self._preview_comp_mode)
+                                       comp_cb=self._preview_comp_profile,
+                                       rough_cb=self._preview_rough_comp,
+                                       comp_mode_cb=self._preview_comp_mode)
 
         paned = gtk.Paned(orientation=gtk.Orientation.VERTICAL)
         self.preview_paned = paned
@@ -1032,6 +1038,83 @@ class NCamPreviewMixin(object):
                           and int(float(sp.get_ngc_value())) == 1) else 1
             out = lathe_sections.offset_contour(pts, nose_r, int(orient), side)
             return out if out and len(out) >= 2 else None
+        except Exception:
+            return None
+
+    def _rough_contours(self):
+        """(entry, stop) for the drawing code, or None when nothing to draw.
+
+        Gated on the same Contour toggle the other overlays use - one more
+        switch costs more panel than it gives, and the pane is already tight.
+        """
+        if not self.contour_btn.get_active() or self.rough_cb is None:
+            return None
+        try:
+            pair = self.rough_cb()
+        except Exception:
+            return None
+        if not pair:
+            return None
+        entry, stop = pair
+        return (entry, stop) if (entry or stop) else None
+
+    def _preview_rough_comp(self):
+        """Roughing's two compensated references, as (entry, stop).
+
+        Roughing is a ladder of straight cuts, so it has no single compensated
+        path the way a contour pass does. What carries the nose for it is the
+        pair of tables it walks: the ENTRY contour, where a level may begin
+        cutting, and the STOP contour, where it must stop. Both are built by
+        lathe_sections with the nose applied through _comp_nose - the same
+        gate, so with compensation off they come back with no nose in them and
+        the lines simply sit where the uncompensated references sit.
+
+        Drawn from the SAME functions the G-code tables are emitted from, so
+        the picture cannot drift from the program: test_rough_overlay asserts
+        the drawn curves equal the #4200/#4400 tables the .ngc actually walks.
+        """
+        try:
+            import lathe_sections
+            import ncam
+            f = self._find_feature('polyline')
+            if f is None:
+                return None
+            nose_r, orient = ncam.tip_comp_inputs()
+            back = ncam.TOOL_TABLE.get_back_angle()
+            flank = ncam.TOOL_TABLE.get_flank_len()
+            clear = ncam.TOOL_TABLE.get_back_clear()
+            # nose_r into finish_profile, NOT 0.0 - both builders pass it and
+            # the reachable contour depends on it, so 0.0 here would draw a
+            # different curve from the one the program walks
+            pts, _soft = lathe_sections.finish_profile(f, back, nose_r, flank,
+                                                       clear)
+            if not pts or len(pts) < 2:
+                return None
+            d = f.get_param('param_dir')
+            rdir = int(float(d.get_ngc_value())) if d is not None else 0
+            nr, orn = lathe_sections._comp_nose(f, nose_r, orient)
+            rad = [(z, x / lathe_sections.DIAMETER_MODE) for z, x in pts]
+
+            def _dia(c):
+                return [(z, r * lathe_sections.DIAMETER_MODE) for z, r in c]
+
+            entry = stop = None
+            eoff = ncam.TOOL_TABLE.get_rough_cut()
+            if eoff and float(eoff) > 0:
+                e = lathe_sections.entry_contour(rad, float(eoff), rdir, nr,
+                                                 orn)
+                entry = _dia(e) if e and len(e) >= 2 else None
+
+            # the STOP is the pre-finish contour, which is param_f_off alone -
+            # build_stop_contour_gcode does not add the pre-finish offset, and
+            # adding it here would draw a line one allowance out from the one
+            # the levels actually stop on
+            p = f.get_param('param_f_off')
+            soff = float(p.get_ngc_value()) if p is not None else 0.0
+            if soff > 0:
+                sc = lathe_sections.entry_contour(rad, soff, rdir, nr, orn)
+                stop = _dia(sc) if sc and len(sc) >= 2 else None
+            return (entry, stop) if (entry or stop) else None
         except Exception:
             return None
 

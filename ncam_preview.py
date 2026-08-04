@@ -643,6 +643,17 @@ COL = {
     # magenta: the whole value of this line is being told apart from the
     # profile it is offset from.
     'comp':      (0.30, 0.90, 0.85),
+    # ROUGHING's own two compensated references, drawn as a pair because they
+    # only mean anything together: a level may BEGIN on the entry contour and
+    # must STOP on the stop contour, and both carry the nose through
+    # _comp_nose. Roughing has no single compensated path the way a contour
+    # pass does - it is a ladder of straight cuts - so these two curves are
+    # what "is roughing compensated" can actually be looked at.
+    # Yellow-green and red-orange, both away from teal 'comp': the question
+    # being asked is whether ROUGHING's references sit right, not whether they
+    # match the finish pass's.
+    'rgh_entry': (0.70, 0.95, 0.35),
+    'rgh_stop':  (1.00, 0.45, 0.35),
 }
 
 
@@ -675,7 +686,7 @@ def _fit(tp, stock, plane, width, height, margin):
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   view=None, tool=None, field=None, classes=None,
                   moves=None, move_colour=None, points=False,
-                  hard=None, soft=None, comp=None):
+                  hard=None, soft=None, comp=None, rough=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -766,6 +777,16 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     # compensation faults found on 2026-08-02/03 first showed.
     if comp:
         _draw_profile(cr, comp, pt, COL['comp'], 1.4, [6.0, 3.0])
+
+    # roughing's entry and stop references, dashed on a SHORTER pattern than
+    # the finish overlay so the two are told apart at a glance rather than by
+    # colour alone - on a busy plot the eye reads dash length before hue
+    if rough:
+        entry, stop = rough
+        if entry:
+            _draw_profile(cr, entry, pt, COL['rgh_entry'], 1.2, [3.0, 3.0])
+        if stop:
+            _draw_profile(cr, stop, pt, COL['rgh_stop'], 1.2, [3.0, 3.0])
 
     if points:
         cr.set_source_rgb(*COL['text'])
