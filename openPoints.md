@@ -159,6 +159,16 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   (stop table), leads (inherited). The all-or-nothing rule is satisfied for
   roughing.
 
+- [x] **Roughing ladder shifts out in X with Sectioning on — BY DESIGN**,
+  2026-08-04, `analysis/013`. greatEndian: *"with sectionning its a separated
+  sections and it has own rules"*. No change made.
+
+  Instrumented, not reasoned: phase 1 runs stock → the section ceiling
+  (29.8894) and its remainder is clamped away, then each section's ladder
+  restarts there with full 0.508 steps and cannot land on the floor —
+  0.2374 sliver at the bottom, 0.1106 skim at the top, whole ladder 0.2374
+  further out. **Do not "fix" this into matching the unsectioned ladder.**
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 
