@@ -185,6 +185,36 @@ def main():
         check('and the two compensated modes agree',
               abs(worst['Native'] - worst['In CAM']) < 0.02,
               '%.4f vs %.4f' % (worst['Native'], worst['In CAM']))
+
+        # AND EVERY LEVEL ACTUALLY REACHES THE PRE-FINISH IT STOPS AGAINST.
+        # greatEndian, photo/leadOutIssue_1.png: the first roughing pass behind
+        # the boss ended early, never touched the pre-finish, and rapided away.
+        # Compensated only - Off was right. The stop contour carries the nose,
+        # which shifts the WHOLE contour including its open ends, so the back
+        # wall topped out at r29.6000 while the highest level sits at r29.6520:
+        # that level never crossed the wall and stopped 0.5080 short.
+        #
+        # None of the checks above could see it. They measure how far roughing
+        # cuts PAST the pre-finish; a level that stops early cuts less, which
+        # reads as an improvement. Under-cutting needs its own assertion.
+        for mode, label in ((0, 'Off'), (1, 'Native'), (2, 'In CAM')):
+            tp = runs[mode]
+            pf = [m for m in tp.moves if m.op == 'Lathe Polyline'
+                  and P.PREFINISH in m.subs and m.kind == 'feed']
+            if not pf:
+                continue
+            wall = min(m.b[2] for m in pf)
+            rgh = [m for m in tp.moves if m.op == 'Lathe Polyline'
+                   and not m.subs and m.kind == 'feed']
+            lv = [(m.a[0], m.b[2]) for m in rgh
+                  if abs(m.b[0] - m.a[0]) < 1e-6 and m.b[2] < m.a[2] - 1e-6]
+            back = [(r, z) for r, z in lv if z < wall + 2.0]
+            short = [(r, z) for r, z in back if z - wall > 0.01]
+            check('%-7s every roughing level reaches the pre-finish wall'
+                  % label, not short,
+                  'r%.4f stops at Z%.4f, %.4f short of the wall at Z%.4f'
+                  % (short[0][0], short[0][1], short[0][1] - wall, wall)
+                  if short else '')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

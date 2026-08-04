@@ -1733,7 +1733,36 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
     # meets the taper. greatEndian: the line has to be straight until the
     # radius starts rising.
     out = _join_offsets(segs, z_dir, roll, 'v')
-    return [(z - ozr, x - oxr) for z, x in out]
+    res = [(z - ozr, x - oxr) for z, x in out]
+
+    # THE ORIENTATION SHIFT MOVES THE OPEN ENDS TOO, and there it takes away
+    # coverage instead of placing the tool. The back wall of testing_15_2 runs
+    # up to r30.0000, the stock; shifted, the stop contour's wall tops out at
+    # r29.6000 - and the highest roughing level sits at r29.6520, just above
+    # it. That level then never crosses the wall at all: it stopped 0.5080
+    # short of the pre-finish, never touched it, and rapided away, which is
+    # greatEndian's photo/leadOutIssue_1.png. Off was correct throughout, so
+    # the fault arrived with compensation and only on the terminal segment.
+    #
+    # Both terminal segments are therefore extended back along their own
+    # direction by the shift, restoring the span the contour had before it
+    # moved. Over-extending slightly is harmless here - this is a STOP/ENTRY
+    # reference, and a level above the stock has nothing to cut anyway - while
+    # under-extending silently drops a whole pass.
+    shift = math.hypot(ozr, oxr)
+    if shift > EPS and len(res) >= 2:
+        res[0] = _extend_end(res[1], res[0], shift)
+        res[-1] = _extend_end(res[-2], res[-1], shift)
+    return res
+
+
+def _extend_end(prev, end, dist):
+    """`end` pushed further along the prev->end direction by `dist`."""
+    dz, dx = end[0] - prev[0], end[1] - prev[1]
+    n = math.hypot(dz, dx)
+    if n < EPS:
+        return end
+    return (end[0] + dz / n * dist, end[1] + dx / n * dist)
 
 
 

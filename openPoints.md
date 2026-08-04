@@ -111,6 +111,15 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   **Left**: roughing's lead-OUT retreat geometry is still unmeasured, and no
   test asserts the start directly.
 
+- [x] **Top roughing level missed the back wall — FIXED**, 2026-08-04,
+  `analysis/011`. Compensated only: level r29.6520 stopped at Z-69.3840,
+  **0.5080 short**, never touched the pre-finish, rapided away. The stop
+  contour's orientation shift moved its open END too, so the back wall topped
+  out at r29.6000 while the highest level sits at r29.6520. `entry_contour`
+  now extends both terminal segments by the shift. `test_rough_comp` gained an
+  UNDER-cut assertion - its existing metric is one-sided and a level that stops
+  early reads as an improvement.
+
 - [ ] **Roughing's retreat clamp is OD-ONLY and untested on a bore** — added
   2026-08-04 with `57eea44`. `G1 X#<_wp_dia_od>` is guarded on
   `#<_pl_side> NE 1` because on a bore the retreat travels the other way and
