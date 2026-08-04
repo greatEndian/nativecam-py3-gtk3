@@ -87,6 +87,11 @@ Each mixin does `import ncam` **and** `from ncam import ...`: the `from` imports
 - **Load-time pre-parsing**: LinuxCNC validates all referenced O-subroutines when the file loads. Any global named parameter (`#<_xxx>`) read anywhere in `lib/` subs must be initialized in the defaults block from `create_defaults()` — gated per machine on `self.cat_name` — or loading fails with "Named parameter not defined" even if a later sequential block assigns it.
 - **Reserved read-only parameters**: names like `#<_rpm>` (current spindle speed) are LinuxCNC built-ins — reading is fine, assigning fails with "Cannot assign to read-only parameter". Project-owned globals use different names (`#<_rpm_normal>`, `#<_feed_normal>`).
 - **Comments must close on the same line** — a `(...)` spanning two lines is an "Unclosed comment" error.
+- **A `cfg/` edit does nothing until `version` is bumped.** A saved project
+  embeds the whole `after=` template, `<exec>` lines included, so NativeCAM
+  reads the STORED copy until migration is triggered. `lib/*.ngc` needs no
+  bump — subroutines are re-read at runtime. This asymmetry has silently eaten
+  a change: the `.ngc` half took effect and the `.cfg` half did not.
 - **Line endings must be LF** in all `.cfg`/`.ngc` files; `\r` characters cause intermittent interpreter syntax errors.
 - **Plane/comp guard**: cutter comp must be cancelled (`G40`) before any plane switch (G17/G18/G19).
 - **No nested parens inside a comment** — `(bore wall (Z0,r15))` silently halts `rs274` at that line. Whole verification runs have been invalidated by this alone.
@@ -150,6 +155,18 @@ State as of 2026-08-03, so the gap is known rather than rediscovered:
   uncompensated
 
 Closing that is ongoing work, not a decision still to be taken.
+
+## Never claim low context without checking it
+
+greatEndian, 2026-08-04: **do not say "I am out of context" — or low on it, or
+running short — unless the actual number has been checked this turn.** It was
+said twice in one session without looking, and work continued afterwards both
+times, so it was simply untrue.
+
+It also reads as an excuse for a shortened deliverable. Scaling work down is
+greatEndian's call: finish it, or write down what is left in `openPoints.md`
+and `session_N.md`. Saving state is the useful action; announcing scarcity is
+not.
 
 ## Analysis records
 

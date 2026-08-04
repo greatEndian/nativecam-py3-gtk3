@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `6c7ac85`.
+Branch: `liveTooling`. Last pushed: `57eea44`.
 
 ---
 
@@ -110,6 +110,18 @@ Branch: `liveTooling`. Last pushed: `6c7ac85`.
 
   **Left**: roughing's lead-OUT retreat geometry is still unmeasured, and no
   test asserts the start directly.
+
+- [ ] **Roughing's retreat clamp is OD-ONLY and untested on a bore** — added
+  2026-08-04 with `57eea44`. `G1 X#<_wp_dia_od>` is guarded on
+  `#<_pl_side> NE 1` because on a bore the retreat travels the other way and
+  clamping outward would drive it into the wall. **No saved project bores**, so
+  the ID branch has never been generated, let alone measured. Needs a project
+  or a standalone driver.
+
+- [ ] **Nothing asserts the roughing start or the retreat height directly** —
+  added 2026-08-04. `test_leads.py` covers the pre-finish and finish passes
+  only. A regression in either would show up as `test_rough_comp`'s overcut
+  number moving (0.0394 mm today), which is indirect and easy to explain away.
 
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
   still switch it on inside the finishing loop only.** Standing rule in
