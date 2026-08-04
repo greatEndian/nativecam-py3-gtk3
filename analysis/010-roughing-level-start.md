@@ -72,27 +72,20 @@ did not.
 
 ---
 
-## Addendum, same day — the roughing lead-out ended inside the stock
+## Addendum REVERTED, 2026-08-04
 
-greatEndian: *"it is ending at first roughing pass level which is wrong.. it
-has to end at level of stock at least"*.
+greatEndian: *"roughing return to status before last edit, last time it was
+good and now it is wrong"*. The stock clamp above is reverted — roughing is
+back to 27 retreats, min end radius r21.7231.
 
-The retreat starts at `#<phys_x> = #<level>` and rises `lo_len * sin[lo_ang]`
-above **its own level**, so only the topmost level ever cleared the bar. On
-testing_15_2, `lo_len` 1.0 at 45 deg gives 0.7071 of rise:
+**Why it was wrong**: the clamp was invented rather than taken from anything.
+The reference is the PINK contour, which ends at
+**Z−70.4000 r30.0000 — the stock envelope, in the polyline's own segment
+coordinates**. A blanket `G1 X#<_wp_dia_od>` after every level ignores that: it
+adds a full-radius move to every level regardless of where the profile
+actually meets the stock, which is 25 extra moves on testing_15_2 and not what
+the geometry says.
 
-```
-level r29.6520 -> r30.3591   clears the 30.0 bar
-level r29.1440 -> r29.8511   0.1489 inside it
-level r28.6360 -> r29.3431   0.6569 inside it        ... 25 of 27 levels
-```
-
-Fixed with a separate radial `G1 X#<_wp_dia_od>` after the angled retreat,
-taken only when the angled move finished short. **Not** by lengthening
-`_lo_leff`: that fights the Z-room cap directly above it, which exists to stop
-a continuation interval retreating back over its own start. OD only - on a
-bore the retreat travels the other way and clamping outward would drive it
-into the wall.
-
-After: **0 retreats of 52 finish below the stock.** `check_tangent` PASS,
-min |dot| 1.00000; `test_rough_comp` and `test_lathe_validation` unchanged.
+Left open: the retreat height is still whatever `lo_len * sin[lo_ang]` gives
+above each level, so most levels do finish inside the bar. The fix has to come
+from pink's own ending, not from a clamp.
