@@ -42,6 +42,7 @@ o<lathe_level_pass> sub
 	#<e_sdx>     = 0
 	#<e_asl>     = 0
 	#<pa_dz>     = 0
+	#<_lo_endx>  = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -621,6 +622,21 @@ o<lathe_level_pass> sub
 			o<lo_fsw2> endif
 			G1 X[[#<phys_x> + #<_lo_leff> * #<lo_bx>] * #<_diameter_mode>] Z[#<end_z> + #<_lo_leff> * #<lo_bz>]
 		o<lo_str> endif
+		(AND IT MUST CLEAR THE STOCK, not merely the level it just cut. The)
+		(angled retreat rises lo_len * sin[lo_ang] above its OWN level, so every)
+		(level below the first ended buried: on testing_15_2 a level at r28.6360)
+		(retreated to r29.3431 against a 30.0 bar, and only the topmost level)
+		(ever came out. A separate radial move rather than a longer lo_len -)
+		(lengthening the angled move fights the Z-room cap above, which exists)
+		(to stop a continuation interval retreating back over its own start.)
+		(OD only: on a bore the retreat travels the other way and clamping)
+		(outward would drive it into the wall)
+		o<lo_stk> if [#<_pl_side> NE 1]
+			#<_lo_endx> = [[#<phys_x> + #<_lo_leff> * #<lo_bx>] * #<_diameter_mode>]
+			o<lo_stk2> if [#<_lo_endx> LT #<_wp_dia_od>]
+				G1 X#<_wp_dia_od>
+			o<lo_stk2> endif
+		o<lo_stk> endif
 		F#<pass_feed>
 	o<lead_out> endif
 

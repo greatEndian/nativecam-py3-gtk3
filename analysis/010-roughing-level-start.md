@@ -69,3 +69,30 @@ did not.
   retreats from is known to be compensated.
 - No test asserts the roughing start. `test_rough_comp`'s number moved
   0.0503 -> 0.0394, so a regression would show up there, but indirectly.
+
+---
+
+## Addendum, same day — the roughing lead-out ended inside the stock
+
+greatEndian: *"it is ending at first roughing pass level which is wrong.. it
+has to end at level of stock at least"*.
+
+The retreat starts at `#<phys_x> = #<level>` and rises `lo_len * sin[lo_ang]`
+above **its own level**, so only the topmost level ever cleared the bar. On
+testing_15_2, `lo_len` 1.0 at 45 deg gives 0.7071 of rise:
+
+```
+level r29.6520 -> r30.3591   clears the 30.0 bar
+level r29.1440 -> r29.8511   0.1489 inside it
+level r28.6360 -> r29.3431   0.6569 inside it        ... 25 of 27 levels
+```
+
+Fixed with a separate radial `G1 X#<_wp_dia_od>` after the angled retreat,
+taken only when the angled move finished short. **Not** by lengthening
+`_lo_leff`: that fights the Z-room cap directly above it, which exists to stop
+a continuation interval retreating back over its own start. OD only - on a
+bore the retreat travels the other way and clamping outward would drive it
+into the wall.
+
+After: **0 retreats of 52 finish below the stock.** `check_tangent` PASS,
+min |dot| 1.00000; `test_rough_comp` and `test_lathe_validation` unchanged.
