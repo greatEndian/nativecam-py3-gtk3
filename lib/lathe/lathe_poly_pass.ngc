@@ -308,8 +308,24 @@ o<lathe_poly_pass> sub
 		o<ext_dir> endif
 		#<_ext_nz> = [#<z_dir> * #<_line_sin>]
 		#<_ext_nx> = [-#<z_dir> * #<_line_cos>]
-		#<end_z>  = [#<_cut_phys_z> + #<comp_r> * #<_ext_nz>]
-		#<phys_x> = [#<_cut_phys_x> + #<comp_r> * #<_ext_nx>]
+		(AND THE ORIENTATION TERM, exactly as the entry pre-shift above takes it.)
+		(The entry gained it in c16df1f; the exit was left on a plain normal, and)
+		(the two ends have to move together. G40 fires before this line, so after)
+		(it the control point IS the tip - and this G1 has to name the point the)
+		(tool is ALREADY standing on, or G40 becomes a real move. Without the)
+		(term it named a point 0.4/0.4 away on testing_15_2: a 0.5657 mm jerk out)
+		(of the finished corner, then a lead-out starting from the wrong place -)
+		(1.5657 mm of retreat where 1.000 was asked for. In CAM, which carries the)
+		(offset in its own table and has comp_r 0, was right all along; this makes)
+		(Native agree with it instead of the other way round)
+		#<ex_oz> = 0
+		#<ex_ox> = 0
+		o<ex_or> if [[#<_tip_comp_l> GT 0] AND [#<comp_r> GT 0.000001]]
+			#<ex_oz> = #<_pl_nose_oz>
+			#<ex_ox> = #<_pl_nose_ox>
+		o<ex_or> endif
+		#<end_z>  = [#<_cut_phys_z> + [#<comp_r> * #<_ext_nz>] - #<ex_oz>]
+		#<phys_x> = [#<_cut_phys_x> + [#<comp_r> * #<_ext_nx>] - #<ex_ox>]
 
 		(the move right after exiting cutter comp must be straight, not an arc -)
 		(a same-point no-op line satisfies that before a lead-out fillet blend)

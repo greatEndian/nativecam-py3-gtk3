@@ -38,28 +38,37 @@ Branch: `liveTooling`. Last pushed: `6c7ac85`.
   Until then the item should probably be **removed from the menu** rather than
   left to fail silently.
 
-- [ ] **LEAD-IN AND LEAD-OUT ARE MISPLACED WHENEVER COMPENSATION IS ON** —
-  greatEndian 2026-08-04, `photo/leadInIssueCompensation_0.png` and
-  `photo/leadOutIssueCompensation_0.png`. **Absent with Tool nose comp Off**, so
-  it arrived with one of the compensation changes of 2026-08-03. In the picture
-  the lead runs out past the contour end, beyond the stock face.
+- [x] **LEAD-OUT MISPLACED UNDER COMPENSATION — FIXED**, 2026-08-04,
+  `analysis/009`. greatEndian's criterion: *"lead in and lead out can not end
+  in the part or stock... we need them to be like when comp off, there is no
+  play"*.
 
-  Prime suspect: `lathe_poly_pass.ngc`. Its lead-in is built from
-  `#<comp_ez>` / `#<comp_ex>`, which `c16df1f` and `cfb5ccd` changed to the
-  orientation-aware entry point, and the blend (`o<fillet_lead>`, `#<li_baz>` /
-  `#<li_bax>`) is placed relative to those. If the lead direction is still
-  measured from the raw entry while the base moved, the whole lead shifts.
+  **The lead-IN was already correct** and was left alone — the nose centre sits
+  at control + R·orient, so the cutting edge starts exactly where Off's tip
+  does. `c16df1f`'s pre-shift working.
 
-  **greatEndian's acceptance criterion, stated 2026-08-04**: *"lead in and lead
-  out can not end in the part or stock... we need them to be like when comp off,
-  there is no play"*. So: **no lead move's swept nose may intersect material,
-  and the lead must sit where the Off case puts it.** That is testable - sweep
-  the nose along the lead moves against the stock field, the way
-  `test_rough_comp.py` does for roughing - and the test does not exist yet.
+  **The lead-OUT was wrong in Native only.** `lathe_poly_pass.ngc` cancels comp
+  (G40) after the contour and then names where the tool physically is — but
+  computed that point with a **plain normal offset and no orientation term**,
+  the very term the entry gained in `c16df1f`. After G40 the control point IS
+  the tip, so naming the wrong point makes cancelling comp a real move:
+  **0.5657 mm = |(0.4, 0.4)| = R√2**, jerking out of the finished corner, and
+  the retreat then ran **1.5657 mm where 1.000 was asked for**. In CAM has
+  `comp_r` 0 and never entered that arithmetic, so **In CAM was right**; the
+  fix makes Native agree with it.
 
-  Measured so far (`analysis/007`): every difference from Off is exactly the
-  nose radius, 0.400. Whether that is the fault or the correct corner roll has
-  NOT been settled, and the criterion above is what settles it.
+  Exit line now 0.0000 in all three modes; Native and In CAM place every lead
+  identically on testing_15_2 and testing_13_arcs. `check_tangent` PASS,
+  min |dot| 1.00000.
+
+  **`test_leads.py` is the test that did not exist** — no lead removes
+  material, every lead is the length Off makes it, cancelling comp moves
+  nothing, and the two compensated modes agree. Fails without the fix.
+
+  **Left knowingly**: roughing's leads are not covered (it never runs
+  interpreter comp, so it has no exit shift to get wrong), and the same exit
+  arithmetic in `taper.ngc` / `taper_id.ngc` / `boring.ngc` / `facing.ngc`
+  has not been checked for the same fault.
 
 - [x] **The radius start point on the PRE-FINISH contour — FIXED**, 2026-08-04,
   `584a7db`, `analysis/008`. greatEndian's criterion: *"radius start can not go
