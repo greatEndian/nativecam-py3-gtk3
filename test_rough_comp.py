@@ -215,6 +215,45 @@ def main():
                   'r%.4f stops at Z%.4f, %.4f short of the wall at Z%.4f'
                   % (short[0][0], short[0][1], short[0][1] - wall, wall)
                   if short else '')
+
+        # AND EVERY PASS BEHIND THE BOSS ARRIVES ALONG THE PROFILE ANGLE.
+        # greatEndian: "the last pass lead in behind the boss segment has wrong
+        # lead in .. if I select sectioning the lead in shape is right".
+        #
+        # The approach is three pieces - a straight lead-in, a no-op, then a
+        # ramp at the contour's own angle onto the level - and the ramp is
+        # capped so it is never longer than the cut it enters. That cap was
+        # tested against the SCAN's stop, which the stop table then extends,
+        # so the shortest pass lost its ramp and plunged in at 45 degrees.
+        # Sectioning gave that region a longer window, the same cap passed,
+        # and the shape came out right - which is exactly the comparison
+        # greatEndian made.
+        #
+        # A ramp is told from the 45 degree lead-in by its shallowness: the
+        # lead-in has |dz| == |dr|, a 13 degree ramp has |dz| over four times
+        # |dr|. No angle is assumed - only that a ramp is not a 45 lead-in.
+        for mode, label in ((0, 'Off'), (1, 'Native'), (2, 'In CAM')):
+            rgh = [m for m in runs[mode].moves if m.op == 'Lathe Polyline'
+                   and not m.subs]
+            cuts = [i for i, m in enumerate(rgh)
+                    if m.kind == 'feed' and abs(m.b[0] - m.a[0]) < 1e-6
+                    and m.b[2] < m.a[2] - 1e-6 and m.a[2] < -40.0]
+            plunged = []
+            for i in cuts:
+                ramp = False
+                for m in rgh[max(0, i - 4):i]:
+                    if m.kind != 'feed':
+                        continue
+                    dz, dr = abs(m.b[2] - m.a[2]), abs(m.b[0] - m.a[0])
+                    if dr > 1e-6 and dz > dr * 1.5:
+                        ramp = True
+                if not ramp:
+                    plunged.append((rgh[i].a[0], rgh[i].a[2]))
+            check('%-7s every pass behind the boss ramps in, none plunges'
+                  % label, not plunged,
+                  '%d of %d plunge - first at r%.4f, Z%.4f'
+                  % (len(plunged), len(cuts), plunged[0][0], plunged[0][1])
+                  if plunged else '')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

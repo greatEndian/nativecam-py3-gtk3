@@ -42,6 +42,8 @@ o<lathe_level_pass> sub
 	#<e_sdx>     = 0
 	#<e_asl>     = 0
 	#<pa_dz>     = 0
+	(read by the ramp arming below, which now sits outside the entry block)
+	#<e_have>    = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -312,24 +314,6 @@ o<lathe_level_pass> sub
 			(roughing depth of cut of PROJECTED length back from the entry)
 			(point, then turning onto the level. Arriving parallel to the)
 			(surface it is about to leave beats driving in at 45 degrees.)
-			o<e_ang> if [[ABS[#<e_bdz>] GT 0.000001] AND [#<_rough_cut> GT 0]]
-				#<e_slope> = [#<e_bdx> / #<e_bdz>]
-				#<e_asl>   = ABS[#<e_slope>]
-				(the depth of cut is a RADIAL quantity, so it is PROJECTED)
-				(onto the contour's own angle rather than used as a length:)
-				(one depth of cut of radius costs doc/sin of the angle along)
-				(the segment and doc/tan of it in Z. On a 13 degree ramp that)
-				(is 2.20 mm of Z for a 0.508 mm cut, not 0.508.)
-				o<e_proj> if [#<e_asl> GT 0.000001]
-					#<pa_dz> = [#<_rough_cut> / #<e_asl>]
-					(never longer than the cut it is entering)
-					o<e_cap> if [#<pa_dz> LT ABS[#<z_end> - #<z_start>]]
-						#<pa_z> = [#<z_start> + #<z_dir> * #<pa_dz>]
-						#<pa_x> = [#<level> + #<z_dir> * #<pa_dz> * #<e_slope>]
-						#<pa_on> = 1
-					o<e_cap> endif
-				o<e_proj> endif
-			o<e_ang> endif
 		o<e_ok> endif
 	o<ent> endif
 
@@ -369,6 +353,35 @@ o<lathe_level_pass> sub
 			#<z_end> = #<s_best>
 		o<s_ok> endif
 	o<stp> endif
+
+	(THE PROFILE-ANGLE APPROACH IS ARMED HERE, AFTER THE STOP, not up in the)
+	(entry block where its inputs are found. Its cap - never longer than the)
+	(cut it is entering - was being tested against the SCAN's z_end, and the)
+	(stop table then extends that cut. On testing_15_2 the last pass behind the)
+	(boss came out 2.6397 long against a 2.2004 ramp, so the ramp fitted, but)
+	(the pre-extension length did not clear it: that pass alone lost its ramp)
+	(and plunged in at 45 degrees instead of arriving along the surface. It is)
+	(visible as the odd one out because Sectioning gives that region a longer)
+	(window and the same cap then passes - greatEndian: "if I select sectioning)
+	(the lead in shape is right".)
+	o<e_arm> if [[#<e_have>] AND [ABS[#<e_bdz>] GT 0.000001] AND [#<_rough_cut> GT 0]]
+		#<e_slope> = [#<e_bdx> / #<e_bdz>]
+		#<e_asl>   = ABS[#<e_slope>]
+		(the depth of cut is a RADIAL quantity, so it is PROJECTED onto the)
+		(contour's own angle rather than used as a length: one depth of cut of)
+		(radius costs doc/sin of the angle along the segment and doc/tan of it)
+		(in Z. On a 13 degree ramp that is 2.20 mm of Z for a 0.508 mm cut.)
+		o<e_proj> if [#<e_asl> GT 0.000001]
+			#<pa_dz> = [#<_rough_cut> / #<e_asl>]
+			(never longer than the cut it is entering - now the REAL one)
+			o<e_cap> if [#<pa_dz> LT ABS[#<z_end> - #<z_start>]]
+				#<pa_z> = [#<z_start> + #<z_dir> * #<pa_dz>]
+				#<pa_x> = [#<level> + #<z_dir> * #<pa_dz> * #<e_slope>]
+				#<pa_on> = 1
+			o<e_cap> endif
+		o<e_proj> endif
+	o<e_arm> endif
+
 
 	(exposed for callers doing their own disjoint-interval scanning after this)
 	(call - e.g. lathe_level_next_start needs to know where THIS pass actually)

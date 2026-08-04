@@ -111,6 +111,15 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   **Left**: roughing's lead-OUT retreat geometry is still unmeasured, and no
   test asserts the start directly.
 
+- [x] **Last pass behind the boss plunged instead of ramping — FIXED**,
+  2026-08-04, `analysis/012`. greatEndian compared it against Sectioning ON,
+  where the shape was right. The profile-angle ramp is capped so it is never
+  longer than the cut it enters, but the cap sat **before** the stop table
+  extends that cut — so it was tested against a stale, shorter length and the
+  shortest pass lost its ramp: 2.2004 ramp against a 2.6397 cut, rejected.
+  Arming moved after the stop extension. `test_rough_comp` gained *every pass
+  behind the boss ramps in, none plunges*; negative control 9 of 9 plunge.
+
 - [x] **Top roughing level missed the back wall — FIXED**, 2026-08-04,
   `analysis/011`. Compensated only: level r29.6520 stopped at Z-69.3840,
   **0.5080 short**, never touched the pre-finish, rapided away. The stop
