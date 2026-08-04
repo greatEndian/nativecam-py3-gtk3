@@ -142,11 +142,17 @@ def main():
         #     idx 37  Z-70.0000  gap 0.1172
         #     idx 38  Z-69.2929  gap 0.8566   the retreat into air
         #
+        # LEAD_OUT became 4 on 2026-08-04: the contour now ends on the
+        # polyline's own last X with a deliberate pure-radial move, which
+        # is a fourth non-contour move at that end. Bumped because a real
+        # move was added, NOT to make a failure go away - the check below
+        # still requires at least one excluded move to genuinely differ.
+        #
         # No corner exclusion is needed and none is made: at a convex vertex
         # the interpreter rolls the nose round on an arc and Python emits that
         # same arc as chords under a 0.005 mm sagitta bound, so the two agree
         # there too.
-        LEAD_IN, LEAD_OUT = 2, 3
+        LEAD_IN, LEAD_OUT = 2, 4
         body = actual[LEAD_IN:-LEAD_OUT]
         check('the pass is longer than its lead-in and lead-out',
               len(body) > 10, '%d contour points of %d'

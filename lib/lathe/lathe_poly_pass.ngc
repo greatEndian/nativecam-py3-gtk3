@@ -318,6 +318,7 @@ o<lathe_poly_pass> sub
 		(1.5657 mm of retreat where 1.000 was asked for. In CAM, which carries the)
 		(offset in its own table and has comp_r 0, was right all along; this makes)
 		(Native agree with it instead of the other way round)
+		#<_ex_tgt> = 0
 		#<ex_oz> = 0
 		#<ex_ox> = 0
 		o<ex_or> if [[#<_tip_comp_l> GT 0] AND [#<comp_r> GT 0.000001]]
@@ -330,6 +331,33 @@ o<lathe_poly_pass> sub
 		(the move right after exiting cutter comp must be straight, not an arc -)
 		(a same-point no-op line satisfies that before a lead-out fillet blend)
 		G1 X[#<phys_x> * #<_diameter_mode>] Z#<end_z>
+
+		(AND THE CONTOUR ENDS ON THE POLYLINE'S OWN LAST X, not 0.4 short of it.)
+		(The compensated control point stops at r29.6000 so the NOSE contact lands)
+		(on r30.0000 - the surface is right, but the tool's own X, and the contour)
+		(drawn from it, finish inside the bar. greatEndian: the blue pre-finish)
+		(contour has to end in X at the last polyline segment's X coordinate or)
+		(the stock envelope. _cut_phys_x IS that coordinate - the raw programmed)
+		(endpoint - so this needs no new input and follows a profile that ends)
+		(below the stock just as faithfully as one that runs out to it.)
+		(Deliberately AFTER the no-op above rather than folded into it: that line)
+		(must keep naming where the tool already stands, or cancelling)
+		(compensation becomes a move again - see analysis/009. OD only; on a bore)
+		(the contour ends the other way.)
+		(In CAM the record table IS the offset control-point path, so its own)
+		(last X is already 0.4 short and _cut_phys_x cannot supply the target.)
+		(_pl_rgh_ox is the orientation term ALREADY GATED in Python - zero unless)
+		(this polyline compensates - and comp_r tells the two apart: Native has)
+		(the interpreter doing the offset and a raw _cut_phys_x that needs no)
+		(uplift, In CAM has comp_r 0 and needs exactly one nose term.)
+		#<_ex_tgt> = #<_cut_phys_x>
+		o<ex_tgt> if [#<comp_r> LE 0.000001]
+			#<_ex_tgt> = [#<_cut_phys_x> + #<_pl_rgh_ox>]
+		o<ex_tgt> endif
+		o<ex_stk> if [[#<_pl_side> NE 1] AND [#<phys_x> LT #<_ex_tgt>]]
+			G1 X[#<_ex_tgt> * #<_diameter_mode>]
+			#<phys_x> = #<_ex_tgt>
+		o<ex_stk> endif
 
 		(lead-out line direction: identical to the roughing lead-out in)
 		(lathe_level_pass.ngc - retreat toward the pass start, +Z for a)

@@ -141,3 +141,65 @@ and the same position is then read in the mode being judged.
 - The same exit arithmetic exists per-op in `taper.ngc`, `taper_id.ngc`,
   `boring.ngc` and `facing.ngc`. Whether any of them cancels compensation at a
   point the tool is not standing on has not been checked.
+
+---
+
+## Addendum, 2026-08-04 — the contour now ends on the polyline's own last X
+
+greatEndian, from `photo/leadOutIssue_0.png`: *"it have to finish at blue
+prefinish contour which has to end in X at last polyline segment X coordination
+or stock envelope"*.
+
+The compensated control point stopped **0.4000 short**: the pass ended at
+r29.6000 so the NOSE contact landed on r30.0000. The surface was right; the
+tool's own X — and the contour drawn from it — finished inside the bar.
+
+```
+                 before            after
+Off      pf ends r30.0000    r30.0000     (already there, no move emitted)
+Native   pf ends r29.6000    r30.0000
+In CAM   pf ends r29.6000    r30.0000
+lead-out            1.0000 from there, all three, unchanged
+```
+
+A separate pure-radial `G1` **after** the G40 no-op, not folded into it — that
+line must keep naming where the tool already stands or the fault this analysis
+is about comes straight back. `_cut_phys_x` is the last polyline segment's X,
+so no new input is needed and a profile ending below the stock is followed just
+as faithfully as one running out to it.
+
+**In CAM needed a second term.** Its record table IS the offset control-point
+path, so its own `_cut_phys_x` is already the short 29.6000 and cannot supply
+the target. `_pl_rgh_ox` — the orientation term already gated in Python — plus
+`comp_r` to tell the modes apart: Native has the interpreter doing the offset
+and needs no uplift, In CAM has `comp_r` 0 and needs exactly one nose term.
+
+Verified: `check_tangent` PASS min |dot| 1.00000, `test_rough_comp`,
+`test_sections`, `test_comp_overlay` and `test_lathe_validation` all pass,
+`test_leads` 24/24.
+
+### Both tests had to be repaired, and neither was loosened
+
+`test_comp_overlay`'s `LEAD_OUT` 3 → 4, because a real fourth non-contour move
+now exists at that end. Its "exactly the excluded moves differ" check still
+requires at least one to genuinely differ, so the exclusion cannot grow
+silently.
+
+`test_leads`' exit-line check was **wrong three times** before it was right,
+and every failure was move-identification rather than motion:
+
+1. *"the move before the lead-out"* — caught the lead-out BLEND ARC, 0.3902 mm,
+   failing on Off itself.
+2. *by position in Off's tail* — broke the moment the modes stopped having
+   equal move counts, which is exactly what this change did.
+3. *the largest Z jerk of everything but the last move* — caught the blend arc
+   again, 0.2168 mm, on Off again.
+
+It now asserts the one property the exit line actually has: **a zero-length
+move exists in the tail.** Not circular — a regression does not move the
+no-op elsewhere, it removes it. Negative control run: with the orientation
+term deleted, `Native cancelling compensation is still a no-op` FAILS and Off
+still passes.
+
+The tail window also had to widen 4 → 6: a blend radius costs three moves and
+the new last-X move a fourth, which pushed the no-op out of the window.

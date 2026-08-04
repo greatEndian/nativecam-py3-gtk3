@@ -96,31 +96,39 @@ def lead_report(tp, P):
         if fd:
             out[name + ' tail'] = [
                 ((m.b[2] - m.a[2]) ** 2 + (m.b[0] - m.a[0]) ** 2) ** 0.5
-                for m in fd[-4:]]
+                for m in fd[-6:]]
+            out[name + ' tail moves'] = [(m.b[2] - m.a[2], m.b[0] - m.a[0])
+                                         for m in fd[-6:]]
+            out[name + ' leadout r0'] = fd[-1].a[0]
     return out
 
 
-def exit_jerk(rep, off_rep, pass_name):
-    """How far cancelling compensation moves the tool, or None.
+def has_exit_noop(rep, pass_name):
+    """Whether the exit line is still a no-op, or None if it cannot be judged.
 
-    The exit line is emitted immediately after G40 and names the point the tool
-    is already standing on, so in Off - which has nothing to cancel - it is
-    exactly zero length. That is what locates it: find the zero-length move in
-    Off's trailing feeds and read the SAME POSITION in the mode being judged.
+    G40 fires between the contour and the lead-out, and the G1 after it names
+    the point the tool is ALREADY standing on - so that move is exactly zero
+    length. That is the property, and it is what analysis/009 broke: naming a
+    point 0.4 out in both Z and X made it a 0.5657 mm jerk out of the finished
+    corner, and there was then no zero-length move in the tail at all.
 
-    Guessing it as "the move before the lead-out" is wrong and was: with a
-    lead-out blend radius the move before the lead-out is the ARC, 0.3902 mm on
-    testing_13_arcs, and the check then failed on Off itself. A measurement
-    that fires on the baseline is not a measurement - the third time that trap
-    has been hit in this project.
+    So the assertion is simply THAT SUCH A MOVE EXISTS. It is not circular -
+    a regression does not produce a zero-length move somewhere else, it
+    produces a tail with none.
+
+    THE THIRD IDENTIFICATION THIS FILE HAS GOT WRONG, and the reason it keeps
+    happening: the tail is not the same shape in every mode or every project. Six
+    moves, not four: a lead-out blend radius costs three and the new last-X
+    move a fourth, which pushed the no-op out of the window entirely.
+    Locating the exit line by position in Off's tail broke when the modes
+    stopped having equal move counts; measuring the Z jerk of everything but
+    the last move caught the lead-out BLEND ARC, 0.2168 mm on testing_13_arcs,
+    firing on Off itself. Both times the code was fine and the metric was not.
     """
-    tail, off_tail = rep.get(pass_name + ' tail'), off_rep.get(pass_name + ' tail')
-    if not tail or not off_tail or len(tail) != len(off_tail):
+    tail = rep.get(pass_name + ' tail')
+    if not tail or len(tail) < 2:
         return None
-    zeros = [i for i, v in enumerate(off_tail) if v < 1e-9]
-    if len(zeros) != 1:
-        return None
-    return tail[zeros[0]]
+    return any(v < 1e-6 for v in tail)
 
 
 def main():
@@ -155,7 +163,7 @@ def main():
             # 1. the criterion itself
             for label, rep in runs.items():
                 dirty = {k: v['cut'] for k, v in rep.items()
-                         if not k.endswith(' tail') and v['cut'] > 1e-4}
+                         if isinstance(v, dict) and v['cut'] > 1e-4}
                 check('%-7s no lead move cuts into the material' % label,
                       not dirty,
                       ', '.join('%s takes %.4f mm' % (k, v)
@@ -167,7 +175,7 @@ def main():
             for label in ('Native', 'In CAM'):
                 worst, where = 0.0, ''
                 for k, v in runs[label].items():
-                    if k.endswith(' tail'):
+                    if not isinstance(v, dict):
                         continue
                     want = runs['Off'][k]['len']
                     if abs(v['len'] - want) > worst:
@@ -181,20 +189,35 @@ def main():
             # is already standing on, or cancelling compensation is itself a
             # move - out of the corner the pass has just finished.
             for label, rep in runs.items():
-                worst, where = 0.0, ''
-                for pass_name in ('prefinish', 'finish'):
-                    jerk = exit_jerk(rep, runs['Off'], pass_name)
-                    if jerk is not None and jerk > worst:
-                        worst = jerk
-                        where = '%s jerks %.4f mm' % (pass_name, jerk)
-                check('%-7s cancelling compensation moves nothing' % label,
-                      worst < 1e-4, where)
+                missing = [p for p in ('prefinish', 'finish')
+                           if has_exit_noop(rep, p) is False]
+                check('%-7s cancelling compensation is still a no-op' % label,
+                      not missing,
+                      'no zero-length exit line in the %s tail - G40 is moving '
+                      'the tool again' % ', '.join(missing))
+
+            # AND THE CONTOUR ENDS ON THE POLYLINE'S OWN LAST X, in every mode.
+            # greatEndian, 2026-08-04: the blue pre-finish contour has to end
+            # in X at the last polyline segment's X coordinate or the stock
+            # envelope. Compensated, the control point stopped 0.4 short of it
+            # - the NOSE contact was right, the tool's own X was not. Asserted
+            # as the radius the lead-out STARTS from, which is where the
+            # contour actually finished.
+            for pass_name in ('prefinish', 'finish'):
+                r0 = {k: v.get(pass_name + ' leadout r0') for k, v in
+                      runs.items()}
+                if any(x is None for x in r0.values()):
+                    continue
+                spread = max(r0.values()) - min(r0.values())
+                check('every mode ends the %s contour at the same X' % pass_name,
+                      spread < 1e-3,
+                      ' '.join('%s r%.4f' % (k, v) for k, v in r0.items()))
 
             # 4. and the two compensated modes must agree, since they are two
             # routes to one geometry
             worst, where = 0.0, ''
             for k in runs['Native']:
-                if k.endswith(' tail'):
+                if not isinstance(runs['Native'][k], dict):
                     continue
                 for end in ('a', 'b'):
                     n, c = runs['Native'][k][end], runs['In CAM'][k][end]
