@@ -426,8 +426,16 @@ class PreviewPane(object):
     def _done(self, tp):
         _trace('done')
         # the interpreter runs on a worker thread and hands the result back
-        # with idle_add, so the panel can be gone by the time it lands
-        if self.area.get_window() is None and self._acc is not None:
+        # with idle_add, so the panel can be gone by the time it lands.
+        #
+        # THE LIVENESS TEST IS THE WINDOW, AND ONLY THE WINDOW. It used to be
+        # ANDed with `self._acc is not None`, which is a cached path-length
+        # array and says nothing about whether the panel is alive - and it is
+        # set to None four lines below, so on the first result after any
+        # refresh the guard could not fire at all. A parse that finished after
+        # the pane went away then ran on through set_text/_render_stats/
+        # _render_info, touching widgets that no longer exist.
+        if self.area.get_window() is None:
             self._busy = False
             return False
         self.toolpath = tp

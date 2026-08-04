@@ -159,6 +159,36 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   (stop table), leads (inherited). The all-or-nothing rule is satisfied for
   roughing.
 
+- [ ] **CRASH: toggling the Sectioning property kills the panel** —
+  greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
+
+  ```
+  Gdk-WARNING: GdkWindow 0x5c00006 unexpectedly destroyed
+  Gtk.py:1689: Warning: invalid (NULL) pointer instance
+  Gtk.py:1689: g_signal_handler_disconnect: assertion 'G_TYPE_CHECK_INSTANCE' failed
+  Gdk-CRITICAL: gdk_frame_clock_end_updating: assertion 'GDK_IS_FRAME_CLOCK' failed  (x3)
+  [GladeVCP-ncam][ERROR] GLADE VCP ERROR: X Protocol Error: 3   (BadWindow)
+  ```
+
+  **No Python traceback** in `linuxcnc_debug.txt` or `linuxcnc_print.txt` - GTK
+  aborts on the X error before anything surfaces. The G-code path is NOT
+  implicated: `gen_project.py --set polyline:param_sectioning=1` builds
+  cleanly headless.
+
+  **One real defect found and fixed on the way** (not proven to be the cause):
+  `NCamPreviewPane._done`'s liveness guard was
+  `if self.area.get_window() is None AND self._acc is not None`. `_acc` is a
+  cached path-length array that says nothing about whether the panel is alive,
+  and it is set to None four lines below - so on the first result after any
+  refresh the guard could not fire. A parse finishing after the pane went away
+  then ran on through `set_text` / `_render_stats` / `_render_info`, touching
+  destroyed widgets. Now tested on the window alone.
+
+  **To pin the actual cause**: re-run with `GDK_SYNCHRONIZE=1` so the X error
+  points at the failing call rather than at the next flush. Also worth knowing
+  whether the crash needs a preview parse to be in flight - toggle Sectioning
+  immediately after a Regenerate versus well after one.
+
 - [ ] **Nothing asserts the roughing start or the retreat height directly** —
   added 2026-08-04. `test_leads.py` covers the pre-finish and finish passes
   only. A regression in either would show up as `test_rough_comp`'s overcut
