@@ -129,12 +129,35 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   UNDER-cut assertion - its existing metric is one-sided and a level that stops
   early reads as an improvement.
 
-- [ ] **Roughing's retreat clamp is OD-ONLY and untested on a bore** — added
-  2026-08-04 with `57eea44`. `G1 X#<_wp_dia_od>` is guarded on
-  `#<_pl_side> NE 1` because on a bore the retreat travels the other way and
-  clamping outward would drive it into the wall. **No saved project bores**, so
-  the ID branch has never been generated, let alone measured. Needs a project
-  or a standalone driver.
+- [x] **Roughing lead-out "reference" — CLOSED, not a defect**, 2026-08-04.
+  greatEndian: *"1 mm is not a stricted value .. leads are dependent only from
+  properties"*. So a lead is `lo_len` at `lo_ang` from the point the cut ends,
+  and nothing else may move it — not the stock envelope, not the pre-finish
+  contour. Two earlier attempts to give it an external reference were wrong in
+  principle, not just in implementation: `57eea44` stretched every retreat to
+  the stock and was reverted.
+
+  **Verified**: all 54 lead moves on testing_15_2 measure the configured
+  length in both Off and Native (52 at 1.0000, 2 at 1.0001 rounding). The
+  Z-room cap in `lathe_level_pass` that *could* shorten a retreat never fires
+  on this project.
+
+  Consequence accepted: a retreat therefore ends wherever its own length and
+  angle put it — measured from 0.96 mm below the blue contour to 5.10 mm above
+  it. That is the geometry of a property-driven lead, not a fault.
+
+- [x] **Tool tip compensation on roughing's leads — ALREADY DONE**, verified
+  2026-08-04 by measurement, no code change needed. The lead-in inherits from
+  the entry contour (`dz -0.4456` Off→Native) and the lead-out from the stop
+  table — retreat ends move by *exactly* the amount the stops move
+  (-0.2459, -0.2197, -0.2194 …). Behind the boss those deltas read 0.0000
+  because the stop there is limited by the **wall**, identical in both modes -
+  nothing to shift, not a missing shift.
+
+  Roughing now carries the nose end to end: level start Z (`_pl_rgh_oz`,
+  `bfa2fa2`), entry crossing and profile-angle ramp (entry contour), stop
+  (stop table), leads (inherited). The all-or-nothing rule is satisfied for
+  roughing.
 
 - [ ] **Nothing asserts the roughing start or the retreat height directly** —
   added 2026-08-04. `test_leads.py` covers the pre-finish and finish passes
