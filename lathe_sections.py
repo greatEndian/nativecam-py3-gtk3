@@ -1752,6 +1752,40 @@ def _comp_nose(polyline_feature, nose_r, orient):
         return 0.0, 0
     return float(nose_r), int(orient)
 
+def build_rough_nose_gcode(polyline_feature, nose_r=0.0, orient=0):
+    """The orientation term roughing carries, ALREADY GATED. Always emitted.
+
+    A roughing level begins at the window start whenever the entry contour
+    never crosses it - every level above the part - and the window is a raw
+    profile Z. So the level's tip started where the SURFACE starts and the
+    nose, which trails the tip by the orientation vector, began cutting 0.4 mm
+    past it: measured on testing_15_2, the drawn segment starts at Z+1.0000 and
+    green began its cut at Z+1.4000, in all three modes. The level's STOP has
+    carried the nose since the stop table was built, so one end of every
+    roughing pass was compensated and the other was not - the same asymmetry
+    analysis/009 found at the two ends of the contour pass.
+
+    Gated HERE and not in the .ngc, so lathe_level_pass subtracts a number
+    rather than deciding anything: _pl_nose_oz from lathe_comp is the tool's
+    term whatever the mode, and roughing must take it only when this polyline
+    actually compensates. That is exactly _comp_nose's question, and it is the
+    same one the entry and stop tables already ask.
+
+    Emitted unconditionally - unlike the entry contour, which is skipped when
+    the roughing depth is 0 - because a level starts somewhere regardless.
+    """
+    oz, ox = 0.0, 0.0
+    _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
+    if _nr > EPS and 0 < int(_or) < len(NOSE_OFFSET):
+        vec = NOSE_OFFSET[int(_or)]           # (X, Z), raw - not a unit vector
+        ox, oz = _nr * vec[0], _nr * vec[1]
+    return '\n'.join([
+        '(the orientation term ROUGHING carries: zero unless this polyline)',
+        '(compensates, so a level start needs no gate of its own)',
+        '#<_pl_rgh_oz> = %s' % _fmt(oz),
+        '#<_pl_rgh_ox> = %s' % _fmt(ox)])
+
+
 def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
                               flank_len=0.0, clearance=0.0, entry_off=0.0, orient=0):
     """The entry contour as a point table, or '' when there is nothing to say.

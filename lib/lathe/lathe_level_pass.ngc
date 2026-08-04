@@ -24,7 +24,14 @@ o<lathe_level_pass> sub
 	(where this pass may BEGIN. Defined here, not inside the branch that)
 	(sets it: LinuxCNC pre-parses the whole file at load and a named)
 	(parameter first assigned in a branch reads as "not defined".)
-	#<z_start>   = #<w_from>
+	(THE WINDOW START IS A RAW PROFILE Z, so the tip started where the SURFACE)
+	(starts and the nose - which trails the tip by the orientation vector -)
+	(began cutting past it: the drawn segment starts at Z+1.0000 and green began)
+	(its cut at Z+1.4000. The level STOP has carried the nose since the stop)
+	(table was built, so one end of the pass was compensated and the other was)
+	(not. _pl_rgh_oz is already gated in Python - zero unless this polyline)
+	(compensates - so there is nothing to decide here, only to subtract)
+	#<z_start>   = [#<w_from> - #<_pl_rgh_oz>]
 	(the profile-angle approach segment, resolved with z_start below)
 	#<pa_on>     = 0
 	#<pa_z>      = 0
