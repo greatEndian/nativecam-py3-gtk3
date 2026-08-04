@@ -159,3 +159,53 @@ keep the second exactly as it is — it is the one that caught this.
 
 Acceptance stays: reversals at or below `offset_contour`'s, **and** all of
 `test_sections` passing.
+
+---
+
+## 2026-08-04: the bump LOCATED, at Z−20 where the wall meets the arc
+
+greatEndian gave the location, which is what three home-made detectors had all
+failed to find. Measured directly at that Z:
+
+    input profile          offset_contour (0.508)
+    Z -20.0000 r 20.0000   Z -19.5138 r 20.5080   <- leaves the wall 0.4862 EARLY
+    Z -20.0620 r 21.4118   Z -19.5545 r 21.4341   <- already rising
+    Z -20.2830 r 22.8076   Z -19.7813 r 22.8870
+    Z -20.6601 r 24.1695   Z -20.1705 r 24.3051
+
+**The offset wall should run at r 20.5080 all the way to Z −20.0000 and only
+then rise. It stops at Z −19.5138 and climbs from there** — 0.4862 short, which
+is the offset. That is the bump: the contour lifts off before the radius starts.
+
+Suspect: the corner at Z−20 is being TRIMMED when it should be ROLLED. Going
+along −Z the surface turns away from the axis, so from the offset side that is
+an OUTSIDE corner and the offset should roll around the vertex at the offset
+radius, extending the wall to the corner first. `offset_contour` decides with
+`cross = (uz0*ur1 - ur0*uz1) * side`; if the sign comes out negative here it
+takes the `_isect` branch, and trimming an outside corner pulls both segments
+back — exactly the 0.4862 seen.
+
+**To fix**: check the sign of `cross` at this corner against the geometry, not
+against intuition — print it for the Z−20 vertex and compare with a corner known
+to be inside. Acceptance is that the offset wall reaches Z −20.0000 before
+rising, plus `test_sections`, `test_offset_contour`, `test_rough_comp` and
+`test_comp_overlay` still passing.
+
+Note the earlier `entry_contour` corner fix (`b542ca2`) is real but governs the
+ROUGHING entry and stop tables, not the blue pre-finish line — that comes from
+`offset_contour` through `build_prefinish_contour_gcode`. Committing it while
+greatEndian was looking at the pre-finish contour implied more than it
+delivered.
+
+### Three detectors that fired on the baseline
+
+Recorded because the pattern is the lesson, not the individual mistakes:
+
+- 5.0452 mm "gouge" — was the unreachable region behind the boss
+- 17.83 mm "error" — was index drift from pairing lists of different length
+- 4.9128 mm "dip" — was the end wall, a radial face that legitimately goes in
+  and out
+
+Each looked like a finding. **Compare against the INPUT, point for point, at a
+known location** — which is what finally worked, and only after greatEndian
+supplied the location.
