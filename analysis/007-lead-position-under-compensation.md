@@ -250,3 +250,20 @@ every compensated contour, not just this corner, so it was left alone.
 3. Acceptance: the offset wall reaches Z −20.0000 before rising, and
    `test_sections`, `test_offset_contour`, `test_rough_comp` and
    `test_comp_overlay` all still pass.
+
+---
+
+## Resolved — see `analysis/008`
+
+2026-08-04. The hypothesis above is **overturned**. The trim at Z −19.5138 is
+the correct parallel offset of a concave corner: a nose of radius `roll`
+rolling along the r20 wall touches the rising wall when its centre is at
+Z −20 + roll, so leaving the flat early is what a finite nose does and no
+choice of side convention removes it. The cross sign was right, `side` and
+`z_dir` agree, and `offset_contour` was not touched for this.
+
+The real bump was **In CAM only** and 0.1870 mm deep: an inside-corner trim
+whose crossing landed beyond the whole of the next segment — the arc's first
+chord, 0.0049 mm of Z against a 0.508 offset — so the path stepped back into
+the part to reach that swallowed segment's own join. Fixed by dropping any
+segment a corner swallows and retrying the trim against the one after it.

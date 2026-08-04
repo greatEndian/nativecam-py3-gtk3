@@ -377,6 +377,7 @@ def main():
                     param_x='60', param_z='-10')])) is None)
 
     test_entry_contour()
+    test_swallowed_corner()
     test_table_layout()
 
     print()
@@ -480,6 +481,71 @@ def test_entry_contour():
     check('and zero-length segments are dropped, not divided by',
           len(L.entry_contour([(0.0, 10.0), (0.0, 10.0), (-5.0, 10.0)],
                               1.0, 0)) == 2)
+
+
+def test_swallowed_corner():
+    """A segment an inside corner swallows must be DROPPED, not joined to.
+
+    greatEndian, on the pre-finish contour of testing_15_2: the line has to be
+    straight until the radius starts rising, and it must not dip into the part
+    first. It did - in In CAM mode only, at Z-20 where the wall meets the arc.
+
+    The mechanism, and it is general rather than particular to that profile: an
+    inside corner trims both offsets back to where they cross. When the segment
+    AFTER the corner is shorter than the offset - here the arc's first chord,
+    0.005 mm of Z against a 0.508 offset - that crossing lands beyond the whole
+    of it. The old code appended the crossing and then carried on to that
+    segment's own corner join, which sits BEHIND it: +0.0029 mm of Z and
+    0.1870 mm down into the part, out and back. A bump.
+
+    Native never showed it because the interpreter does its own corner logic,
+    and the coarse contour the overlay test uses has no chord short enough.
+    So this is asserted on the geometry directly, with the real numbers.
+
+    The numbers below are the actual programmed contour of testing_15_2 read
+    out of the In CAM point table: the r20 wall, then the first four chords of
+    the arc that leaves it.
+    """
+    import lathe_sections as L
+    wall = [(1.0, 20.0), (-20.0, 20.0), (-20.0049, 20.3130),
+            (-20.0059, 20.3356), (-20.0569, 21.0406), (-20.0591, 21.0631),
+            (-20.1499, 21.7641)]
+    D = L.DIAMETER_MODE
+
+    for name, path in (
+            ('entry_contour', L.entry_contour(wall, 0.508, 0)),
+            ('offset_contour', [(z, x / D) for z, x in L.offset_contour(
+                [(z, r * D) for z, r in wall], 0.0, 0, 1, 0.508)])):
+        back = [(path[i], path[i + 1]) for i in range(len(path) - 1)
+                if path[i + 1][0] > path[i][0] + 1e-9]
+        check('%s never steps back in +Z' % name, not back,
+              'reverses at ' + ', '.join('Z%.4f r%.4f -> Z%.4f r%.4f'
+                                         % (a[0], a[1], b[0], b[1])
+                                         for a, b in back[:2]))
+        dip = [p for p in path if p[1] < 20.508 - 1e-9]
+        check('   and never dips below the offset wall', not dip,
+              'goes %.4f mm into the part at Z%.4f'
+              % (20.508 - min(p[1] for p in dip), dip[0][0]) if dip else '')
+        # and the flat really is flat: every point at the wall radius shares
+        # one Z-monotone run, so the rise happens once
+        flat = [p for p in path if abs(p[1] - 20.508) < 1e-9]
+        check('   and the wall runs straight until the radius rises',
+              len(flat) == 2 and flat[0][0] > flat[1][0],
+              '%d points at the wall radius' % len(flat))
+
+    # THE CONTROL. Dropping a swallowed segment must not become "drop every
+    # short segment": with chords long enough to survive the trim, the corner
+    # is still trimmed and every vertex still contributes.
+    coarse = [(1.0, 20.0), (-20.0, 20.0), (-20.062, 21.4118),
+              (-20.283, 22.8076)]
+    fine = L.entry_contour(coarse, 0.508, 0)
+    check('a corner whose next segment survives is still trimmed, not dropped',
+          len(fine) >= len(coarse),
+          '%d points from %d vertices - segments are being lost'
+          % (len(fine), len(coarse)))
+    check('   and the trim lands where the two offsets actually cross',
+          abs(fine[1][0] - (-19.5138)) < 0.002 and abs(fine[1][1] - 20.508) < 1e-6,
+          'trimmed to Z%.4f r%.4f' % (fine[1][0], fine[1][1]))
 
 
 def test_table_layout():

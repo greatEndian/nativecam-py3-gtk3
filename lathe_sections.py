@@ -1349,25 +1349,7 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0):
     if not segs:
         return list(points)
 
-    out = [segs[0]['a']]
-    for i in range(len(segs)):
-        cur = segs[i]
-        nxt = segs[i + 1] if i + 1 < len(segs) else None
-        if nxt is None:
-            out.append(cur['b'])
-            break
-        (uz0, ur0), (uz1, ur1) = cur['u'], nxt['u']
-        cross = (uz0 * ur1 - ur0 * uz1) * side
-        if cross > EPS:
-            # external: roll the nose around the shared vertex
-            out.append(cur['b'])
-            out.extend(_corner_arc(cur['v1'], cur['b'], nxt['a'], roll))
-        elif cross < -EPS:
-            # internal: both offsets are trimmed back to where they cross
-            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
-            out.append(hit if hit is not None else cur['b'])
-        else:
-            out.append(cur['b'])          # collinear, nothing to join
+    out = _join_offsets(segs, side, roll, 'v1')
 
     # everything above is the NOSE CENTRE path - which is where the corner
     # geometry belongs, since it is the nose centre that rolls around a vertex
@@ -1380,6 +1362,89 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0):
         if abs(p[0] - dedup[-1][0]) > EPS or abs(p[1] - dedup[-1][1]) > EPS:
             dedup.append(p)
     return dedup
+
+
+def _seg_len(seg):
+    return math.hypot(seg['b'][0] - seg['a'][0], seg['b'][1] - seg['a'][1])
+
+
+def _consumed(hit, seg):
+    """True when the trim point lies past the FAR END of seg's offset.
+
+    An inside corner trims both offsets back to where they cross. When the
+    segment after the corner is shorter than the offset itself, that crossing
+    lands beyond the whole of it: the nose never touches that piece of the
+    profile at all, it is swallowed by the corner. Joining to it anyway walks
+    BACKWARD - out of the corner and into the part - and that reversal is the
+    bump greatEndian reported at Z-20 on testing_15_2, where a 0.508 offset met
+    the 0.005 mm first chord of the arc and dipped 0.187 mm below the wall.
+
+    The offset segment is parallel to the profile segment, so seg['u'] is its
+    direction too and the projection is exact rather than approximate.
+    """
+    t = ((hit[0] - seg['a'][0]) * seg['u'][0]
+         + (hit[1] - seg['a'][1]) * seg['u'][1])
+    return t > _seg_len(seg) + EPS
+
+
+def _join_offsets(segs, sign, roll, vkey='v'):
+    """Walk the offset segments and join them corner by corner.
+
+    CORNERS ARE JOINED, NOT BUTTED TOGETHER. Emitting both ends of every offset
+    segment and letting the next start where it likes leaves a connector that
+    runs back behind an inside corner and forward again.
+
+    - An EXTERNAL corner - the offsets diverge - is rounded. Both ends already
+      sit exactly `roll` from the vertex, so the join is an arc of that radius
+      about it and the nose rolls around the corner. A miter would hold the
+      nose roll*(sqrt(2)-1) too far out at 90 degrees and leave material.
+    - An INTERNAL corner - the offsets converge - is trimmed to the crossing,
+      so the nose stops short and leaves a fillet of its own radius. That is
+      what a real nose does in an inside corner and it is unavoidable.
+
+    Two things bound the trim, and both were bugs before they were guards:
+    the crossing must be within TRIM_REACH of the offset (two near-parallel
+    segments cross arbitrarily far away - unguarded this put a point 17.83 mm
+    off a contour offset by 0.5), and it must not lie beyond the segment it
+    trims to - see _consumed. A segment the corner swallows is DROPPED and the
+    trim recomputed against the one after it, which is what makes the result a
+    single forward path instead of an offset with a loop in it.
+
+    `sign` is the side convention of the caller (+1/-1); `vkey` names the key
+    holding the shared vertex, since the two callers build their segment dicts
+    with different names.
+    """
+    out = [segs[0]['a']]
+    i = 0
+    while i < len(segs):
+        cur = segs[i]
+        if i + 1 >= len(segs):
+            out.append(cur['b'])
+            break
+        nxt = segs[i + 1]
+        (uz0, ur0), (uz1, ur1) = cur['u'], nxt['u']
+        cross = (uz0 * ur1 - ur0 * uz1) * sign
+        if cross > EPS:
+            out.append(cur['b'])
+            out.extend(_corner_arc(cur[vkey], cur['b'], nxt['a'], roll))
+        elif cross < -EPS:
+            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
+            if hit is not None and (
+                    math.hypot(hit[0] - cur['b'][0], hit[1] - cur['b'][1])
+                    > TRIM_REACH * roll
+                    or math.hypot(hit[0] - nxt['a'][0], hit[1] - nxt['a'][1])
+                    > TRIM_REACH * roll):
+                hit = None
+            if hit is not None and _consumed(hit, nxt):
+                if i + 2 < len(segs):
+                    del segs[i + 1]       # swallowed whole: drop it and retry
+                    continue
+                hit = None                # nothing left to trim to; butt them
+            out.append(hit if hit is not None else cur['b'])
+        else:
+            out.append(cur['b'])          # collinear, nothing to join
+        i += 1
+    return out
 
 
 def _corner_arc(vertex, start, end, radius):
@@ -1661,47 +1726,13 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
     if not segs:
         return list(points)
 
-    # CORNERS ARE JOINED, NOT BUTTED TOGETHER. Emitting both ends of every
-    # offset segment and letting the next start where it likes leaves a
-    # connector that runs BACK behind an inside corner and forward again - a
-    # reversal in Z, which on the toolpath is a bump: the tool dips into the
-    # part and comes out. Four of them on testing_15_2, one at
-    # -20.000 -> -19.492 where the wall meets the taper. greatEndian: the line
-    # has to be straight until the radius starts rising.
-    #
-    # Same treatment offset_contour has: an outside corner rolls around the
-    # shared vertex at the offset radius, an inside corner trims both offsets
-    # back to where they cross.
-    out = [segs[0]['a']]
-    for i, cur in enumerate(segs):
-        nxt = segs[i + 1] if i + 1 < len(segs) else None
-        if nxt is None:
-            out.append(cur['b'])
-            break
-        uz0, ur0 = cur['u']
-        uz1, ur1 = nxt['u']
-        cross = (uz0 * ur1 - ur0 * uz1) * z_dir
-        if cross > EPS:
-            out.append(cur['b'])
-            out.extend(_corner_arc(cur['v'], cur['b'], nxt['a'], roll))
-        elif cross < -EPS:
-            # THE TRIM IS BOUNDED BY DISTANCE, not only by the sign of the
-            # cross product. As two segments approach parallel their offset
-            # lines meet further and further away, and a cross-product epsilon
-            # bounds the ANGLE, not the distance: unguarded this put a point
-            # 17.83 mm off a contour offset by 0.5 - 35 times the offset. A
-            # real trim reaches a small multiple of it; TRIM_REACH is the
-            # bound, and beyond it the ends are butted together instead.
-            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
-            if hit is not None and (
-                    math.hypot(hit[0] - cur['b'][0], hit[1] - cur['b'][1])
-                    > TRIM_REACH * roll
-                    or math.hypot(hit[0] - nxt['a'][0], hit[1] - nxt['a'][1])
-                    > TRIM_REACH * roll):
-                hit = None
-            out.append(hit if hit is not None else cur['b'])
-        else:
-            out.append(cur['b'])
+    # Corners are joined rather than butted together, by the same rules the
+    # contour offset uses - see _join_offsets, which both call. Butting them
+    # left a connector running BACK behind an inside corner and forward again:
+    # four reversals on testing_15_2, one at -20.000 -> -19.492 where the wall
+    # meets the taper. greatEndian: the line has to be straight until the
+    # radius starts rising.
+    out = _join_offsets(segs, z_dir, roll, 'v')
     return [(z - ozr, x - oxr) for z, x in out]
 
 
