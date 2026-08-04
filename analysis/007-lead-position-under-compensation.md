@@ -209,3 +209,44 @@ Recorded because the pattern is the lesson, not the individual mistakes:
 Each looked like a finding. **Compare against the INPUT, point for point, at a
 known location** — which is what finally worked, and only after greatEndian
 supplied the location.
+
+### The cross sign at Z−20, derived from the measured points
+
+    into the corner:  (1.0, r20) -> (-20.0, r20)          u0 = (-1, 0)
+    out of it:        (-20.0, r20) -> (-20.062, r21.4118) u1 = (-0.0439, 0.9990)
+
+    cross = (uz0*ur1 - ur0*uz1) * side
+          = ((-1)(0.9990) - (0)(-0.0439)) * 1
+          = -0.9990
+
+**Negative, so it takes the `elif cross < -EPS` branch — the `_isect` trim.**
+
+The trim is arithmetically self-consistent: the wall's offset line sits at
+r 20.5080; the second segment's offset line passes through
+(−19.4925, 20.0223) with direction (−0.0439, 0.9990); they cross at
+**Z −19.5138, r 20.5080** — the exact point measured. `_isect` is doing what it
+was asked. The question is whether it should have been asked at all.
+
+### Why the sign flip was NOT made
+
+The candidate fix is that this corner should ROLL rather than trim. Reasoning
+it through gave opposite answers depending on which side the material was taken
+to be on — and that is the same reasoning that produced three baseline-firing
+detectors in one day. An unverified sign flip in `offset_contour` would move
+every compensated contour, not just this corner, so it was left alone.
+
+### Next session, in order
+
+1. **Settle the sign empirically, not by argument.** A synthetic two-segment
+   profile - a horizontal at r20 running into a vertical step up - offset by a
+   known amount, with the correct parallel curve worked out by hand. Five lines,
+   and it removes the ambiguity permanently. Do this BEFORE touching
+   `offset_contour`.
+2. If it should roll, the fault is one of two things: `cross < -EPS` and
+   `cross > EPS` are the wrong way round for this side convention, or `side` is
+   applied twice. **Check that `offset_contour`'s `side` (±1) and
+   `entry_contour`'s `z_dir` agree** - one may be inverted with respect to the
+   other, and since `b542ca2` the two functions are meant to behave identically.
+3. Acceptance: the offset wall reaches Z −20.0000 before rising, and
+   `test_sections`, `test_offset_contour`, `test_rough_comp` and
+   `test_comp_overlay` all still pass.
