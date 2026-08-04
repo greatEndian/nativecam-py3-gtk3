@@ -61,26 +61,28 @@ Branch: `liveTooling`. Last pushed: `6c7ac85`.
   nose radius, 0.400. Whether that is the fault or the correct corner roll has
   NOT been settled, and the criterion above is what settles it.
 
-- [ ] **The radius start point on the PRE-FINISH contour is wrong under
-  compensation** — greatEndian 2026-08-04,
-  `photo/radiusStartPointPositionIssue_0.png`, the blue contour. Likely the
-  **greatEndian's acceptance criterion**: *"radius start can not go first inside
-  the part and then outside... it has to be exact line with no bump till radius
-  start rising"* - a straight line into the radius, no excursion.
+- [x] **The radius start point on the PRE-FINISH contour — FIXED**, 2026-08-04,
+  `584a7db`, `analysis/008`. greatEndian's criterion: *"radius start can not go
+  first inside the part and then outside... it has to be exact line with no
+  bump till radius start rising"*.
 
-  **CAUSE FOUND AND MEASURED** (`analysis/007`): `entry_contour` butts offset
-  segments together instead of joining them, leaving **4 Z reversals** on
-  testing_15_2, one at −20.000 → −19.492 where the wall meets the taper. A
-  reversal IS the bump. `offset_contour` has 1.
+  It was **In CAM mode only**, 0.1870 mm deep at Z−20. An inside corner trims
+  both offsets to where they cross; when the segment after the corner is
+  shorter than the offset — the arc's first chord, **0.0049 mm of Z against a
+  0.508 offset** — the crossing lands beyond the whole of it and the path
+  stepped back to reach that swallowed segment's own join. `_join_offsets` now
+  drops a swallowed segment and retries the trim against the next one. Both
+  `offset_contour` and `entry_contour` call it, so the two can no longer drift
+  apart.
 
-  **Fix, two attempts both reverted**: (1) filtering points that double back
-  discarded real geometry, 42 → 32 points, four tests broken; (2) giving
-  `entry_contour` `offset_contour`'s corner treatment took reversals 4 → 1 but
-  `_isect` returned a point **17.83 mm** off the contour for near-parallel
-  segments. **Remaining work: guard the inside-corner trim by the DISTANCE to
-  the intersection**, falling back to the butt join when the hit is further from
-  either segment end than the offset. Acceptance: reversals ≤ `offset_contour`'s
-  AND all of `test_sections` passing.
+  `analysis/007`'s hypothesis is **overturned there**: the trim leaving the
+  wall 0.486 early is the correct parallel offset of a concave corner, not a
+  fault, and the cross sign was never wrong.
+
+  Pre-finish +Z reversals now 0 in all three modes;
+  `test_swallowed_corner` covers it and fails without the fix.
+  **Left knowingly**: In CAM trims 0.0158 mm earlier than Native (−19.5152 vs
+  −19.5310) — different arc subdivision, both clean.
 
 
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
