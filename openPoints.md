@@ -15,11 +15,53 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `8ce91d9`.
+Branch: `liveTooling`. Last pushed: `6c7ac85`.
 
 ---
 
 ## Next — before anything else
+
+- [ ] **RESTART NATIVECAM DOES NOT COME BACK** — greatEndian 2026-08-04. The
+  menu item added in `141a98b` restarts the process but the panel never
+  reappears in AXIS. **My bug.** The reasoning behind `os.execv` was that
+  keeping the pid keeps AXIS's XEmbed socket valid — that is necessary but not
+  sufficient: after `execv` the new process builds a **new GTK window**, and
+  the socket AXIS holds still references the window the old process created.
+  Nothing re-parents the new one into it. Keeping the pid was never the hard
+  part.
+
+  **To fix**: establish how the panel is embedded before touching it again -
+  whether GladeVCP receives the XID on its command line (in which case
+  `sys.argv` must be re-used verbatim AND the new window re-parented), or
+  whether it plugs itself in some other way. `[GladeVCP-ncam][DEBUG] XID:
+  96468998 (gladevcp:387)` from greatEndian's log is the thread to pull.
+  Until then the item should probably be **removed from the menu** rather than
+  left to fail silently.
+
+- [ ] **LEAD-IN AND LEAD-OUT ARE MISPLACED WHENEVER COMPENSATION IS ON** —
+  greatEndian 2026-08-04, `photo/leadInIssueCompensation_0.png` and
+  `photo/leadOutIssueCompensation_0.png`. **Absent with Tool nose comp Off**, so
+  it arrived with one of the compensation changes of 2026-08-03. In the picture
+  the lead runs out past the contour end, beyond the stock face.
+
+  Prime suspect: `lathe_poly_pass.ngc`. Its lead-in is built from
+  `#<comp_ez>` / `#<comp_ex>`, which `c16df1f` and `cfb5ccd` changed to the
+  orientation-aware entry point, and the blend (`o<fillet_lead>`, `#<li_baz>` /
+  `#<li_bax>`) is placed relative to those. If the lead direction is still
+  measured from the raw entry while the base moved, the whole lead shifts.
+
+  **Measure first**: the lead-in feed's start and end in Off against Native on
+  testing_15_2, the way `analysis/004` measured the pre-finish separation. Do
+  not assume the direction of the error - the pictures suggest +Z but that has
+  not been measured.
+
+- [ ] **The radius start point on the PRE-FINISH contour is wrong under
+  compensation** — greatEndian 2026-08-04,
+  `photo/radiusStartPointPositionIssue_0.png`, the blue contour. Likely the
+  same root as the lead item above, and possibly involving the new
+  `build_prefinish_contour_gcode` table from `8e50db1`, whose first record is
+  what `lathe_poly_pass` takes its entry from. Measure both together.
+
 
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
   still switch it on inside the finishing loop only.** Standing rule in
