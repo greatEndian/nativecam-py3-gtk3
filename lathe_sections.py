@@ -1578,6 +1578,13 @@ STOP_BASE = 4400
 STOP_TOP = 4600
 
 
+# How far an inside-corner trim may reach, as a multiple of the offset. Two
+# segments meeting at a shallow angle cross a long way off, and the runaway is
+# unbounded as they approach parallel. Measured: a real trim on testing_15_2's
+# end wall needs more than 1x, and the failure it has to reject was 35x.
+TRIM_REACH = 4.0
+
+
 def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
     """The contour offset outward by `dist`, as a (z, radius) polyline.
 
@@ -1639,16 +1646,63 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
               else (0.0, 0.0))
     ozr, oxr = nose_r * oz, nose_r * ox
     z_dir = -1 if rough_dir == 1 else 1
-    out = []
+
+    segs = []
     for (z0, x0), (z1, x1) in zip(points, points[1:]):
         dz, dx = z1 - z0, x1 - x0
         n = math.hypot(dz, dx)
         if n < EPS:
             continue
-        nz, nx = z_dir * dx / n, -z_dir * dz / n
-        out.append((z0 + roll * nz - ozr, x0 + roll * nx - oxr))
-        out.append((z1 + roll * nz - ozr, x1 + roll * nx - oxr))
-    return out
+        uz, ux = dz / n, dx / n
+        nz, nx = z_dir * ux, -z_dir * uz
+        segs.append({'a': (z0 + roll * nz, x0 + roll * nx),
+                     'b': (z1 + roll * nz, x1 + roll * nx),
+                     'u': (uz, ux), 'v': (z1, x1)})
+    if not segs:
+        return list(points)
+
+    # CORNERS ARE JOINED, NOT BUTTED TOGETHER. Emitting both ends of every
+    # offset segment and letting the next start where it likes leaves a
+    # connector that runs BACK behind an inside corner and forward again - a
+    # reversal in Z, which on the toolpath is a bump: the tool dips into the
+    # part and comes out. Four of them on testing_15_2, one at
+    # -20.000 -> -19.492 where the wall meets the taper. greatEndian: the line
+    # has to be straight until the radius starts rising.
+    #
+    # Same treatment offset_contour has: an outside corner rolls around the
+    # shared vertex at the offset radius, an inside corner trims both offsets
+    # back to where they cross.
+    out = [segs[0]['a']]
+    for i, cur in enumerate(segs):
+        nxt = segs[i + 1] if i + 1 < len(segs) else None
+        if nxt is None:
+            out.append(cur['b'])
+            break
+        uz0, ur0 = cur['u']
+        uz1, ur1 = nxt['u']
+        cross = (uz0 * ur1 - ur0 * uz1) * z_dir
+        if cross > EPS:
+            out.append(cur['b'])
+            out.extend(_corner_arc(cur['v'], cur['b'], nxt['a'], roll))
+        elif cross < -EPS:
+            # THE TRIM IS BOUNDED BY DISTANCE, not only by the sign of the
+            # cross product. As two segments approach parallel their offset
+            # lines meet further and further away, and a cross-product epsilon
+            # bounds the ANGLE, not the distance: unguarded this put a point
+            # 17.83 mm off a contour offset by 0.5 - 35 times the offset. A
+            # real trim reaches a small multiple of it; TRIM_REACH is the
+            # bound, and beyond it the ends are butted together instead.
+            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
+            if hit is not None and (
+                    math.hypot(hit[0] - cur['b'][0], hit[1] - cur['b'][1])
+                    > TRIM_REACH * roll
+                    or math.hypot(hit[0] - nxt['a'][0], hit[1] - nxt['a'][1])
+                    > TRIM_REACH * roll):
+                hit = None
+            out.append(hit if hit is not None else cur['b'])
+        else:
+            out.append(cur['b'])
+    return [(z - ozr, x - oxr) for z, x in out]
 
 
 

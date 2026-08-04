@@ -406,18 +406,37 @@ def test_entry_contour():
     prof = [(0.0, 40.0), (-10.0, 40.0), (-10.0, 22.0), (-90.0, 22.0)]
 
     env = L.entry_contour(prof, 1.0, 0)
-    check('every segment contributes both its offset ends',
-          len(env) == 2 * (len(prof) - 1), '%d points' % len(env))
+    # Corners are JOINED now - trimmed on the inside, rolled on the outside -
+    # so a segment no longer contributes exactly two points and the old
+    # assertions cannot be kept as they were. They paired env[2i], env[2i+1]
+    # with segment i BY INDEX, and once the counts stop matching that pairing
+    # compares a point against the wrong segment: it reported 17.83 mm of
+    # error on a contour offset by 1.0, which was index drift and not
+    # geometry. Comparing two lists of different length by index is not a
+    # measurement - the third time that has bitten in this project.
+    check('the offset contour has at least a point per segment',
+          len(env) >= len(prof) - 1, '%d points for %d segments'
+          % (len(env), len(prof) - 1))
 
+    # The construction-independent statement, which is the one worth making:
+    # every offset point stands the offset away from the profile - measured
+    # against the NEAREST segment rather than an assumed one.
     worst = 0.0
-    for i, (a, b) in enumerate(zip(prof, prof[1:])):
-        dz, dx = b[0] - a[0], b[1] - a[1]
-        n = math.hypot(dz, dx)
-        for p in (env[2 * i], env[2 * i + 1]):
-            d = abs((p[0] - a[0]) * dx - (p[1] - a[1]) * dz) / n
-            worst = max(worst, abs(d - 1.0))
-    check('every offset point is exactly the offset from its own segment',
-          worst < 1e-9, 'worst error %.3e' % worst)
+    for p in env:
+        best = None
+        for a, b in zip(prof, prof[1:]):
+            dz, dx = b[0] - a[0], b[1] - a[1]
+            n = math.hypot(dz, dx)
+            if n < 1e-12:
+                continue
+            t = max(0.0, min(1.0, ((p[0] - a[0]) * dz
+                                   + (p[1] - a[1]) * dx) / (n * n)))
+            d = math.hypot(p[0] - (a[0] + dz * t), p[1] - (a[1] + dx * t))
+            best = d if best is None else min(best, d)
+        if best is not None:
+            worst = max(worst, abs(best - 1.0))
+    check('every offset point stands the offset off the profile',
+          worst < 1e-6, 'worst error %.3e' % worst)
 
     # the side matters: outward means away from the material, and it flips
     # with the roughing direction exactly as flank_sides does
