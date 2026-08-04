@@ -52,3 +52,65 @@ the toolpath merely look different from the Off case in the plot? The
 distinction decides whether this is a bug in the lead placement or the expected
 appearance of a compensated path, and guessing wrong costs a working
 compensation path.
+
+---
+
+## 2026-08-04, second half: greatEndian's clarification, and the bump located
+
+*"lead in and lead out can not end in the part or stock... also radius start can
+not go first inside the part and then outside at prefinish contour... it has to
+be exact line with no bump till radius start rising"*
+
+That is a fault, not an appearance, and the bump is **measured**.
+
+### The measurement
+
+Offsetting testing_15_2's profile (23 points, Z +1.71 to −69.69):
+
+    offset_contour  0.508   38 pts   1 Z reversal
+    entry_contour   0.508   42 pts   4 Z reversals
+
+The reversals, from `entry_contour`:
+
+    0.641 -> 1.000        -20.000 -> -19.492
+    -70.514 -> -69.892    -70.041 -> -69.334
+
+**−20.000 → −19.492 is the corner where the wall meets the taper**, and 0.492
+is the offset. A reversal *is* the bump: the path runs back the way it came and
+then forward again, so the tool dips in and comes out.
+
+Cause: offsetting segment by segment and joining consecutive offset ends with a
+straight connector puts that connector *behind* the corner on an inside turn.
+`build_finish_contour_gcode`'s own comment has flagged it since it was written —
+*"that offset came out non-monotone in Z, so it needs its self-intersections
+resolved first"*. It was written down and never resolved; this is it surfacing
+on the part.
+
+### An attempted fix, reverted
+
+Dropping points that double back in Z took both counts to **0 reversals** — but
+also 42 → 32 points, and broke `test_sections` ("every segment contributes both
+its offset ends"), `test_rough_comp`, `test_comp_overlay` and `test_skip_short`.
+It was discarding real geometry, not just connectors: on a RADIAL wall the
+offset segment's two ends share a Z, so a monotone test cannot tell that pair
+from a reversal. Reverted rather than committed.
+
+**To finish**: resolve the self-intersection properly rather than filtering by
+Z. The offset segments are already built with their endpoints in
+`offset_contour` (`cur['a']`, `cur['b']`, `nxt['a']`); an inside corner is
+already detected there by the sign of the cross product and trimmed with
+`_isect`. `entry_contour` has no such trim at all — it just emits both ends of
+every segment. **Giving `entry_contour` the same corner treatment
+`offset_contour` already has is the likely fix**, and it can be checked without
+rs274: reversals to zero AND `test_sections` still passing are both required,
+and the reverted attempt failed the second.
+
+### The leads
+
+Still not established, and it needs the same care. The lead numbers in the first
+half of this file are all exactly the nose radius and consistent with a correct
+corner roll — but greatEndian's constraint is explicit: **a lead may not end in
+the part or the stock**. That is a testable statement and it has not been
+tested. Sweep the nose along the lead moves against the stock field, the way
+`test_rough_comp.py` does for roughing, and see whether any lead move's swept
+volume intersects material. That measurement does not exist yet.
