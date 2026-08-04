@@ -50,17 +50,37 @@ Branch: `liveTooling`. Last pushed: `6c7ac85`.
   `#<li_bax>`) is placed relative to those. If the lead direction is still
   measured from the raw entry while the base moved, the whole lead shifts.
 
-  **Measure first**: the lead-in feed's start and end in Off against Native on
-  testing_15_2, the way `analysis/004` measured the pre-finish separation. Do
-  not assume the direction of the error - the pictures suggest +Z but that has
-  not been measured.
+  **greatEndian's acceptance criterion, stated 2026-08-04**: *"lead in and lead
+  out can not end in the part or stock... we need them to be like when comp off,
+  there is no play"*. So: **no lead move's swept nose may intersect material,
+  and the lead must sit where the Off case puts it.** That is testable - sweep
+  the nose along the lead moves against the stock field, the way
+  `test_rough_comp.py` does for roughing - and the test does not exist yet.
+
+  Measured so far (`analysis/007`): every difference from Off is exactly the
+  nose radius, 0.400. Whether that is the fault or the correct corner roll has
+  NOT been settled, and the criterion above is what settles it.
 
 - [ ] **The radius start point on the PRE-FINISH contour is wrong under
   compensation** — greatEndian 2026-08-04,
   `photo/radiusStartPointPositionIssue_0.png`, the blue contour. Likely the
-  same root as the lead item above, and possibly involving the new
-  `build_prefinish_contour_gcode` table from `8e50db1`, whose first record is
-  what `lathe_poly_pass` takes its entry from. Measure both together.
+  **greatEndian's acceptance criterion**: *"radius start can not go first inside
+  the part and then outside... it has to be exact line with no bump till radius
+  start rising"* - a straight line into the radius, no excursion.
+
+  **CAUSE FOUND AND MEASURED** (`analysis/007`): `entry_contour` butts offset
+  segments together instead of joining them, leaving **4 Z reversals** on
+  testing_15_2, one at −20.000 → −19.492 where the wall meets the taper. A
+  reversal IS the bump. `offset_contour` has 1.
+
+  **Fix, two attempts both reverted**: (1) filtering points that double back
+  discarded real geometry, 42 → 32 points, four tests broken; (2) giving
+  `entry_contour` `offset_contour`'s corner treatment took reversals 4 → 1 but
+  `_isect` returned a point **17.83 mm** off the contour for near-parallel
+  segments. **Remaining work: guard the inside-corner trim by the DISTANCE to
+  the intersection**, falling back to the butt join when the hit is further from
+  either segment end than the offset. Acceptance: reversals ≤ `offset_contour`'s
+  AND all of `test_sections` passing.
 
 
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
