@@ -72,6 +72,23 @@ def main():
           'rough=self._rough_contours()' in src
           and 'rough_cb=self._preview_rough_comp' in src,
           'the overlay is computed but never handed over')
+
+    # AND THE METHOD IS ON THE CLASS THAT CALLS IT. Asserted by importing,
+    # not by grepping: the checks above are string searches and they passed
+    # while _rough_contours sat on NCamPreviewMixin instead of PreviewPane -
+    # every draw raised AttributeError and greatEndian got a blank plot. A
+    # grep cannot see which class a def belongs to; getattr can.
+    try:
+        import ncam_preview_ui as UI
+        pane_has = hasattr(UI.PreviewPane, '_rough_contours')
+        mixin_has = hasattr(UI.NCamPreviewMixin, '_preview_rough_comp')
+        check('_rough_contours is a PreviewPane method', pane_has,
+              'it is defined on the wrong class - _on_draw calls it on the '
+              'pane and will raise AttributeError on every draw')
+        check('   and _preview_rough_comp is a supplier on the NCam side',
+              mixin_has)
+    except ImportError as exc:
+        print('SKIP  the pane needs GTK to import (%s)' % exc)
     check('and the drawing code accepts and dashes it',
           'rough=None' in drw and "COL['rgh_entry']" in drw
           and "COL['rgh_stop']" in drw)

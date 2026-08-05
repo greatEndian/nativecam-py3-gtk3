@@ -722,6 +722,28 @@ class PreviewPane(object):
         except Exception:
             return None
 
+    # ON PreviewPane, not on the mixin: this reads self.contour_btn and
+    # self.rough_cb, and it is called from _on_draw. It was first put
+    # beside _preview_rough_comp, which is a SUPPLIER and lives on the
+    # NCam side - so every draw raised AttributeError and the plot came
+    # up blank.
+    def _rough_contours(self):
+        """(entry, stop) for the drawing code, or None when nothing to draw.
+
+        Gated on the same Contour toggle the other overlays use - one more
+        switch costs more panel than it gives, and the pane is already tight.
+        """
+        if not self.contour_btn.get_active() or self.rough_cb is None:
+            return None
+        try:
+            pair = self.rough_cb()
+        except Exception:
+            return None
+        if not pair:
+            return None
+        entry, stop = pair
+        return (entry, stop) if (entry or stop) else None
+
     COMP_MODES = {0: 'off', 1: 'CNC', 2: 'CAM'}
 
     def _comp_mode(self):
@@ -1040,23 +1062,6 @@ class NCamPreviewMixin(object):
             return out if out and len(out) >= 2 else None
         except Exception:
             return None
-
-    def _rough_contours(self):
-        """(entry, stop) for the drawing code, or None when nothing to draw.
-
-        Gated on the same Contour toggle the other overlays use - one more
-        switch costs more panel than it gives, and the pane is already tight.
-        """
-        if not self.contour_btn.get_active() or self.rough_cb is None:
-            return None
-        try:
-            pair = self.rough_cb()
-        except Exception:
-            return None
-        if not pair:
-            return None
-        entry, stop = pair
-        return (entry, stop) if (entry or stop) else None
 
     def _preview_rough_comp(self):
         """Roughing's two compensated references, as (entry, stop).
