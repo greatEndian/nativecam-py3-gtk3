@@ -169,23 +169,18 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   0.2374 sliver at the bottom, 0.1106 skim at the top, whole ladder 0.2374
   further out. **Do not "fix" this into matching the unsectioned ladder.**
 
-- [ ] **Compensated roughing overcuts the steep wall by 0.1643 mm** — found
-  2026-08-05, `analysis/015`. Window Z-19.4…-22.5, the boss base at ~79 deg:
-  **Off 0.0000, Native 0.1643, In CAM 0.1643**. `0.1643 ~= R*sqrt(2) - R`, the
-  orientation-vector signature; not staircase (that is 0.0960 and would show in
-  all three modes).
+- [x] **"Compensated roughing overcuts the steep wall" — REFUTED**,
+  2026-08-05, `analysis/015`. There is no defect. The stop contour matches the
+  hand-derived tip stop **exactly** on a synthetic 83 deg wall (error 0.0000 at
+  four levels), and measured as perpendicular distance — the only valid
+  comparison on a near-vertical surface — compensation **improves** that wall:
+  Off -0.2824, Native -0.1320, In CAM -0.1320.
 
-  The compensated stop contour sits ~0.4 lower in radius there, which is
-  correct for a control point — the open question is whether a roughing LEVEL
-  may read its stop from a control-point contour at all, since the nose it
-  drags is a disc whose extreme -Z reach is at radius r + R, not r. **That
-  hypothesis is unproven** and must be settled on a synthetic wall before any
-  code changes.
-
-  Net across the part compensation is still a gain (0.1116 -> 0.0394), which is
-  exactly why `test_rough_comp` passed throughout: its metric is one-sided and
-  whole-part and cannot see a local regression smaller than the global worst.
-  A windowed per-mode assertion is part of the fix.
+  The 0.1643 mm was radius-at-Z compared column by column across an 83 deg
+  wall, where one 0.0667 mm column spans 0.54 mm of radius. `test_rough_comp`'s
+  own `radius_span` docstring documents this exact trap; it was written in this
+  codebase and then walked into anyway. **Seventh baseline-class metric error
+  of the session and the first to be committed as a finding.**
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.

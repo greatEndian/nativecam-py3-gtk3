@@ -82,3 +82,65 @@ session as proof that roughing compensation works. It is true and it is not
 enough: a mode can improve the worst point on the part while introducing a new
 error somewhere else, and a single max() hides that completely. Windowed
 comparison against the SAME target, per mode, is what surfaced this in one run.
+
+---
+
+## REFUTED, same day — there is no steep-wall defect
+
+Both halves of the finding above are wrong, and both were settled by
+measurement rather than argument.
+
+### 1. The stop contour is exact
+
+The synthetic case this file prescribed: a cylinder at r20 running into a wall
+rising to r26 at 83 degrees, offset by 0.508. Hand-derived tip stop — nose
+centre at `surface + (f_off + R) * n`, tip at `centre - (R, R)` — against what
+`entry_contour` produces with the nose applied:
+
+```
+level    table stop Z (comp)    hand-derived tip Z    error
+r21.00   -19.1571               -19.1571              -0.0000
+r22.00   -19.2799              -19.2799              +0.0000
+r23.00   -19.4026              -19.4026              +0.0000
+r24.00   -19.5254              -19.5254              +0.0000
+```
+
+Exact at every level. The hypothesis that a roughing level may not read its
+stop from a control-point contour is **refuted** — the contour is precisely the
+tip position that puts the nose tangent to the offset wall.
+
+### 2. The 0.1643 mm was my metric, not the machine
+
+Re-measured as **perpendicular distance** from the swept surface to the target,
+which is the only valid comparison where the surface is near-vertical:
+
+```
+worst distance INTO the pre-finish target, Z-19.4..-22.5
+   Off      -0.2824 mm
+   Native   -0.1320 mm
+   In CAM   -0.1320 mm
+```
+
+Compensation **improves** the steep wall, 0.2824 -> 0.1320. The earlier figure
+compared radius-at-Z column by column across an 83 degree wall, where one
+0.0667 mm column spans 0.54 mm of radius - so the number measured the
+quantisation, not the part.
+
+`test_rough_comp`'s own `radius_span` docstring documents exactly this trap:
+*"there is no single radius at that Z, and comparing a swept surface against
+the outer one there reports the whole height of the wall as an overcut.
+Measured: 4.7405 mm at Z-69.4 on testing_15_2, in every mode including Off,
+which is the end wall and not a fault."* That warning was written into this
+codebase earlier in the same work, and then walked into anyway.
+
+**Seventh baseline-class error of the session**, and the first one that got as
+far as being committed as a finding and written into `openPoints.md` as a live
+defect. The lesson is not "measure perpendicular distance" - it is that a new
+metric must be run against the KNOWN-GOOD mode and against a surface whose
+answer is known by hand *before* its output is believed, not after it produces
+an interesting number.
+
+### Standing
+
+Roughing compensation is correct everywhere it has been measured. No code
+change was made for this file, and none is needed.
