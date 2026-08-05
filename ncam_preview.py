@@ -654,6 +654,14 @@ COL = {
     # match the finish pass's.
     'rgh_entry': (0.70, 0.95, 0.35),
     'rgh_stop':  (1.00, 0.45, 0.35),
+    # THE PRE-FINISH SURFACE - the only other SURFACE on the plot besides the
+    # reachable contour. Everything else drawn here is a tool path: where the
+    # control point travels, which under compensation is nowhere near the
+    # material. Without this there is nothing to judge the simulated stock
+    # against, and "why is material left in front of the arc and gone behind
+    # it" cannot be answered by looking. Drawn SOLID for that reason - dashed
+    # means tool path on this plot, solid means surface.
+    'prefin_surf': (0.55, 0.75, 1.00),
 }
 
 
@@ -686,7 +694,7 @@ def _fit(tp, stock, plane, width, height, margin):
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   view=None, tool=None, field=None, classes=None,
                   moves=None, move_colour=None, points=False,
-                  hard=None, soft=None, comp=None, rough=None):
+                  hard=None, soft=None, comp=None, rough=None, surf=None):
     """Render a Toolpath onto a cairo context sized width x height.
 
     stock is (a_min, a_max, b_min, b_max) in the same two plotted axes, or None.
@@ -781,6 +789,10 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     # roughing's entry and stop references, dashed on a SHORTER pattern than
     # the finish overlay so the two are told apart at a glance rather than by
     # colour alone - on a busy plot the eye reads dash length before hue
+    # surfaces first, so a tool path is never hidden under one
+    if surf:
+        _draw_profile(cr, surf, pt, COL['prefin_surf'], 1.3, None)
+
     if rough:
         entry, stop = rough
         if entry:

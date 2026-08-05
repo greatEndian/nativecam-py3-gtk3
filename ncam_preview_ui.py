@@ -73,7 +73,7 @@ class PreviewPane(object):
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
-                 profile_cb=None, soft_cb=None, comp_cb=None, rough_cb=None,
+                 profile_cb=None, soft_cb=None, comp_cb=None, rough_cb=None, surf_cb=None,
                  comp_mode_cb=None):
         self.ini_path = ini_path
         self.plane = plane
@@ -95,6 +95,9 @@ class PreviewPane(object):
         # edits without anything having to remember to refresh it.
         self.comp_cb = comp_cb
         self.rough_cb = rough_cb
+        # the pre-finish SURFACE - see COL['prefin_surf']
+        self.surf_cb = surf_cb
+        self._drawn_flags = {}
         self.comp_mode_cb = comp_mode_cb
         self.colorize = 'plain'
         self.leftover = 0.0
@@ -586,7 +589,15 @@ class PreviewPane(object):
             parts = [swatch(col['feed'], _('rough'))] if found else []
             parts += [swatch(*names[p]) for p in found if p in names]
         if self.contour_btn.get_active() and self.soft_cb is not None:
-            parts.append(swatch(col['soft'], _('reachable')))
+            parts.append(swatch(col['soft'], _('reachable surface')))
+        # SURFACES are solid, TOOL PATHS are dashed, and the legend says which
+        # - under compensation a control point sits up to R*sqrt(2) away from
+        # any surface, so a plot that does not distinguish them cannot be read
+        if self._drawn_flags.get('surf'):
+            parts.append(swatch(col['prefin_surf'], _('pre-finish surface')))
+        if self._drawn_flags.get('rough'):
+            parts.append(swatch(col['rgh_entry'], _('rough entry path')))
+            parts.append(swatch(col['rgh_stop'], _('rough stop path')))
         # the compensated path, and WHICH MODE produced it. The mode is the
         # part that answers the question: a polyline with nose comp off has no
         # compensation in its path at all, and every saved test project had it
@@ -594,7 +605,7 @@ class PreviewPane(object):
         if self.contour_btn.get_active() and self.comp_mode_cb is not None:
             mode = self._comp_mode()
             if mode:
-                parts.append(swatch(col['comp'], _('comp: %s') % mode))
+                parts.append(swatch(col['comp'], _('comp path: %s') % mode))
         return '   '.join(parts)
 
     # -- simulation ---------------------------------------------------------
@@ -727,6 +738,34 @@ class PreviewPane(object):
     # beside _preview_rough_comp, which is a SUPPLIER and lives on the
     # NCam side - so every draw raised AttributeError and the plot came
     # up blank.
+    def _drawn(self, which):
+        """Compute an overlay and remember whether it produced anything.
+
+        The legend must never name a colour that is nowhere on the plot - the
+        rule the phase swatches already follow - and the only honest way to
+        know is to ask what the draw actually got. Stashing it here also keeps
+        the contour maths to once per draw instead of once for the picture and
+        again for the status line.
+        """
+        out = (self._rough_contours() if which == 'rough'
+               else self._prefinish_surface())
+        self._drawn_flags[which] = bool(out)
+        return out
+
+    def _prefinish_surface(self):
+        """The pre-finish surface for the drawing code, or None.
+
+        On PreviewPane for the same reason _rough_contours is: it reads
+        self.contour_btn and self.surf_cb, and _on_draw calls it on the pane.
+        """
+        if not self.contour_btn.get_active() or self.surf_cb is None:
+            return None
+        try:
+            out = self.surf_cb()
+        except Exception:
+            return None
+        return out if out and len(out) >= 2 else None
+
     def _rough_contours(self):
         """(entry, stop) for the drawing code, or None when nothing to draw.
 
@@ -940,7 +979,8 @@ class PreviewPane(object):
                                    hard=self._contour(self.profile_cb),
                                    soft=self._contour(self.soft_cb),
                                    comp=self._contour(self.comp_cb),
-                                   rough=self._rough_contours())
+                                   rough=self._drawn('rough'),
+                                   surf=self._drawn('surf'))
         return False
 
 
@@ -972,6 +1012,7 @@ class NCamPreviewMixin(object):
                                        self._preview_soft_profile,
                                        comp_cb=self._preview_comp_profile,
                                        rough_cb=self._preview_rough_comp,
+                                       surf_cb=self._preview_prefinish_surface,
                                        comp_mode_cb=self._preview_comp_mode)
 
         paned = gtk.Paned(orientation=gtk.Orientation.VERTICAL)
@@ -1060,6 +1101,47 @@ class NCamPreviewMixin(object):
                           and int(float(sp.get_ngc_value())) == 1) else 1
             out = lathe_sections.offset_contour(pts, nose_r, int(orient), side)
             return out if out and len(out) >= 2 else None
+        except Exception:
+            return None
+
+    def _preview_prefinish_surface(self):
+        """The pre-finish SURFACE: the reachable contour offset by the finish
+        allowance, with no nose in it at all.
+
+        This is what roughing is supposed to leave standing, expressed as
+        material rather than as a tool position - so it can be laid over the
+        simulated stock and read directly. Every other curve on the plot is a
+        control-point path, and under compensation those sit up to R*sqrt(2)
+        away from any surface, which is why the plot could not answer "why is
+        material left in front of the arc and gone behind it".
+
+        Deliberately UNCOMPENSATED: a surface does not have a tool offset. The
+        nose belongs in the path that produces it, not in the shape it leaves.
+        """
+        try:
+            import lathe_sections
+            import ncam
+            f = self._find_feature('polyline')
+            if f is None:
+                return None
+            nose_r, _orient = ncam.tip_comp_inputs()
+            pts, _soft = lathe_sections.finish_profile(
+                f, ncam.TOOL_TABLE.get_back_angle(), nose_r,
+                ncam.TOOL_TABLE.get_flank_len(),
+                ncam.TOOL_TABLE.get_back_clear())
+            if not pts or len(pts) < 2:
+                return None
+            p = f.get_param('param_f_off')
+            off = float(p.get_ngc_value()) if p is not None else 0.0
+            if off <= 0:
+                return None
+            d = f.get_param('param_dir')
+            rdir = int(float(d.get_ngc_value())) if d is not None else 0
+            rad = [(z, x / lathe_sections.DIAMETER_MODE) for z, x in pts]
+            out = lathe_sections.entry_contour(rad, off, rdir, 0.0, 0)
+            if not out or len(out) < 2:
+                return None
+            return [(z, r * lathe_sections.DIAMETER_MODE) for z, r in out]
         except Exception:
             return None
 

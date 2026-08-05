@@ -68,10 +68,13 @@ def main():
 
     src = open(os.path.join(HERE, 'ncam_preview_ui.py')).read()
     drw = open(os.path.join(HERE, 'ncam_preview.py')).read()
-    check('the pane supplies a roughing pair to the drawing code',
-          'rough=self._rough_contours()' in src
-          and 'rough_cb=self._preview_rough_comp' in src,
-          'the overlay is computed but never handed over')
+    # a grep, and a weak one - it cannot see which class anything is on, which
+    # is why the hasattr checks below exist and are the real guard here
+    check('the pane hands a roughing pair and a surface to the drawing code',
+          'rough=self._drawn(' in src and 'surf=self._drawn(' in src
+          and 'rough_cb=self._preview_rough_comp' in src
+          and 'surf_cb=self._preview_prefinish_surface' in src,
+          'an overlay is computed but never handed over')
 
     # AND THE METHOD IS ON THE CLASS THAT CALLS IT. Asserted by importing,
     # not by grepping: the checks above are string searches and they passed
@@ -145,9 +148,15 @@ def main():
         # entry_contour is the single construction both tables come from, so
         # the assertion worth making here is that it is EXACTLY that function -
         # a second implementation in the pane is the failure this guards
-        check('the supplier builds both curves with entry_contour',
-              src.count('lathe_sections.entry_contour(rad,') == 2,
-              'the pane is not using the same construction as the builders')
+        check('every overlay is built with entry_contour, not a second '
+              'implementation',
+              src.count('lathe_sections.entry_contour(rad,') >= 3,
+              'entry, stop and the pre-finish surface all come from the one '
+              'function the G-code tables come from')
+        check('and the pre-finish SURFACE carries no nose',
+              'entry_contour(rad, off, rdir, 0.0, 0)' in src,
+              'a surface does not have a tool offset - the nose belongs in '
+              'the path that produces it, not in the shape it leaves')
         check('and it takes the stop offset from param_f_off alone',
               "f.get_param('param_f_off')" in src
               and "_off('param_pf_off')" not in src,
