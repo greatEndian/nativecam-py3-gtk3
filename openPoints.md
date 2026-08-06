@@ -199,25 +199,40 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   start at different radii and their levels miss each other by 0.006 mm.
   `test_ladder.py` covers both anchorings; fails without the fix on both.
 
-- [ ] **Pre-finish pass OFF puts the behind-the-boss cuts at the FRONT of it**
-  — greatEndian 2026-08-06, `photo/spaceBehindIssue_8.png`. Reproduced:
+- [ ] **Pre-finish OFF: a level sweeps 45.7 mm THROUGH the boss** —
+  greatEndian 2026-08-06, `photo/spaceBehindIssue_8.png`. **Root cause found,
+  one fix tried and reverted.**
 
   ```
-  pre-finish ON    19 levels  deepest 21.0160  behind-boss starts Z-67.252 -65.052 -62.851 -60.651
-  pre-finish OFF   20 levels  deepest 20.5080  behind-boss starts Z-20.610 -20.831 -21.107 -21.382
+  pf ON   r29.8894  ramp Z-46.4204 r30.3974 -> Z-48.6208 r29.8894, cut -48.6208 -> -69.8920
+  pf OFF  r29.8894  ramp Z-23.5808 r29.3814 -> Z-24.1426 r29.8894, cut -24.1426 -> -69.8920
   ```
 
-  With it off the cuts meant for behind the boss begin at Z-20.6, the boss's
-  own front, instead of Z-60…-67. The deeper floor (21.0160 -> 20.5080) is
-  correct and expected - `#3156 = param_pf_off * param_pf_on` zeroes the
-  allowance - so the floor is not the fault; the section/window geometry is.
+  The boss peaks at r32.66, so a level at r29.89 sweeping that span cuts
+  **2.77 mm into it**. Not cosmetic - a gouge.
 
-  **greatEndian's proposal**: build everything as if the pre-finish pass
-  existed, then skip the pass itself in the code and leave it out of the
-  preview. Worth noting when implementing: the WINDOWS should be built that
-  way, but the roughing FLOOR must still drop to the finish allowance, or
-  0.254 mm is left with nothing to remove it. Those are two different uses of
-  `pf_off` and only one of them should be faked.
+  **Ruled out by measurement, all correct**: the section windows (identical in
+  both cases, 7 windows), `lathe_level_next_start` (returns -50.4335 / -48.1752,
+  both past the boss), and the pass arguments (`lfr=-48.1752` is handed in
+  correctly).
+
+  **The fault**: `lathe_level_pass` overrides its own `z_start` from the entry
+  contour crossing (`#<z_start> = #<e_best>`, ~line 312), and that crossing can
+  lie **before `w_from`** - in front of the obstruction the continuation logic
+  just worked around. pf ON has the same fault; its crossing merely lands
+  somewhere harmless (-48.6208 against a w_from of -50.4335).
+
+  **Fix tried and REVERTED**: clamping `z_start` so it can never precede
+  `w_from`. It removes the gouge (0 boss crossings in both modes) but is too
+  blunt - Off's overcut fell 0.1116 -> 0.0503 because roughing reaches less, and
+  1 of 10 passes behind the boss lost the room for its ramp and plunged. Six
+  test failures; reverted.
+
+  **What the failure says**: the crossing may legitimately move the start
+  earlier - that is the entry contour's whole purpose - but it must not move it
+  across a BLOCKED region. The bound is the obstruction, not `w_from`. Needs
+  the blocked-span information the multi-crossing walk already computes, rather
+  than a positional clamp.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
