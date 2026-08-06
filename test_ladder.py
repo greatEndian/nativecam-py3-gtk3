@@ -205,6 +205,65 @@ def main():
         check('   and every remaining gap is a whole depth of cut',
               all(abs(g - DOC) < 1e-3 for g in tgaps),
               'gaps %s' % ' '.join('%.4f' % g for g in tgaps))
+        # --- and a level is TRUNCATED where it stops being a cut ------------
+        # greatEndian, testing_15_4 (a front chamfer): the deepest level does
+        # its work over the 1 mm chamfer and then rubs 0.0160 mm for 17.5 mm
+        # along the cylinder, on top of the pass that follows it. "Passing must
+        # not be repeated in the same spot" - that is where chatter starts.
+        #
+        # Same threshold as the level skip, applied per Z instead of per level.
+        # Needs a profile with a chamfer, so it uses its own project and is
+        # skipped when that is not present.
+        chamfer = os.path.join(os.path.dirname(INI), 'ncam', 'catalogs',
+                               'lathe', 'projects', 'testing_15_4.xml')
+        if os.path.isfile(chamfer):
+            spans = {}
+            for thr in (0.0, DOC / 2.0):
+                o = os.path.join(d, 'ch%g.ngc' % thr)
+                subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                                'testing_15_4.xml', '--out', o, '--config-copy',
+                                '--set', 'polyline:param_skip_thin=%g' % thr],
+                               capture_output=True, text=True)
+                if not os.path.isfile(o):
+                    continue
+                t = P.parse_program(o, INI)
+                if t.error:
+                    continue
+                cuts = [(m.a[0], m.a[2] - m.b[2]) for m in t.moves
+                        if m.op == 'Lathe Polyline' and not m.subs
+                        and m.kind == 'feed'
+                        and abs(m.b[0] - m.a[0]) < 1e-6
+                        and m.b[2] < m.a[2] - 1e-6]
+                if cuts:
+                    deep = min(cuts)[0]
+                    spans[thr] = (deep,
+                                  max(L for r, L in cuts
+                                      if abs(r - deep) < 1e-6),
+                                  max(L for r, L in cuts))
+            check('the chamfer project gives both runs', len(spans) == 2,
+                  str(sorted(spans)))
+            if len(spans) == 2:
+                off, on = spans[0.0], spans[DOC / 2.0]
+                print('   deepest level r%.4f: %.3f mm long with no threshold, '
+                      '%.3f mm with one' % (on[0], off[1], on[1]))
+                # A RATIO, NOT A MILLIMETRE FIGURE. Every level's tail goes
+                # thin as it approaches the stop contour, so every level loses
+                # a little - the longest here gives up 0.526 mm of 23.743, and
+                # that IS the feature: it is the same rubbing, just shorter.
+                # An absolute tolerance would be a guess about how much tail
+                # is acceptable. The distinction worth asserting is between a
+                # level that loses almost everything and one that loses almost
+                # nothing: 2% against 98% here, which no threshold in between
+                # can confuse.
+                check('a threshold shortens the level that only rubs',
+                      on[1] < off[1] * 0.10,
+                      'kept %.1f%% of its length - it is still running on top '
+                      'of the pass that follows it' % (100.0 * on[1] / off[1]))
+                check('   while a level doing real work keeps almost all of it',
+                      on[2] > off[2] * 0.90,
+                      'the longest cut kept only %.1f%%, so honest passes are '
+                      'being truncated too' % (100.0 * on[2] / off[2]))
+
         check('   while the floor itself is never skipped',
               abs(tl[-1] - base[-1]) < 1e-6,
               'the deepest level moved from %.4f to %.4f - roughing is no '

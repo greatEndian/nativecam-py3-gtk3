@@ -92,3 +92,67 @@ overcut of that surface at all.
 
 Negative control: with the bound removed, **11 of 31 cuts through, worst
 2.7697 mm**, and pre-finish ON still passes.
+
+---
+
+# 018 (appended here, same subsystem) — a level that rubs instead of cutting
+
+2026-08-06. greatEndian, `testing_15_4` (a front face chamfer): *"last roughing
+pass is at all long length same as prefinishing passing, which is wrong and
+this will create chattering .. passing must not be repeated in the same spot ..
+the last roughing pass have to be that short as the chamfer is"*.
+
+## Measured
+
+```
+level r20.5240, the deepest, cut Z-0.4000 -> -19.5318   (19.132 mm)
+   at Z-0.20  removes 0.8399 mm     the chamfer - real work
+   at Z-0.50  removes 0.5399 mm
+   at Z-1.00  removes 0.1132 mm
+   at Z-2.00  removes 0.0160 mm     rubbing, and it does this for 17.5 mm
+   at Z-19.0  removes 0.0160 mm
+
+level r21.0320 removes 0.5240 mm along the whole cylinder - an honest cut
+```
+
+The deepest level exists because the chamfer takes the profile down to r19, so
+roughing must reach deeper than the cylinder needs. Along the cylinder it then
+sits 0.0160 mm above the pre-finish contour and rubs on top of the pass that
+follows it.
+
+## The rule
+
+The existing `Skip thin roughing passes` threshold, applied **per Z** as well as
+per level: a level is truncated where the material it would remove drops below
+it. Implemented as the crossing of this level with the stop contour raised by
+the threshold - which is the crossing of `level - threshold` with the contour
+itself, so the table already emitted serves and no new one is needed.
+
+Kept separate from the `o<stp>` block, which may only ever EXTEND a cut; this
+one only ever pulls it back. Off at 0, so nothing changes unless asked.
+
+```
+skip_thin 0       r20.5240  Z-0.4000 -> -19.5318   19.132 mm
+skip_thin 0.254   r20.5240  Z-0.4000 ->  -0.7932    0.393 mm   as short as the chamfer
+                  r21.0320  Z-0.4000 -> -19.5429   19.143 mm   unchanged
+```
+
+## The assertion that had to be reframed
+
+The first version demanded that levels doing real work keep their length to
+within 0.5 mm. It failed: the longest cut gives up **0.526 mm**. That is the
+feature, not a fault - EVERY level's tail goes thin as it approaches the stop
+contour, so every level loses a little, and an absolute tolerance is a guess
+about how much tail is acceptable.
+
+Reframed as a ratio, which needs no such guess: the rubbing level keeps **2%**
+of its length, the working one **98%**. Nothing in between can confuse them.
+
+Negative control: with the truncation disabled the deepest level keeps 100.0%
+and the check fails.
+
+## Accepted consequence
+
+Where a level is truncated, up to one threshold of material is left for the
+pre-finish pass on top of its own allowance. That is the trade the operator is
+making by setting the value, and it is stated in the tooltip.
