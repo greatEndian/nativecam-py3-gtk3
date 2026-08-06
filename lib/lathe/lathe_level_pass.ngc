@@ -43,6 +43,8 @@ o<lathe_level_pass> sub
 	#<e_asl>     = 0
 	#<e_reach>   = 999999
 	#<_org_z>    = 0
+	#<s_reach>   = 999999
+	#<s_slp>     = 0
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
 	#<e_have>    = 0
@@ -395,7 +397,39 @@ o<lathe_level_pass> sub
 				#<s_z> = [#<s_pz> + [#<s_cz> - #<s_pz>] * [#<l_eff> - #<s_px>] / [#<s_cx> - #<s_px>]]
 				(only a crossing further along the cut than the scan found,)
 				(and still inside the window - the nearest such)
-				o<s_fwd> if [[[#<z_dir> * [#<s_z> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_z> - #<w_to>]] GT -0.0001]]
+				(HOW FAR THE EXTENSION MAY REACH. It exists to cross the band)
+			(between the floor allowance the scan stops on and the pre-finish)
+			(allowance this table holds - at most one depth of cut of radius,)
+			(which costs doc/|slope| of Z on the crossing segment. Measured on)
+			(two projects, every legitimate extension is 0.90-1.00 mm.)
+			(Unbounded it also jumps regions where the level is BELOW the)
+			(local roughing floor and has no business cutting: on)
+			(testing_15_4 the deepest level was carried 19.4436 mm across the)
+			(whole cylinder, ending up 0.0160 mm from the pre-finish contour)
+			(and running the length of the part beside it. That is what)
+			(greatEndian reported as chatter, and truncating the level)
+			(afterwards - tried in 224c0b9 and reverted - treats the symptom)
+			(at the wrong end. The level should never have been extended)
+			(there.)
+			(A FLOOR AS WELL AS THE SLOPE TERM. The band is at most one depth)
+			(of cut of RADIUS, so on any segment steeper than about 45 degrees)
+			(it costs at most one doc of Z - but the slope term collapses to)
+			(nearly zero on a near-vertical wall and then rejects a perfectly)
+			(good extension: the end wall of testing_15_2 needs 0.5080 and was)
+			(cut off, leaving every level 0.508 short of the pre-finish wall)
+			(and one pass behind the boss plunging. 3 x doc covers segments)
+			(down to about 18 degrees on its own; the slope term takes over)
+			(below that. Largest legitimate extension measured on two projects)
+			(is 1.0034, the bogus one 19.4436, so the two are nowhere near)
+			(this bound.)
+			#<s_reach> = [3.0 * #<_rough_cut>]
+			o<s_rch> if [ABS[#<s_cx> - #<s_px>] GT 0.000001]
+				#<s_slp> = [1.5 * #<_rough_cut> * ABS[#<s_cz> - #<s_pz>] / ABS[#<s_cx> - #<s_px>]]
+				o<s_rch2> if [#<s_slp> GT #<s_reach>]
+					#<s_reach> = #<s_slp>
+				o<s_rch2> endif
+			o<s_rch> endif
+			o<s_fwd> if [[[#<z_dir> * [#<s_z> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_z> - #<w_to>]] GT -0.0001] AND [ABS[#<s_z> - #<z_end>] LT #<s_reach>]]
 					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_z> - #<s_best>]] GT 0]]
 						#<s_best> = #<s_z>
 						#<s_have> = 1

@@ -244,6 +244,74 @@ def main():
         check('   and every remaining gap is a whole depth of cut',
               all(abs(g - DOC) < 1e-3 for g in tgaps),
               'gaps %s' % ' '.join('%.4f' % g for g in tgaps))
+        # --- no level may run beside the pre-finish contour -----------------
+        # greatEndian, testing_15_4: the deepest level ran the whole part
+        # 0.0160 mm from the pre-finish contour - two passes in the same spot,
+        # which is where chatter starts.
+        #
+        # The cause was the stop table's EXTENSION, not the level's length. It
+        # exists to carry a level from the floor allowance it stops on to the
+        # pre-finish allowance the table holds - 0.90 to 1.00 mm on every
+        # legitimate case across two projects - and unbounded it carried the
+        # deepest level 19.4436 mm across a cylinder where that level is below
+        # the local roughing floor and has no business cutting.
+        #
+        # Truncating the level afterwards was tried first (224c0b9) and is
+        # wrong: it measures "material removed" as level - contour, which is
+        # what is left BELOW the level rather than what it takes, and it cut 10
+        # honest passes behind the boss down to 1.299 mm. Reverted.
+        chamfer = os.path.join(os.path.dirname(INI), 'ncam', 'catalogs',
+                               'lathe', 'projects', 'testing_15_4.xml')
+        if os.path.isfile(chamfer):
+            o = os.path.join(d, 'beside.ngc')
+            subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                            'testing_15_4.xml', '--out', o, '--config-copy'],
+                           capture_output=True, text=True)
+            if os.path.isfile(o):
+                import re as _re
+                vals = {}
+                for ln in open(o):
+                    m = _re.match(r'#(\d+) = (-?[\d.]+)\s*$', ln.strip())
+                    if m and 4400 <= int(m.group(1)) < 4600:
+                        vals[int(m.group(1))] = float(m.group(2))
+                stop, i = [], 4400
+                while i in vals and i + 1 in vals:
+                    stop.append((vals[i], vals[i + 1]))
+                    i += 2
+
+                def stop_r(z):
+                    best = None
+                    for (z0, r0), (z1, r1) in zip(stop, stop[1:]):
+                        if (min(z0, z1) - 1e-9 <= z <= max(z0, z1) + 1e-9
+                                and abs(z1 - z0) > 1e-9):
+                            r = r0 + (r1 - r0) * (z - z0) / (z1 - z0)
+                            best = r if best is None else max(best, r)
+                    return best
+
+                t = P.parse_program(o, INI)
+                beside = []
+                if stop and not t.error:
+                    for m in t.moves:
+                        if (m.op != 'Lathe Polyline' or m.subs
+                                or m.kind != 'feed'
+                                or abs(m.b[0] - m.a[0]) > 1e-6
+                                or m.b[2] >= m.a[2] - 1e-6):
+                            continue
+                        span, close = m.a[2] - m.b[2], 0.0
+                        z = m.a[2]
+                        while z > m.b[2]:
+                            sr = stop_r(z)
+                            if sr is not None and 0 <= m.a[0] - sr < 0.10:
+                                close += 0.1
+                            z -= 0.1
+                        if close > 2.0:
+                            beside.append((m.a[0], span, close))
+                check('no level runs beside the pre-finish contour',
+                      not beside,
+                      'r%.4f runs %.1f mm of its %.1f within 0.10 mm of it'
+                      % (beside[0][0], beside[0][2], beside[0][1])
+                      if beside else '')
+
         check('   while the floor itself is never skipped',
               abs(tl[-1] - base[-1]) < 1e-6,
               'the deepest level moved from %.4f to %.4f - roughing is no '

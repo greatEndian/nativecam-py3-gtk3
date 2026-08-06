@@ -223,26 +223,21 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   nothing for 29 calls. **Known**: compensated overcut 0.0394 -> 0.0503 at
   Z+0.3, which is air (stock only at Z <= 0). Front-to-back only.
 
-- [ ] **REOPENED: the last roughing pass runs the full part next to the
-  pre-finish** — greatEndian, testing_15_4. My truncation fix was REVERTED:
-  it damaged 10 legitimate cuts behind the boss, cutting them to 1.299 mm
-  (`photo/spaceBehindIssue_9.png`).
+- [x] **The last roughing pass ran beside the pre-finish — FIXED**,
+  2026-08-06, `analysis/019`. Not the level's length: the stop table's
+  EXTENSION, unbounded, carried it **19.4436 mm** across a cylinder where it
+  sits below the local roughing floor, leaving it 0.0160 mm from the pre-finish
+  contour for 18.5 mm. Every legitimate extension on two projects is
+  0.90-1.0034 mm.
 
-  **The premise was wrong.** I measured "what a level removes" as
-  `level - stop_contour`, which is what is left BELOW the level, not what it
-  takes. What a level removes is bounded above by the PREVIOUS level, so on the
-  far taper those cuts were taking a full 0.508 step and were truncated anyway.
+  Bounded by the band it crosses - one depth of cut of radius, `doc/|slope|` of
+  Z - with a floor of `3 x doc`, because a slope-only bound collapses on a
+  near-vertical segment and cut the end wall's own 0.5080 extension, leaving
+  every level short of the pre-finish wall.
 
-  What the numbers actually say about the original complaint: the deepest level
-  sits at r20.5240 with the pre-finish contour at r20.5080 - **0.0160 apart**.
-  So the level is not rubbing; the PRE-FINISH pass is, because roughing already
-  took the metal. The ladder's floor is the thing in the wrong place, not the
-  level's length. Any fix belongs there.
-
-  Bisect note: the first attempt to find the regressing commit was invalid.
-  `lib/*.ngc` are read at rs274 RUNTIME, so checking out an old lib and then
-  parsing a file generated separately measures nothing - all six commits gave
-  byte-identical output. The parse has to happen with that lib on disk.
+  testing_15_4's deepest level 19.132 -> 0.088 mm; testing_15_2 unchanged.
+  `test_ladder` asserts no level runs more than 2 mm within 0.10 mm of the
+  contour; negative control 18.5 mm of 19.5.
 
 - [x] **Every pass starts at Begin Z — roughing, pre-finish and finish** —
   2026-08-06. greatEndian: *"we are reaching roughing diameter in the stock"*,
