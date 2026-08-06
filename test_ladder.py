@@ -197,11 +197,19 @@ def main():
                       % (mode, begin_z), abs(rc - begin_z) < 1e-3,
                       'reaches the cutting radius at %+.4f, which is %.4f mm '
                       'inside the stock' % (rc, begin_z - rc))
-            ahead = {k: v for k, v in starts.items()
-                     if k != 'roughing' and v > begin_z + 1e-3}
-            check('mode %d: no contour pass starts in front of Begin Z'
-                  % mode, not ahead,
-                  ', '.join('%s at %+.4f' % (k, v) for k, v in ahead.items()))
+            # THE CONTOUR PASSES GET THE SAME STARTING BEHAVIOUR, by extending
+            # their first segment to Begin Z rather than by bounding Z alone.
+            # A roughing level is a straight line at one radius, so moving its
+            # start in Z keeps it on the level; a contour entry moved in Z
+            # alone comes OFF the contour and the first cut becomes a diagonal
+            # onto it. So this is an equality, and the radius is free to follow
+            # the segment - on testing_15_4's chamfer it does, from -0.1172 to
+            # exactly 0 with the radius carried back along the chamfer.
+            off = {k: v for k, v in starts.items()
+                   if k != 'roughing' and abs(v - begin_z) > 1e-3}
+            check('mode %d: every contour pass starts AT Begin Z' % mode,
+                  not off,
+                  ', '.join('%s at %+.4f' % (k, v) for k, v in off.items()))
 
         # --- Skip thin roughing passes -------------------------------------
         # greatEndian: the thin pass at the stock envelope "cuts nothing and

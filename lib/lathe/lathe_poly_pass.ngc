@@ -125,6 +125,9 @@ o<lathe_poly_pass> sub
 	(the orientation term applies only when there is an L word to be aware of)
 	#<pe_oz> = 0
 	#<pe_ox> = 0
+	#<ex_uz> = 0
+	#<ex_ux> = 0
+	#<ex_t> = 0
 	o<pe_or> if [#<_tip_comp_l> GT 0]
 		#<pe_oz> = #<_pl_nose_oz>
 		#<pe_ox> = #<_pl_nose_ox>
@@ -150,16 +153,28 @@ o<lathe_poly_pass> sub
 	(CAM and for any pass carrying no allowance, so a clamp inside it reached)
 	(only Off's pre-finish and left the finish pass and both In CAM passes)
 	(starting in front of the reference.)
-	(THE TIP, not the cut, is what is bounded here - and deliberately not the)
-	(same rule the roughing levels take. Pulling the entry back to)
-	(Begin Z - nose so the CUT starts on the reference drives the lead-in into)
-	(the part: measured 0.5039 mm on both contour passes, in Native and In CAM,)
-	(which breaks the standing rule that a lead may not end in the material.)
-	(Roughing can be bounded on its cut because it enters above the material;)
-	(a contour pass cannot, because its lead-in has to get there through air.)
-	o<org_cl> if [[#<z_dir> GT 0] AND [#<comp_ez> GT #<_pl_begin_z>]]
-		#<comp_ez> = #<_pl_begin_z>
-	o<org_cl> endif
+	(THE FIRST SEGMENT IS EXTENDED TO Begin Z, the same starting behaviour the)
+	(roughing levels have. A bound on Z alone would be wrong here: a roughing)
+	(level is a straight line at one radius, so moving its start in Z keeps it)
+	(on the level, but a contour entry moved in Z alone comes OFF the contour)
+	(and the first cut becomes a diagonal onto it. So the entry is projected)
+	(along the first segment's own direction until it reaches Begin Z - an)
+	(extension of that segment, which is what greatEndian asked for.)
+	(pe_len and the raw direction are known whatever the mode; the unit vector)
+	(is only formed inside the pe_ok gate, which In CAM skips, so it is formed)
+	(again here rather than reused.)
+	o<ext_bz> if [[#<z_dir> GT 0] AND [#<pe_len> GT 0.000001]]
+		#<ex_uz> = [#<pe_dz> / #<pe_len>]
+		#<ex_ux> = [#<pe_dx> / #<pe_len>]
+		(a segment with no Z extent - a pure face cut - cannot be extended to)
+		(a Z, and must not be: dividing by its zero Z component would throw the)
+		(entry to infinity)
+		o<ext_uz> if [ABS[#<ex_uz>] GT 0.001]
+			#<ex_t> = [[#<comp_ez> - #<_pl_begin_z>] / #<ex_uz>]
+			#<comp_ez> = [#<comp_ez> - [#<ex_t> * #<ex_uz>]]
+			#<comp_ex> = [#<comp_ex> - [#<ex_t> * #<ex_ux>]]
+		o<ext_uz> endif
+	o<ext_bz> endif
 
 	(safe approach: retract above stock, rapid back in Z)
 	o<ap_side> if [#<_pl_side> EQ 1]

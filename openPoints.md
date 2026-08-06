@@ -231,23 +231,27 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   that is thin everywhere: **19.132 mm -> 0.393 mm**, while the level removing
   0.524 keeps its full 19.143.
 
-- [x] **Roughing is at the cutting diameter BY Begin Z** — 2026-08-06.
-  greatEndian: *"when we are at 0.0 Z and X at driven diameter we will be at
-  cutting level already .. we are reaching roughing diameter in the stock"*.
+- [x] **Every pass starts at Begin Z — roughing, pre-finish and finish** —
+  2026-08-06. greatEndian: *"we are reaching roughing diameter in the stock"*,
+  then *"implement this artificial extension to the prefinish and finish passes
+  to have same starting behaviour as roughing has"*.
 
-  The lead-in descends to the level radius at the tip's own start, so **the tip
-  is what must sit on the reference**. Two wrong versions before this one:
-  bounding it "never in front of Begin Z" let the nose shift push the start to
-  Z-0.4 - 0.4 mm inside the stock, the actual complaint - and bounding the CUT
-  there was worse, arriving at diameter at -0.4 as well. It is an EQUALITY on
-  the first interval now: when the window begins at or in front of Begin Z the
-  pass starts exactly there. Continuation intervals are untouched.
+  **Roughing**: an EQUALITY on the first interval - the tip sits on Begin Z, so
+  the lead-in has reached the cutting diameter by the reference. Two wrong
+  versions shipped before it: a one-sided bound (the nose shift then pushed the
+  start to Z-0.4, inside the stock - the reported fault) and bounding the CUT
+  (arrives at diameter at -0.4 as well).
 
-  `testing_15_2` and `testing_15_4` both reach r29.8894 at **Z0.0000**.
-  Negative control: +1.0000 / +0.6000 / +0.6000.
+  **Contour passes**: the first segment is EXTENDED to Begin Z along its own
+  direction. A bound on Z alone is wrong here - a level is a straight line at
+  one radius so moving its start in Z keeps it on the level, but a contour
+  entry moved in Z alone comes off the contour and the first cut becomes a
+  diagonal onto it. On testing_15_4's chamfer the entry moves -0.1172 -> 0.0000
+  with the radius carried back along the chamfer to r18.7657.
 
-  **The contour passes keep the tip bound at Begin Z** - pulling them further
-  drives the lead-in 0.5039 mm into the part.
+  Both projects, all three modes, all three pass types: **Z+0.0000**. Negative
+  controls: roughing +1.0000/+0.6000/+0.6000, contour the same.
+  `test_leads` still passes - the lead-in stays out of the material.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
