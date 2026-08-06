@@ -199,40 +199,20 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   start at different radii and their levels miss each other by 0.006 mm.
   `test_ladder.py` covers both anchorings; fails without the fix on both.
 
-- [ ] **Pre-finish OFF: a level sweeps 45.7 mm THROUGH the boss** —
-  greatEndian 2026-08-06, `photo/spaceBehindIssue_8.png`. **Root cause found,
-  one fix tried and reverted.**
+- [x] **Pre-finish OFF: a level swept 45.7 mm THROUGH the boss — FIXED**,
+  2026-08-06, `analysis/016`. 2.7697 mm into a boss peaking at r32.66, 11 of 31
+  cuts. The entry-contour crossing may sit behind the interval start - that is
+  the ramp's room, +1.8127 mm on every level - but had no upper bound, so with
+  the pre-finish off it reached 24-28 mm back, past the boss.
 
-  ```
-  pf ON   r29.8894  ramp Z-46.4204 r30.3974 -> Z-48.6208 r29.8894, cut -48.6208 -> -69.8920
-  pf OFF  r29.8894  ramp Z-23.5808 r29.3814 -> Z-24.1426 r29.8894, cut -24.1426 -> -69.8920
-  ```
+  Bounded to one depth of cut of PROJECTED length along the candidate's own
+  segment (x1.5). A steep face then allows almost nothing; the 13 deg taper
+  allows 2.2004 so pf ON is byte-identical. Clamping to `w_from` was tried
+  first and is too blunt - it costs the ramp its room, 6 failures.
 
-  The boss peaks at r32.66, so a level at r29.89 sweeping that span cuts
-  **2.77 mm into it**. Not cosmetic - a gouge.
-
-  **Ruled out by measurement, all correct**: the section windows (identical in
-  both cases, 7 windows), `lathe_level_next_start` (returns -50.4335 / -48.1752,
-  both past the boss), and the pass arguments (`lfr=-48.1752` is handed in
-  correctly).
-
-  **The fault**: `lathe_level_pass` overrides its own `z_start` from the entry
-  contour crossing (`#<z_start> = #<e_best>`, ~line 312), and that crossing can
-  lie **before `w_from`** - in front of the obstruction the continuation logic
-  just worked around. pf ON has the same fault; its crossing merely lands
-  somewhere harmless (-48.6208 against a w_from of -50.4335).
-
-  **Fix tried and REVERTED**: clamping `z_start` so it can never precede
-  `w_from`. It removes the gouge (0 boss crossings in both modes) but is too
-  blunt - Off's overcut fell 0.1116 -> 0.0503 because roughing reaches less, and
-  1 of 10 passes behind the boss lost the room for its ramp and plunged. Six
-  test failures; reverted.
-
-  **What the failure says**: the crossing may legitimately move the start
-  earlier - that is the entry contour's whole purpose - but it must not move it
-  across a BLOCKED region. The bound is the obstruction, not `w_from`. Needs
-  the blocked-span information the multi-crossing walk already computes, rather
-  than a positional clamp.
+  `test_through_cut.py` toggles the pre-finish pass, because every saved
+  project has it on and a check that did not toggle it would have passed
+  throughout. Negative control: 11 of 31 through, worst 2.7697 mm.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.

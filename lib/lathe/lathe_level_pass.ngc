@@ -41,6 +41,7 @@ o<lathe_level_pass> sub
 	#<e_sdz>     = 0
 	#<e_sdx>     = 0
 	#<e_asl>     = 0
+	#<e_reach>   = 999999
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
 	#<e_have>    = 0
@@ -295,8 +296,32 @@ o<lathe_level_pass> sub
 				(approach copies, taken from the contour rather than assumed)
 				#<e_sdz> = [#<e_cz> - #<e_pz>]
 				#<e_sdx> = [#<e_cx> - #<e_px>]
+				(HOW FAR BACK A CANDIDATE MAY REACH. The entry contour lets a)
+				(level start before the floor crossing would - that is its)
+				(whole purpose - and every crossing that fires is BEHIND)
+				(w_from: 10 of 10 on testing_15_2, all by 1.8127 mm, which is)
+				(the room the profile-angle ramp needs. What was missing is a)
+				(BOUND on it. With the pre-finish pass off the nearest)
+				(qualifying crossing sat 24.03, 25.32 and 28.08 mm back - on)
+				(the far side of the boss - and the level then swept 45.7 mm)
+				(through a boss peaking 2.77 mm above it.)
+				(The legitimate reach is exactly what the ramp uses: one)
+				(roughing depth of cut of PROJECTED length along this)
+				(candidate's own segment, doc/|slope|, which is already in)
+				(hand here as e_sdz/e_sdx. Half again allows for the crossing)
+				(sitting inside the segment rather than at its end. A steep)
+				(segment - the face of a boss - allows almost nothing, which)
+				(is right: there is no shallow ramp to be had there.)
+				(Clamping to w_from instead was tried and is too blunt: it)
+				(takes the 1.8127 mm the ramp needs, so a pass loses its ramp)
+				(and plunges, and roughing reaches less - Off's overcut fell)
+				(0.1116 -> 0.0503 because it was cutting less, not better.)
+				#<e_reach> = 999999
+				o<e_rch> if [ABS[#<e_sdx>] GT 0.000001]
+					#<e_reach> = [1.5 * #<_rough_cut> * ABS[#<e_sdz>] / ABS[#<e_sdx>]]
+				o<e_rch> endif
 				(only a crossing the cut has not reached yet, and the nearest)
-				o<e_bef> if [[#<z_dir> * [#<e_z> - #<w_from>]] GT 0.0001]
+				o<e_bef> if [[[#<z_dir> * [#<e_z> - #<w_from>]] GT 0.0001] AND [ABS[#<e_z> - #<w_from>] LT #<e_reach>]]
 					o<e_near> if [[#<e_have> EQ 0] OR [[#<z_dir> * [#<e_z> - #<e_best>]] LT 0]]
 						#<e_best> = #<e_z>
 						#<e_bdz> = #<e_sdz>
