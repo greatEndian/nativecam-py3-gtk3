@@ -78,3 +78,59 @@ have been carried across the cylinder in the first place.
 `test_ladder.py`: no level may run more than 2 mm within 0.10 mm of the
 pre-finish contour. Negative control, bound removed:
 `r20.5240 runs 18.5 mm of its 19.5 within 0.10 mm of it`.
+
+---
+
+## Addendum — the leads, not the length
+
+greatEndian, after the extension bound landed: *"the short roughing segment
+which roughs the existing chamfer is missing and instead there is a small lead
+in lead out bump which will produce vibrations .. fix the root cause, no tells
+me how to bypass them"*.
+
+Fair, and the workaround offered first - `Skip short roughing passes` - was
+one. The root cause is in the SHAPE, not the length.
+
+### The 0.088 length is correct
+
+```
+SCAN lvl=20.524000 found=1 zc=-0.088159 zstart=0.000000 doff=1.016000
+```
+
+`doff` is **1.016**, not the 0.762 assumed from the parameters:
+`pass_from = Final contour` reassigns `step_target = anch_floor`, rounding the
+roughing floor outward by a whole depth of cut, and `lvl_d = step_target -
+final_radius = 20.016 - 19.000`. With a 1.016 allowance the chamfer's offset
+profile crosses r20.525 at exactly Z-0.0882. The scan is right.
+
+### The shape was not
+
+A 1.000 mm lead-in and a 1.000 mm lead-out around a 0.088 mm cut is not a
+pass. Both leads are now bounded by the cut they serve:
+
+```
+before   lead-in 1.000 | cut 0.088 | lead-out 1.000
+after    lead-in 0.088 | cut 0.088 | lead-out 0.088
+```
+
+Bounded by the cut and not a fraction of it: a lead equal to the cut still
+reads as a lead and keeps its angle, and there is no honest number between
+"as long as the cut" and "arbitrary".
+
+### What "the right shape from earlier commits" turned out to be
+
+There isn't one. The deepest level across the history:
+
+```
+7404a9d  r20.7454  Z+0.0000 -> -19.5415  19.541   r20.524 did not cut at all
+91e8cf9  r20.5240  Z-0.4000 -> -19.5318  19.132   full length beside the pre-finish
+224c0b9  r20.5240  Z-0.4000 ->  -0.7409   0.341   the reverted truncation
+f98f329  r20.5240  Z+0.0000 -> -19.5318  19.532
+cf29e14  r20.5240  Z+0.0000 ->  -0.0882   0.088   correct length, wrong leads
+```
+
+It was never a good short chamfer pass - either the full length beside the
+pre-finish, or a stub. Saying so was worth more than restoring one of them.
+
+Coverage: `test_ladder` asserts no lead exceeds the cut it serves. Negative
+control: `r20.5240 has a 0.088 mm cut with a 0.125 mm lead`.

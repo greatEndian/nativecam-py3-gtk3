@@ -312,6 +312,42 @@ def main():
                       % (beside[0][0], beside[0][2], beside[0][1])
                       if beside else '')
 
+        # --- a lead may not be longer than the cut it serves ----------------
+        # greatEndian, the chamfer level of testing_15_4: a 1.000 mm lead-in
+        # and a 1.000 mm lead-out around a 0.088 mm cut is not a pass, it is a
+        # bump, and it is what shakes the machine.
+        #
+        # The 0.088 is CORRECT and was checked before anything was changed: the
+        # floor allowance there is 1.016 - Final-contour anchoring rounds the
+        # floor outward by a whole depth of cut - and the chamfer's offset
+        # profile crosses that level at exactly Z-0.0882. The length was right
+        # and the shape was not, so the leads are what got bounded.
+        if os.path.isfile(chamfer):
+            o = os.path.join(d, 'leadcap.ngc')
+            subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                            'testing_15_4.xml', '--out', o, '--config-copy'],
+                           capture_output=True, text=True)
+            t = P.parse_program(o, INI) if os.path.isfile(o) else None
+            bad = []
+            if t is not None and not t.error:
+                mv = [m for m in t.moves if m.op == 'Lathe Polyline'
+                      and not m.subs]
+                for i, m in enumerate(mv):
+                    if (m.kind != 'feed' or abs(m.b[0] - m.a[0]) > 1e-6
+                            or m.b[2] >= m.a[2] - 1e-6):
+                        continue
+                    span = m.a[2] - m.b[2]
+                    for n in mv[max(0, i - 2):i] + mv[i + 1:i + 3]:
+                        if n.kind != 'feed':
+                            continue
+                        L = ((n.b[2] - n.a[2]) ** 2
+                             + (n.b[0] - n.a[0]) ** 2) ** 0.5
+                        if L > span + 1e-3:
+                            bad.append((m.a[0], span, L))
+            check('no lead is longer than the cut it serves', not bad,
+                  'r%.4f has a %.3f mm cut with a %.3f mm lead'
+                  % bad[0] if bad else '')
+
         check('   while the floor itself is never skipped',
               abs(tl[-1] - base[-1]) < 1e-6,
               'the deepest level moved from %.4f to %.4f - roughing is no '

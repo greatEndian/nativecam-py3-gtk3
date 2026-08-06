@@ -518,6 +518,19 @@ o<lathe_level_pass> sub
 				o<lo_lcap2> endif
 			o<lo_lcap> endif
 		o<lo_cap_all> endif
+		(A LEAD MAY NOT BE LONGER THAN THE CUT IT SERVES. greatEndian, on the)
+		(chamfer level of testing_15_4: a 1.000 mm lead-in and a 1.000 mm)
+		(lead-out wrapped around a 0.088 mm cut is not a pass, it is a bump,)
+		(and it is what shakes the machine. The 0.088 itself is correct - the)
+		(floor allowance there is 1.016 and the chamfer's offset profile)
+		(crosses this level at Z-0.0882 - so the length is right and the)
+		(SHAPE is not.)
+		(Bounded by the cut, not by a fraction of it: a lead equal to the cut)
+		(still reads as a lead-in and keeps its angle, and there is no honest)
+		(number between "as long as the cut" and "arbitrary".)
+		o<lo_ccap> if [#<_lo_leff> GT ABS[#<z_end_cut> - #<z_start>]]
+			#<_lo_leff> = ABS[#<z_end_cut> - #<z_start>]
+		o<lo_ccap> endif
 
 		(radius is bounded by how much straight lead length there is to blend)
 		(into - a big radius with a short lead would swing wider than lo_len)
@@ -629,6 +642,19 @@ o<lathe_level_pass> sub
 				o<li_lcap2> endif
 			o<li_lcap> endif
 		o<li_cap_all> endif
+		(A LEAD MAY NOT BE LONGER THAN THE CUT IT SERVES. greatEndian, on the)
+		(chamfer level of testing_15_4: a 1.000 mm lead-in and a 1.000 mm)
+		(lead-out wrapped around a 0.088 mm cut is not a pass, it is a bump,)
+		(and it is what shakes the machine. The 0.088 itself is correct - the)
+		(floor allowance there is 1.016 and the chamfer's offset profile)
+		(crosses this level at Z-0.0882 - so the length is right and the)
+		(SHAPE is not.)
+		(Bounded by the cut, not by a fraction of it: a lead equal to the cut)
+		(still reads as a lead-in and keeps its angle, and there is no honest)
+		(number between "as long as the cut" and "arbitrary".)
+		o<li_ccap> if [#<_li_leff> GT ABS[#<z_end_cut> - #<z_start>]]
+			#<_li_leff> = ABS[#<z_end_cut> - #<z_start>]
+		o<li_ccap> endif
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<_li_reff> GT 0]
