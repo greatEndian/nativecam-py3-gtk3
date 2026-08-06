@@ -126,6 +126,52 @@ def main():
               lv['Final contour'] != lv['Stock'],
               'identical - the pass_from setting is doing nothing')
 
+        # --- no pass starts in front of the definition's Begin Z -----------
+        # greatEndian: the compensated entry is geometrically right against the
+        # contour, but on the real part the nose riding onto a first segment
+        # that runs FORWARD of the origin leaves a bump at the start. So every
+        # pass - roughing, pre-finish and finish, in every mode - begins at the
+        # polyline's own Begin Z.
+        #
+        # Taken from _pl_begin_z, NOT from record 1 of the lathe array: that
+        # record is the first ITEM's endpoint, Z+1.0 on this project, and using
+        # it silently did nothing.
+        import re
+        prj = os.path.join(os.path.dirname(INI), 'ncam', 'catalogs', 'lathe',
+                           'projects', PROJECT)
+        begin_z = 0.0
+        if os.path.isfile(prj):
+            txt = open(prj, encoding='utf-8').read()
+            m = re.search(r'call="#param_b_z"[^>]*?value="([-\d.]+)"', txt)
+            if m:
+                begin_z = float(m.group(1)) * 25.4
+        for mode in (0, 1, 2):
+            out = os.path.join(d, 'bz%d.ngc' % mode)
+            subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                            PROJECT, '--out', out, '--config-copy', '--set',
+                            'polyline:param_n_comp=%d' % mode],
+                           capture_output=True, text=True)
+            if not os.path.isfile(out):
+                continue
+            tp = P.parse_program(out, INI)
+            if tp.error:
+                continue
+            starts = {}
+            rgh = [m for m in tp.moves if m.op == 'Lathe Polyline'
+                   and not m.subs and m.kind == 'feed'
+                   and abs(m.b[0] - m.a[0]) < 1e-6 and m.b[2] < m.a[2] - 1e-6]
+            if rgh:
+                starts['roughing'] = max(m.a[2] for m in rgh)
+            for tag, name in ((P.PREFINISH, 'pre-finish'), (P.FINISH, 'finish')):
+                fd = [m for m in tp.moves if m.op == 'Lathe Polyline'
+                      and tag in m.subs and m.kind == 'feed']
+                if fd:
+                    starts[name] = fd[0].b[2]
+            ahead = {k: v for k, v in starts.items() if v > begin_z + 1e-3}
+            check('mode %d: no pass starts in front of Begin Z %.4f'
+                  % (mode, begin_z), not ahead,
+                  ', '.join('%s at %+.4f' % (k, v) for k, v in ahead.items()))
+
         # --- Skip thin roughing passes -------------------------------------
         # greatEndian: the thin pass at the stock envelope "cuts nothing and
         # created chattering". A level that removes less than the threshold is

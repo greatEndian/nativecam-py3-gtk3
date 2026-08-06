@@ -144,6 +144,16 @@ o<lathe_poly_pass> sub
 		#<comp_ex> = [#<entry_x> + [#<comp_r> * #<pe_nx>] - #<pe_ox>]
 	o<pe_ok> endif
 
+	(AND NEVER IN FRONT OF THE POLYLINE'S OWN BEGIN Z - the same rule the)
+	(roughing levels take, for the same bump at the part start. OUTSIDE the)
+	(pe_ok block on purpose: that one is gated on comp_r, which is 0 for In)
+	(CAM and for any pass carrying no allowance, so a clamp inside it reached)
+	(only Off's pre-finish and left the finish pass and both In CAM passes)
+	(starting in front of the reference.)
+	o<org_cl> if [[#<z_dir> GT 0] AND [#<comp_ez> GT #<_pl_begin_z>]]
+		#<comp_ez> = #<_pl_begin_z>
+	o<org_cl> endif
+
 	(safe approach: retract above stock, rapid back in Z)
 	o<ap_side> if [#<_pl_side> EQ 1]
 		G0 X#<_pl_id_ret>

@@ -214,6 +214,15 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   project has it on and a check that did not toggle it would have passed
   throughout. Negative control: 11 of 31 through, worst 2.7697 mm.
 
+- [x] **Bump at the part start: every pass now begins at Begin Z** —
+  2026-08-06, `analysis/017`. Not a compensation fault: testing_15_2's first
+  item runs to Z+1.0000, forward of the origin, so every pass followed it
+  there. Now Z+0.0000 for roughing, pre-finish and finish in all three modes,
+  with the reference from a new `#<_pl_begin_z> = #param_b_z` - record 1 of the
+  lathe array is the first ITEM's endpoint, not the origin, and using it did
+  nothing for 29 calls. **Known**: compensated overcut 0.0394 -> 0.0503 at
+  Z+0.3, which is air (stock only at Z <= 0). Front-to-back only.
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 
