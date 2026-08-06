@@ -165,6 +165,7 @@ o<poly_lathe_mill> sub
         #<p1_n> = 1
         #<p2_n> = 1
         #<p2_sgn> = 1
+        #<lvl_thin> = 0
         o1001 else
                 #<rough_passes> = FUP[ABS[#<step_target> - #<start_radius>] / #<_rough_cut>]
                 #<cut_step> = [[#<step_target> - #<start_radius>] / #<rough_passes>]
@@ -557,7 +558,27 @@ o<poly_lathe_mill> sub
                         o<band_chk> if [[#<current_radius> GT [#<w_rhi> + 0.000001]] OR [#<current_radius> LT [#<w_rlo> - 0.000001]]]
                                 #<lvl_in_band> = 0
                         o<band_chk> endif
-                        o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]]
+                        (A LEVEL THAT TAKES OFF ALMOST NOTHING IS WORSE THAN)
+                        (NO LEVEL: it rubs rather than cuts, which is where)
+                        (chatter starts, and it costs a full approach and)
+                        (retract to do it. _pl_prev_lvl is the last level)
+                        (actually cut - stock_r at the start of a window - so)
+                        (this measures the real thickness this level would)
+                        (remove, not the nominal step. The FLOOR is never)
+                        (skipped whatever the setting: it is the surface)
+                        (roughing has to leave for the pre-finish pass. That)
+                        (is step_target, the REAL floor - not lvl_floor, which)
+                        (with Sectioning on is the section ceiling and is)
+                        (exactly where the thin envelope pass lands. Guarding)
+                        (on lvl_floor protected the one level this setting)
+                        (exists to remove.)
+                        #<lvl_thin> = 0
+                        o<thin_chk> if [[#<_pl_skip_thin> GT 0.000001] AND [ABS[#<current_radius> - #<step_target>] GT 0.000001]]
+                                o<thin_hit> if [ABS[#<current_radius> - #<_pl_prev_lvl>] LT #<_pl_skip_thin>]
+                                        #<lvl_thin> = 1
+                                o<thin_hit> endif
+                        o<thin_chk> endif
+                        o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [#<lvl_thin> EQ 0] AND [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]]
                                 #<_level_blocked> = 0
                                 (constant floor allowance: the level stops at the offset profile)
                                 #<lvl_d> = [#<dirsign> * [#<step_target> - #<final_radius>]]

@@ -125,6 +125,44 @@ def main():
         check('the two anchorings produce different ladders',
               lv['Final contour'] != lv['Stock'],
               'identical - the pass_from setting is doing nothing')
+
+        # --- Skip thin roughing passes -------------------------------------
+        # greatEndian: the thin pass at the stock envelope "cuts nothing and
+        # created chattering". A level that removes less than the threshold is
+        # dropped - at the envelope and anywhere else one appears - but the
+        # level ON THE FLOOR never is, because that is the surface roughing
+        # has to leave for the pre-finish pass.
+        #
+        # The guard for that was first written against lvl_floor, which with
+        # Sectioning on is the section CEILING - exactly where the envelope
+        # pass lands - so it protected the one level the setting exists to
+        # remove and nothing was skipped at all. It is step_target now.
+        thin = os.path.join(d, 'thin.ngc')
+        subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                        PROJECT, '--out', thin, '--config-copy',
+                        '--set', 'polyline:param_n_comp=1',
+                        '--set', 'polyline:param_pass_from=1',
+                        '--set', 'polyline:param_skip_thin=%g' % (DOC / 2.0)],
+                       capture_output=True, text=True)
+        tl = levels(thin, P) if os.path.isfile(thin) else None
+        check('the project generates with a thin-pass threshold', bool(tl))
+        if not tl:
+            return
+        base = lv['Final contour']
+        tgaps = [round(tl[i] - tl[i + 1], 4) for i in range(len(tl) - 1)]
+        print('   %-14s %2d levels, deepest %.4f, gaps %s'
+              % ('skip thin', len(tl), tl[-1],
+                 ' '.join('%.4f' % g for g in tgaps)))
+        check('a threshold drops at least one level', len(tl) < len(base),
+              '%d levels with the threshold against %d without - nothing was '
+              'skipped' % (len(tl), len(base)))
+        check('   and every remaining gap is a whole depth of cut',
+              all(abs(g - DOC) < 1e-3 for g in tgaps),
+              'gaps %s' % ' '.join('%.4f' % g for g in tgaps))
+        check('   while the floor itself is never skipped',
+              abs(tl[-1] - base[-1]) < 1e-6,
+              'the deepest level moved from %.4f to %.4f - roughing is no '
+              'longer leaving the pre-finish its stock' % (base[-1], tl[-1]))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

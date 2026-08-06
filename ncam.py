@@ -2690,6 +2690,7 @@ class Preferences(object):
             self.default += ("#<_pl_nose_ox>             = 0.0\n")
             self.default += ("#<_pl_rgh_oz>              = 0.0\n")
             self.default += ("#<_pl_rgh_ox>              = 0.0\n")
+            self.default += ("#<_pl_skip_thin>           = 0.0\n")
 
         if self.cat_name == 'mill' :
             self.default += ("#<_probe_func>              = 38." + self.ngc_probe_func + "\n")
