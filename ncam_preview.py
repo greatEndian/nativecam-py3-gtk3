@@ -410,10 +410,13 @@ FLAT_HEADER = """(NativeCAM - the generated program as plain G-code)
 (Produced by running the real interpreter over ncam.ngc and writing down what)
 (it actually did, so every subroutine, loop and expression is already gone and)
 (every number here is a number the machine moves to)
-(COORDINATES ARE ABSOLUTE - work offsets are already applied, and so is cutter)
-(compensation: these are TOOL CONTROL POINTS, not the programmed contour)
+(COORDINATES ARE ABSOLUTE, in the SAME coordinate system the original program)
+(used - work offsets are NOT baked in. Verified: setting G54 Z to 12.0 in the)
+(var file leaves this output byte-identical, so it runs under the same G54 the)
+(program was written for, not under machine coordinates.)
+(Cutter compensation IS already applied: these are TOOL CONTROL POINTS, not)
+(the programmed contour, so do not run this with G41/G42 active as well.)
 (X is a DIAMETER, as everywhere else in NativeCAM; arc I offsets are radius)
-(This is a listing to read, not a program to load)
 """
 
 

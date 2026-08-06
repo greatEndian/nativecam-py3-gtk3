@@ -137,6 +137,10 @@ CONFIG_FILE = 'ncam.conf'
 TOOLBAR_FNAME = "toolbar.conf"
 TOOLBAR_CUSTOM_FNAME = "toolbar-custom.conf"
 GENERATED_FILE = "ncam.ngc"
+# the same program after the interpreter has had it - see
+# ncam_preview.flatten_canon. Written only when the operator asks for
+# it from the Send dropdown, never as part of a normal Regenerate.
+FLAT_FILE = "ncam-flat.ngc"
 
 CURRENT_PROJECT = ''
 

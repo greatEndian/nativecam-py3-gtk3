@@ -15,7 +15,7 @@ from ncam import (
     tv_select, copymode, linuxcnc, _tk_axis_remote_open,
     CATALOGS_DIR, CFG_DIR, CUSTOM_DIR, DEFAULTS_DIR, EXAMPLES_DIR, GRAPHICS_DIR,
     LIB_DIR, PROJECTS_DIR, VALID_CATALOGS, SUPPORTED_DATA_TYPES,
-    APP_COMMENTS, APP_LICENCE, DONATE_URL, GENERATED_FILE, HOME_PAGE,
+    APP_COMMENTS, APP_LICENCE, DONATE_URL, FLAT_FILE, GENERATED_FILE, HOME_PAGE,
     ConfigParser, CONFIG_FILE, tip_comp_inputs, tool_wedge,
 )
 
@@ -172,6 +172,43 @@ class NCamAppActionsMixin:
         self.send_to_linuxcnc(fname)
         self._restore_focus()
 
+    def action_send_flat(self, *arg) :
+        """Load the FLAT program - the interpreter's own output - into LinuxCNC.
+
+        ncam.ngc is O-word calls and expressions; this is what the interpreter
+        made of it, with every subroutine, loop and expression already gone.
+        Useful when a control cannot handle O-words, and for reading back what
+        actually ran.
+
+        Two things are true of it and both are stated in its own header:
+        coordinates are in the SAME coordinate system the original used - work
+        offsets are not baked in - and cutter compensation is already applied,
+        so it must not be run with G41/G42 active as well.
+
+        Taken from the preview's parsed toolpath rather than re-running the
+        interpreter here: the pane already has it, and a second rs274 run on
+        the GTK thread would freeze the panel for a couple of seconds inside
+        AXIS, on a machine that may be cutting.
+        """
+        pane = getattr(self, 'preview_pane', None)
+        flat = getattr(getattr(pane, 'toolpath', None), 'flat', '') if pane else ''
+        if not flat.strip() :
+            mess_dlg(_('There is no flat program yet.\n\nPress Regenerate '
+                       'first - the flat listing is produced by the preview '
+                       'when it parses %(filename)s.')
+                     % {'filename': GENERATED_FILE})
+            return
+        fname = os.path.join(ncam.NGC_DIR, FLAT_FILE)
+        try :
+            with open(fname, 'w') as f :
+                f.write(flat)
+        except Exception as e :
+            mess_dlg(_('Could not write %(filename)s:\n\n%(err)s')
+                     % {'filename': FLAT_FILE, 'err': str(e)})
+            return
+        self.send_to_linuxcnc(fname)
+        self._restore_focus()
+
     def refresh_preview(self, fname = None) :
         """Rebuild NativeCAM's own toolpath preview, when there is one.
 
@@ -226,6 +263,20 @@ class NCamAppActionsMixin:
             menu.append(mi)
             items[regen] = mi
         self.send_mode_groups.append(items)
+
+        # the FLAT program is a separate action, not a third mode: the radios
+        # above choose what happens to ncam.ngc, this sends a different file
+        menu.append(gtk.SeparatorMenuItem())
+        mi = gtk.MenuItem.new_with_label(_('Send flat G-code (%(filename)s)')
+                                         % {'filename': FLAT_FILE})
+        mi.set_tooltip_text(
+            _('Load the interpreter output instead of the O-word program - '
+              'every subroutine and expression already expanded. Same '
+              'coordinate system as the original; cutter compensation is '
+              'already applied, so do not run it with G41/G42 active.'))
+        mi.connect('activate', self.action_send_flat)
+        menu.append(mi)
+
         menu.show_all()
         return menu
 
