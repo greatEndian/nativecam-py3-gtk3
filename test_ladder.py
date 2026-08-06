@@ -183,11 +183,20 @@ def main():
             # the lead-in 0.5039 mm into the part, which breaks the rule that
             # a lead may not end in material. Two different bounds because two
             # different things constrain them, and the test says so.
+            # THE TIP, at Begin Z. greatEndian: "when we are at 0.0 Z and X
+            # at driven diameter we will be at cutting level already .. we are
+            # reaching roughing diameter in the stock". The lead-in descends to
+            # the level radius at the tip's own start, so it is the tip that
+            # has to be on the reference - bound the CUT there instead and the
+            # tool arrives at diameter one orientation term INSIDE the stock,
+            # which is the complaint. That version was written, measured and
+            # replaced; this assertion is what tells the two apart.
             rc = starts.get('roughing')
             if rc is not None:
-                check('mode %d: roughing CUTS from Begin Z %.4f'
-                      % (mode, begin_z), abs(rc + oz - begin_z) < 1e-3,
-                      'cut starts at %+.4f' % (rc + oz))
+                check('mode %d: roughing is at diameter by Begin Z %.4f'
+                      % (mode, begin_z), abs(rc - begin_z) < 1e-3,
+                      'reaches the cutting radius at %+.4f, which is %.4f mm '
+                      'inside the stock' % (rc, begin_z - rc))
             ahead = {k: v for k, v in starts.items()
                      if k != 'roughing' and v > begin_z + 1e-3}
             check('mode %d: no contour pass starts in front of Begin Z'

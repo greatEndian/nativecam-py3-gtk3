@@ -355,13 +355,23 @@ o<lathe_level_pass> sub
 	(record 1 of the array: that is the first ITEM's endpoint, Z+1.0 here.)
 	(Front-to-back only: with z_dir -1 the first segment is at the far end of)
 	(the travel and this bound does not describe it. Untested there.)
-	(the CUT must begin at Begin Z, and the tip leads the cutting edge by)
-	(the orientation term - so the tip's own bound is Begin Z minus it.)
-	(Clamping the tip to Begin Z itself put the nose 0.4 mm PAST the)
-	(reference on testing_15_2 while testing_15_4, which needs no clamp,)
-	(had it exactly on. The two only agree when the bound is the cut.)
-	#<_org_z> = [#<_pl_begin_z> - #<_pl_rgh_oz>]
-	o<org_cl> if [[#<z_dir> GT 0] AND [#<z_start> GT #<_org_z>]]
+	(THE TIP is what is bounded, not the cut. greatEndian: "when we are at)
+	(0.0 Z and X at driven diameter we will be at cutting level already ..)
+	(it is different now, we are reaching roughing diameter in the stock".)
+	(The lead-in descends to the level radius at the tip's own start, so a)
+	(tip bounded at Begin Z - nose arrives at the cutting diameter 0.4 mm)
+	(INSIDE the stock, which is the thing being complained about. Bounding)
+	(the cut instead was tried and is exactly wrong for that.)
+	#<_org_z> = #<_pl_begin_z>
+	(AN EQUALITY, not a one-sided bound. The nose shift moves the start)
+	(0.4 mm PAST the reference and the old test - only "never in front)
+	(of it" - let that through, so the tool still arrived at the cutting)
+	(diameter inside the stock. When this window begins at or in front)
+	(of Begin Z it is the FIRST interval, and the pass starts exactly)
+	(there. A continuation interval has w_from deep in the part and is)
+	(left alone - its start is the far side of an obstruction, not the)
+	(reference.)
+	o<org_cl> if [[#<z_dir> GT 0] AND [#<w_from> GE [#<_org_z> - 0.000001]]]
 		#<z_start> = #<_org_z>
 	o<org_cl> endif
 	o<ent> endif

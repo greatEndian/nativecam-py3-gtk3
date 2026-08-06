@@ -231,13 +231,23 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   that is thin everywhere: **19.132 mm -> 0.393 mm**, while the level removing
   0.524 keeps its full 19.143.
 
-- [x] **Roughing now CUTS from Begin Z, not 0.4 past it** — same day. The tip
-  leads the cutting edge by the orientation term, so the bound belongs on the
-  edge: `Begin Z - _pl_rgh_oz`. **The contour passes keep the tip bound**
-  instead - pulling them back far enough to put their cut on the reference
-  drives the lead-in **0.5039 mm into the part**, which breaks the standing
-  lead rule. Two bounds because two different things constrain them, and
-  `test_ladder` asserts each separately.
+- [x] **Roughing is at the cutting diameter BY Begin Z** — 2026-08-06.
+  greatEndian: *"when we are at 0.0 Z and X at driven diameter we will be at
+  cutting level already .. we are reaching roughing diameter in the stock"*.
+
+  The lead-in descends to the level radius at the tip's own start, so **the tip
+  is what must sit on the reference**. Two wrong versions before this one:
+  bounding it "never in front of Begin Z" let the nose shift push the start to
+  Z-0.4 - 0.4 mm inside the stock, the actual complaint - and bounding the CUT
+  there was worse, arriving at diameter at -0.4 as well. It is an EQUALITY on
+  the first interval now: when the window begins at or in front of Begin Z the
+  pass starts exactly there. Continuation intervals are untouched.
+
+  `testing_15_2` and `testing_15_4` both reach r29.8894 at **Z0.0000**.
+  Negative control: +1.0000 / +0.6000 / +0.6000.
+
+  **The contour passes keep the tip bound at Begin Z** - pulling them further
+  drives the lead-in 0.5039 mm into the part.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
