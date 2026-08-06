@@ -199,6 +199,26 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   start at different radii and their levels miss each other by 0.006 mm.
   `test_ladder.py` covers both anchorings; fails without the fix on both.
 
+- [ ] **Pre-finish pass OFF puts the behind-the-boss cuts at the FRONT of it**
+  — greatEndian 2026-08-06, `photo/spaceBehindIssue_8.png`. Reproduced:
+
+  ```
+  pre-finish ON    19 levels  deepest 21.0160  behind-boss starts Z-67.252 -65.052 -62.851 -60.651
+  pre-finish OFF   20 levels  deepest 20.5080  behind-boss starts Z-20.610 -20.831 -21.107 -21.382
+  ```
+
+  With it off the cuts meant for behind the boss begin at Z-20.6, the boss's
+  own front, instead of Z-60…-67. The deeper floor (21.0160 -> 20.5080) is
+  correct and expected - `#3156 = param_pf_off * param_pf_on` zeroes the
+  allowance - so the floor is not the fault; the section/window geometry is.
+
+  **greatEndian's proposal**: build everything as if the pre-finish pass
+  existed, then skip the pass itself in the code and leave it out of the
+  preview. Worth noting when implementing: the WINDOWS should be built that
+  way, but the roughing FLOOR must still drop to the finish allowance, or
+  0.254 mm is left with nothing to remove it. Those are two different uses of
+  `pf_off` and only one of them should be faked.
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 
