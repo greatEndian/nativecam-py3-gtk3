@@ -158,6 +158,13 @@ o<poly_lathe_mill> sub
                 #<cut_step> = 0
                 #<rough_passes> = 1
                 #<first_step> = 0
+        #<p1_step> = 0
+        #<p1_first> = 0
+        #<p2_step> = 0
+        #<p2_first> = 0
+        #<p1_n> = 1
+        #<p2_n> = 1
+        #<p2_sgn> = 1
         o1001 else
                 #<rough_passes> = FUP[ABS[#<step_target> - #<start_radius>] / #<_rough_cut>]
                 #<cut_step> = [[#<step_target> - #<start_radius>] / #<rough_passes>]
@@ -363,6 +370,53 @@ o<poly_lathe_mill> sub
                 #<sect_top_r> = #<step_target>
         o<sec_on> endif
 
+        (TWO LADDERS, because the two phases are cutting different things.)
+        (greatEndian: "there have to be two different ladders.. one from stock)
+        (and second for Final Contour".)
+        (  - PHASE 1 sweeps the stock down to the section ceiling. Nothing in)
+        (    that range is anywhere near the finished surface, so it is spaced)
+        (    EVENLY from the stock and ends exactly on the ceiling.)
+        (  - PHASE 2 goes ceiling to floor, which is where the part is, so it)
+        (    takes whole depths of cut measured from the FLOOR outward and)
+        (    puts its remainder on its own first pass at the ceiling.)
+        (One ladder shared by both left phase 2 restarting at the ceiling with)
+        (a full step already spent, so it could not land on the floor: 17 gaps)
+        (of 0.5080 and then 0.2374, a level grazing the finished surface. And)
+        (a ladder PER WINDOW is worse still - the seven section windows start)
+        (at different radii, so their levels miss each other by 0.006. Two)
+        (ladders, computed once, phase 2 shared by every section window.)
+        #<p1_step>  = #<cut_step>
+        #<p1_first> = #<first_step>
+        #<p2_step>  = #<cut_step>
+        #<p2_first> = #<first_step>
+        o<lad2> if [#<_pl_sectioning> GT 0]
+            o<lad_p1> if [ABS[#<sect_top_r> - #<start_radius>] GT 0.000001]
+                #<p1_n> = FUP[ABS[#<sect_top_r> - #<start_radius>] / #<_rough_cut>]
+                o<p1_n0> if [#<p1_n> LT 1]
+                    #<p1_n> = 1
+                o<p1_n0> endif
+                #<p1_step>  = [[#<sect_top_r> - #<start_radius>] / #<p1_n>]
+                #<p1_first> = #<p1_step>
+            o<lad_p1> endif
+            o<lad_p2> if [ABS[#<step_target> - #<sect_top_r>] GT 0.000001]
+                #<p2_sgn> = 1
+                o<p2_sg> if [#<step_target> LT #<sect_top_r>]
+                    #<p2_sgn> = -1
+                o<p2_sg> endif
+                #<p2_n> = FUP[ABS[#<step_target> - #<sect_top_r>] / #<_rough_cut>]
+                o<p2_n0> if [#<p2_n> LT 1]
+                    #<p2_n> = 1
+                o<p2_n0> endif
+                o<p2_an> if [#<_pl_pass_from> GT 0]
+                    #<p2_step>  = [#<p2_sgn> * #<_rough_cut>]
+                    #<p2_first> = [[#<step_target> - #<sect_top_r>] - #<p2_step> * [#<p2_n> - 1]]
+                o<p2_an> else
+                    #<p2_step>  = [[#<step_target> - #<sect_top_r>] / #<p2_n>]
+                    #<p2_first> = #<p2_step>
+                o<p2_an> endif
+            o<lad_p2> endif
+        o<lad2> endif
+
         #<w_from> = #<e_z>
         (Artificial - _pl_sect_mode 1 - has no violet/ceiling phase at all -)
         (every window gets the full roughing depth, sequentially, so w_idx)
@@ -404,7 +458,18 @@ o<poly_lathe_mill> sub
                         #<w_to>   = #<l_z>
                         #<lvl_start> = #<start_radius>
                         #<lvl_floor> = #<sect_top_r>
+                        #<cut_step>  = #<p1_step>
+                        #<first_step> = #<p1_first>
                 o<sec_pick> elseif [#<w_idx> LT #<w_total>]
+                        (phase 2's own ladder, set BEFORE lvl_start below -)
+                        (the p2_front branch reads cut_step to start one level)
+                        (deeper. Re-set for EVERY section window on purpose:)
+                        (each runs the full ceiling-to-floor ladder in its own)
+                        (Z span, so each needs the remainder back on its own)
+                        (first pass rather than inheriting a spent first_step)
+                        (from whichever window happened to run before it)
+                        #<cut_step>  = #<p2_step>
+                        #<first_step> = #<p2_first>
                         (Sectioning on: one window at a time, either)
                         (Natural phase 2 "blue, green, ..." - remaining)
                         (depth below the highest edge, weakest/smallest-)
@@ -454,7 +519,19 @@ o<poly_lathe_mill> sub
                                         (at the profile start left the others redoing the)
                                         (radius, which showed up as a second lead-out)
                                         (stacked on the first inside a merge radius)
-                                        #<lvl_start> = [#<sect_top_r> + #<cut_step>]
+                                        (one level deeper - but the FIRST)
+                                        (level of phase 2's own ladder, not)
+                                        (one bare cut_step down. With the)
+                                        (remainder living on that first step,)
+                                        (ceiling + cut_step lands between grid)
+                                        (levels and the window then cuts a)
+                                        (radius no other window shares:)
+                                        (29.3814 against a grid of 21.0160 +)
+                                        (k*0.5080. Starting on the grid and)
+                                        (spending the remainder here means)
+                                        (every later step is a whole one)
+                                        #<lvl_start> = [#<sect_top_r> + #<first_step>]
+                                        #<first_step> = #<cut_step>
                                 o<p2_front> else
                                         (every other section - phase 1 never)
                                         (touched this radius here at all, so it)

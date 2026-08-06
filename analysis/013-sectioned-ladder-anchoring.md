@@ -124,3 +124,31 @@ stock where the option promises it.
 Acceptance: Final contour + Sectioning gives every gap 0.5080 with the
 remainder at the stock; Stock anchoring keeps even gaps; `test_rough_comp`,
 `test_leads` and `check_tangent` unchanged.
+
+### Fixed — two ladders, 2026-08-06
+
+greatEndian: *"there have to be two different ladders.. one from stock and
+second for Final Contour"*. That is the design, and it is what the failed
+per-window attempt was groping at: the split is by PHASE, not by window.
+
+- **Phase 1**, stock → section ceiling: nothing in that range is near the
+  finished surface, so it is spaced evenly and ends exactly on the ceiling.
+- **Phase 2**, ceiling → floor: whole depths of cut from the floor outward,
+  remainder on its own first pass. Computed once and shared by all seven
+  section windows, so their levels line up.
+
+One further correction was needed: the `p2_front` branch started a window at
+`ceiling + cut_step`, which is between grid levels once the remainder lives on
+the first step. It now starts at `ceiling + first_step` - the first grid level -
+and spends the remainder there, so every later step is a whole one.
+
+```
+                 before                              after
+Final contour    17 x 0.5080 then 0.2374 AT THE      0.2374 at the top, then
+                 CONTOUR                             17 x 0.5080, deepest 21.0160
+Stock            18 x 0.4862 then 0.3756             0.5071 throughout
+```
+
+`test_ladder.py` asserts both promises and fails without the fix on both.
+`test_rough_comp`, `test_leads`, `test_sections`, `test_rough_overlay`,
+`test_lathe_validation` pass; `check_tangent` min |dot| 1.00000.
