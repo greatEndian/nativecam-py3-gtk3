@@ -182,6 +182,19 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   codebase and then walked into anyway. **Seventh baseline-class metric error
   of the session and the first to be committed as a finding.**
 
+- [ ] **Sectioning defeats "Space passes from = Final contour"** —
+  greatEndian 2026-08-06, `photo/spacingFromIssue_0.png`, `analysis/013`
+  addendum. With Sectioning ON the remainder lands **at the contour**: 17 gaps
+  of 0.5080 then **0.2374**, a level grazing the finished surface - the exact
+  thing that option exists to prevent. Sectioning OFF it is correct (every gap
+  0.5080, remainder 0.3480 at the stock).
+
+  **One attempt reverted**: giving each window its own ladder produced
+  near-duplicate levels 0.006 apart, because the eight windows must SHARE one
+  ladder. **The fix that follows**: keep the single floor-anchored ladder and
+  snap `sect_top_r` to the nearest ladder level at or above the section
+  ceiling, so phase 2 starts on the grid.
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 

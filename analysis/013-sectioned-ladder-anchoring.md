@@ -67,3 +67,60 @@ anchoring puts 0.3480 on the first cut and lands the last level exactly on
 `(DEBUG, ...)` lines survive into the canon as `MESSAGE(...)` and are the
 cheap way to settle any "which branch ran, with what numbers" question in this
 codebase. Nothing else in this session answered it.
+
+---
+
+## Addendum, 2026-08-06 — the sliver defeats "Space passes from = Final contour"
+
+greatEndian, `photo/spacingFromIssue_0.png`: *"one pass offsetted right then
+second one from contour is very near to first and other ones is counting from
+this second one .. It has to behave differently as offset all passes from first
+one nearest to contour"*.
+
+The description is exact. Measured on testing_15_2 with `param_pass_from = 1`
+(Final contour) and `param_sectioning = 1`, both read from the project file:
+
+```
+Sectioning ON    19 levels   stock 30.0000 -> 29.8894  gap 0.1106
+                 29.8894 ... 21.2534        17 gaps of 0.5080
+                 21.2534 -> 21.0160         gap 0.2374   <- the sliver
+Sectioning OFF   18 levels   29.6520 ... 21.0160, every gap 0.5080,
+                 remainder 0.3480 at the stock
+```
+
+**This is not the by-design behaviour recorded above.** That entry covers the
+ladder being anchored on the section ceiling and sitting 0.2374 further out —
+accepted. What is NOT acceptable is the consequence at the other end: the
+remainder lands **at the contour**, leaving a level grazing the finished
+surface for a sliver, which is the precise thing the Final-contour option
+exists to prevent and says so in its own comment. Sectioning off, the same
+option behaves exactly as greatEndian asks.
+
+### Attempted fix, reverted
+
+Giving **each window its own ladder**, derived from its own start and floor.
+It is worse, and the measurement says so immediately:
+
+```
+Final contour  20 levels  gaps 0.2374 0.2706 0.2374 0.5080 ...
+Stock          28 levels  gaps 0.5009 0.0062 0.5013 0.0058 ...
+```
+
+Near-duplicate levels 0.006 apart. **The windows must SHARE one ladder** -
+there are eight of them (phase 1 plus seven sections) with different starts,
+so per-window derivation makes their levels miss each other. Reverted; the
+tree is back to 19 levels with the sliver.
+
+### The fix that follows from that failure
+
+One global ladder, anchored on the floor as it already is, and **phase 2 must
+start ON one of its levels**. Today it starts at `sect_top_r` (or
+`sect_top_r + cut_step`), and the section ceiling is not a ladder level -
+29.8894 against a grid of 21.0160 + k*0.508. Snapping `sect_top_r` to the
+nearest ladder level at or above the ceiling puts phase 2 on the grid, and the
+last level then lands exactly on the floor with the remainder back at the
+stock where the option promises it.
+
+Acceptance: Final contour + Sectioning gives every gap 0.5080 with the
+remainder at the stock; Stock anchoring keeps even gaps; `test_rough_comp`,
+`test_leads` and `check_tangent` unchanged.
