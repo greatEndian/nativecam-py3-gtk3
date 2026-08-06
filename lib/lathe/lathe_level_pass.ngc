@@ -43,9 +43,6 @@ o<lathe_level_pass> sub
 	#<e_asl>     = 0
 	#<e_reach>   = 999999
 	#<_org_z>    = 0
-	#<t_eff>     = 0
-	#<t_best>    = 0
-	#<t_have>    = 0
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
 	#<e_have>    = 0
@@ -413,49 +410,6 @@ o<lathe_level_pass> sub
 		o<s_ok> endif
 	o<stp> endif
 
-	(AND TRUNCATE IT WHERE IT STOPS BEING A CUT. greatEndian, testing_15_4:)
-	(the deepest level does its work over the 1 mm front chamfer and then rubs)
-	(0.0160 mm for 17.5 mm along the cylinder, sitting on top of the pass that)
-	(follows it - "passing must not be repeated in the same spot", and that is)
-	(where chatter starts. The last roughing pass has to be as short as the)
-	(chamfer is.)
-	(Same threshold as the level skip, and the same meaning: material thinner)
-	(than _pl_skip_thin is not worth a pass. Here it is applied per Z rather)
-	(than per level - the crossing of this level with the stop contour raised)
-	(by the threshold, which is the same as the crossing of level - threshold)
-	(with the contour itself, so the existing table serves.)
-	(Separate from the o<stp> block above because that one may only EXTEND the)
-	(cut and never pull it back; this one only ever pulls it back.)
-	(Off at 0, so nothing changes unless the operator asks for it.)
-	o<trn> if [[#<_pl_stop_n> GT 0] AND [#<found>] AND [#<_pl_skip_thin> GT 0.000001]]
-		#<t_eff>  = [#<l_eff> - #<_pl_skip_thin>]
-		#<t_i>    = 0
-		#<t_best> = 0
-		#<t_have> = 0
-		#<t_pz> = #[#<_pl_stop_base>]
-		#<t_px> = #[#<_pl_stop_base> + 1]
-		o<t_w> while [#<t_i> LT [#<_pl_stop_n> - 1]]
-			#<t_i> = [#<t_i> + 1]
-			#<t_cz> = #[#<_pl_stop_base> + #<t_i> * 2]
-			#<t_cx> = #[#<_pl_stop_base> + #<t_i> * 2 + 1]
-			o<t_cross> if [[[#<t_px> - #<t_eff>] * [#<t_cx> - #<t_eff>]] LT 0]
-				#<t_z> = [#<t_pz> + [#<t_cz> - #<t_pz>] * [#<t_eff> - #<t_px>] / [#<t_cx> - #<t_px>]]
-				(strictly past the start, strictly before the end, and the)
-				(NEAREST such - the first place the cut goes thin)
-				o<t_fwd> if [[[#<z_dir> * [#<t_z> - #<z_start>]] LT -0.0001] AND [[#<z_dir> * [#<t_z> - #<z_end>]] GT 0.0001]]
-					o<t_near> if [[#<t_have> EQ 0] OR [[#<z_dir> * [#<t_z> - #<t_best>]] GT 0]]
-						#<t_best> = #<t_z>
-						#<t_have> = 1
-					o<t_near> endif
-				o<t_fwd> endif
-			o<t_cross> endif
-			#<t_pz> = #<t_cz>
-			#<t_px> = #<t_cx>
-		o<t_w> endwhile
-		o<t_ok> if [#<t_have>]
-			#<z_end> = #<t_best>
-		o<t_ok> endif
-	o<trn> endif
 
 	(THE PROFILE-ANGLE APPROACH IS ARMED HERE, AFTER THE STOP, not up in the)
 	(entry block where its inputs are found. Its cap - never longer than the)

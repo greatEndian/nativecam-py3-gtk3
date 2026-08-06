@@ -223,13 +223,26 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   nothing for 29 calls. **Known**: compensated overcut 0.0394 -> 0.0503 at
   Z+0.3, which is air (stock only at Z <= 0). Front-to-back only.
 
-- [x] **Chatter: the last roughing pass rubbed the whole part — FIXED**,
-  2026-08-06, `analysis/016` appendix. testing_15_4, front chamfer: the deepest
-  level does its work over the 1 mm chamfer then rubs **0.0160 mm for 17.5 mm**
-  on top of the pre-finish pass. `Skip thin roughing passes` now truncates a
-  level where the material goes below the threshold as well as skipping one
-  that is thin everywhere: **19.132 mm -> 0.393 mm**, while the level removing
-  0.524 keeps its full 19.143.
+- [ ] **REOPENED: the last roughing pass runs the full part next to the
+  pre-finish** — greatEndian, testing_15_4. My truncation fix was REVERTED:
+  it damaged 10 legitimate cuts behind the boss, cutting them to 1.299 mm
+  (`photo/spaceBehindIssue_9.png`).
+
+  **The premise was wrong.** I measured "what a level removes" as
+  `level - stop_contour`, which is what is left BELOW the level, not what it
+  takes. What a level removes is bounded above by the PREVIOUS level, so on the
+  far taper those cuts were taking a full 0.508 step and were truncated anyway.
+
+  What the numbers actually say about the original complaint: the deepest level
+  sits at r20.5240 with the pre-finish contour at r20.5080 - **0.0160 apart**.
+  So the level is not rubbing; the PRE-FINISH pass is, because roughing already
+  took the metal. The ladder's floor is the thing in the wrong place, not the
+  level's length. Any fix belongs there.
+
+  Bisect note: the first attempt to find the regressing commit was invalid.
+  `lib/*.ngc` are read at rs274 RUNTIME, so checking out an old lib and then
+  parsing a file generated separately measures nothing - all six commits gave
+  byte-identical output. The parse has to happen with that lib on disk.
 
 - [x] **Every pass starts at Begin Z — roughing, pre-finish and finish** —
   2026-08-06. greatEndian: *"we are reaching roughing diameter in the stock"*,
