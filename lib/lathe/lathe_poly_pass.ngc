@@ -150,6 +150,13 @@ o<lathe_poly_pass> sub
 	(CAM and for any pass carrying no allowance, so a clamp inside it reached)
 	(only Off's pre-finish and left the finish pass and both In CAM passes)
 	(starting in front of the reference.)
+	(THE TIP, not the cut, is what is bounded here - and deliberately not the)
+	(same rule the roughing levels take. Pulling the entry back to)
+	(Begin Z - nose so the CUT starts on the reference drives the lead-in into)
+	(the part: measured 0.5039 mm on both contour passes, in Native and In CAM,)
+	(which breaks the standing rule that a lead may not end in the material.)
+	(Roughing can be bounded on its cut because it enters above the material;)
+	(a contour pass cannot, because its lead-in has to get there through air.)
 	o<org_cl> if [[#<z_dir> GT 0] AND [#<comp_ez> GT #<_pl_begin_z>]]
 		#<comp_ez> = #<_pl_begin_z>
 	o<org_cl> endif
@@ -329,6 +336,7 @@ o<lathe_poly_pass> sub
 		(offset in its own table and has comp_r 0, was right all along; this makes)
 		(Native agree with it instead of the other way round)
 		#<_ex_tgt> = 0
+		#<_org_z> = 0
 		#<ex_oz> = 0
 		#<ex_ox> = 0
 		o<ex_or> if [[#<_tip_comp_l> GT 0] AND [#<comp_r> GT 0.000001]]

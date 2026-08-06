@@ -167,9 +167,31 @@ def main():
                       and tag in m.subs and m.kind == 'feed']
                 if fd:
                     starts[name] = fd[0].b[2]
-            ahead = {k: v for k, v in starts.items() if v > begin_z + 1e-3}
-            check('mode %d: no pass starts in front of Begin Z %.4f'
-                  % (mode, begin_z), not ahead,
+            # MEASURED ON THE CUT, NOT THE TIP. The tip leads the cutting
+            # edge by the orientation term, so a tip at Begin Z puts the cut
+            # one term PAST it - which is what an earlier version of this
+            # clamp did, and it disagreed with a project that needed no clamp
+            # at all. The bound belongs on the edge that removes metal.
+            oz = 0.0
+            m = re.search(r'#<_pl_rgh_oz> = ([\d.]+)', open(out).read())
+            if m:
+                oz = float(m.group(1))
+            # ROUGHING is bounded on the cut - it enters above the material,
+            # so its tip can sit one orientation term in front of the
+            # reference. The CONTOUR passes are bounded on the TIP: pulling
+            # them back far enough to put their cut on the reference drives
+            # the lead-in 0.5039 mm into the part, which breaks the rule that
+            # a lead may not end in material. Two different bounds because two
+            # different things constrain them, and the test says so.
+            rc = starts.get('roughing')
+            if rc is not None:
+                check('mode %d: roughing CUTS from Begin Z %.4f'
+                      % (mode, begin_z), abs(rc + oz - begin_z) < 1e-3,
+                      'cut starts at %+.4f' % (rc + oz))
+            ahead = {k: v for k, v in starts.items()
+                     if k != 'roughing' and v > begin_z + 1e-3}
+            check('mode %d: no contour pass starts in front of Begin Z'
+                  % mode, not ahead,
                   ', '.join('%s at %+.4f' % (k, v) for k, v in ahead.items()))
 
         # --- Skip thin roughing passes -------------------------------------

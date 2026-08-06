@@ -223,6 +223,22 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   nothing for 29 calls. **Known**: compensated overcut 0.0394 -> 0.0503 at
   Z+0.3, which is air (stock only at Z <= 0). Front-to-back only.
 
+- [x] **Chatter: the last roughing pass rubbed the whole part — FIXED**,
+  2026-08-06, `analysis/016` appendix. testing_15_4, front chamfer: the deepest
+  level does its work over the 1 mm chamfer then rubs **0.0160 mm for 17.5 mm**
+  on top of the pre-finish pass. `Skip thin roughing passes` now truncates a
+  level where the material goes below the threshold as well as skipping one
+  that is thin everywhere: **19.132 mm -> 0.393 mm**, while the level removing
+  0.524 keeps its full 19.143.
+
+- [x] **Roughing now CUTS from Begin Z, not 0.4 past it** — same day. The tip
+  leads the cutting edge by the orientation term, so the bound belongs on the
+  edge: `Begin Z - _pl_rgh_oz`. **The contour passes keep the tip bound**
+  instead - pulling them back far enough to put their cut on the reference
+  drives the lead-in **0.5039 mm into the part**, which breaks the standing
+  lead rule. Two bounds because two different things constrain them, and
+  `test_ladder` asserts each separately.
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 
