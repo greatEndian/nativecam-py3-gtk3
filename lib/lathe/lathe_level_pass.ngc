@@ -45,6 +45,7 @@ o<lathe_level_pass> sub
 	#<_org_z>    = 0
 	#<s_reach>   = 999999
 	#<s_slp>     = 0
+	#<s_zc>      = 0
 	#<tg_d>      = 0
 	#<tg_z>      = 0
 	#<tg_x>      = 0
@@ -434,9 +435,21 @@ o<lathe_level_pass> sub
 					#<s_reach> = #<s_slp>
 				o<s_rch2> endif
 			o<s_rch> endif
-			o<s_fwd> if [[[#<z_dir> * [#<s_z> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_z> - #<w_to>]] GT -0.0001] AND [ABS[#<s_z> - #<z_end>] LT #<s_reach>]]
-					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_z> - #<s_best>]] GT 0]]
-						#<s_best> = #<s_z>
+			(A CROSSING BEYOND THE REACH IS CLAMPED, NOT REJECTED. Rejecting it)
+			(stops the level on the floor allowance, and over a chamfer that)
+			(leaves a 0.447 mm stub where the feature is 1 mm long. greatEndian)
+			(chose to let the pass run past the floor stop and cut nearer the)
+			(contour than fin_off + prefin_off allows, so the reach becomes the)
+			(LENGTH of the extension rather than a test on it. Levels whose)
+			(crossing already lies inside the reach - every one on both test)
+			(projects, 0.90 to 1.0034 mm - are untouched.)
+			#<s_zc> = #<s_z>
+			o<s_clamp> if [ABS[#<s_zc> - #<z_end>] GT #<s_reach>]
+				#<s_zc> = [#<z_end> - [#<z_dir> * #<s_reach>]]
+			o<s_clamp> endif
+			o<s_fwd> if [[[#<z_dir> * [#<s_zc> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_zc> - #<w_to>]] GT -0.0001]]
+					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_zc> - #<s_best>]] GT 0]]
+						#<s_best> = #<s_zc>
 						#<s_have> = 1
 					o<s_near> endif
 				o<s_fwd> endif

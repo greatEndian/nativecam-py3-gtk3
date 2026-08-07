@@ -289,3 +289,44 @@ blends from `_end_x`, where the tool actually is.
 
 Coverage: `test_ladder` asserts every level finishes on the contour. Negative
 control: `r20.5240 finishes 0.4190 mm off it, hanging in air`.
+
+---
+
+## Addendum 5 — the chamfer pass is extended, not stopped
+
+greatEndian, after four wrong readings on my part, chose from three concrete
+options: **let the pass run past the floor stop and cut nearer the contour than
+`fin_off + prefin_off` allows**, rather than following the chamfer diagonally
+or dropping the descent.
+
+That is one change to the stop extension: a crossing beyond the reach is now
+**clamped to the reach** instead of rejected. The reach becomes the LENGTH of
+the extension rather than a test on it.
+
+```
+testing_15_4  chamfer level  Z+0.0000 -> -1.9714   1.971 mm   was 0.447
+testing_15_2  deepest level  Z+0.0000 -> -19.5534  19.553 mm  unchanged
+              29 cuts, longest 24.143             unchanged
+```
+
+Every level whose crossing already lies inside the reach - all of them on both
+projects, 0.90 to 1.0034 mm - is untouched, so this only affects a level that
+would otherwise stop on the floor allowance with a long way still to go.
+
+### What the four wrong readings were
+
+Worth listing, because the pattern is the lesson and not the individual errors:
+
+1. **Truncate the level** where it stops removing material - built on
+   `level - stop_contour`, which is what is left BELOW the level rather than
+   what it takes. Cut 10 honest passes to 1.299 mm. Reverted.
+2. **Cap the leads** to the cut they serve - greatEndian: *"lead in/out have to
+   be 1mm as is from property taken value, your change is right opposite"*.
+   Reverted.
+3. **Finish on the contour** by descending onto it - correct in itself and kept,
+   but it was not what "the last pass is too short" meant.
+4. **Read "tangent" as touching** rather than as running parallel.
+
+The fifth attempt was not a guess: three options were put with their geometry
+written out, and greatEndian picked one. That should have happened after the
+second miss, not the fourth.
