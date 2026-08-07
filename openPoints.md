@@ -261,6 +261,18 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   controls: roughing +1.0000/+0.6000/+0.6000, contour the same.
   `test_leads` still passes - the lead-in stays out of the material.
 
+- [ ] **One ladder floor for the whole part, taken from its deepest point** —
+  `analysis/019` addendum 2, 2026-08-07. On testing_15_4 `anch_floor` is 20.016,
+  from Final Diameter 38 (r19, the chamfer tip), so `lvl_d` is **1.016** rather
+  than the 0.762 the parameters suggest. Consequences at both ends: the chamfer
+  region gets levels that can only graze it (a 0.088 mm cut at r20.5240, where
+  0.8056 mm of material stands above the pre-finish contour), and the cylinder
+  gets a level 0.016 mm from its own pre-finish contour.
+
+  A floor that follows the profile - per region rather than per part - fixes
+  both. Larger than anything attempted so far; the workarounds tried and
+  reverted were the level truncation and the lead cap.
+
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
 

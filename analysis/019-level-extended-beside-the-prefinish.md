@@ -134,3 +134,53 @@ pre-finish, or a stub. Saying so was worth more than restoring one of them.
 
 Coverage: `test_ladder` asserts no lead exceeds the cut it serves. Negative
 control: `r20.5240 has a 0.088 mm cut with a 0.125 mm lead`.
+
+---
+
+## Addendum 2 — the lead cap was the wrong call, reverted
+
+greatEndian: *"I am sure that lead in/out have to be 1mm as is from property
+taken value, then your yesterday last change is right opposite what I thought"*.
+
+Reverted. A lead takes its property value; it is not scaled to the cut.
+
+### And the leads were not 1 mm for a different reason
+
+With the cap gone they came out **0.125**, not 1.000. A pre-existing Z-room cap
+was doing it: `room = |z_end - w_from| = 0.0882`, `0.0882 / cos 45 = 0.125`.
+
+That cap exists so a **continuation** interval's retreat cannot run back over
+its own start, where the boss that blocked the sweep is sitting. The **first**
+interval has no obstruction behind it - it begins at the polyline's Begin Z and
+everything in front of that is air - so the cap there only takes away the lead
+the operator asked for. It is now skipped on the first interval:
+
+```
+before   lead-in 0.125 | cut 0.088 | lead-out 0.125
+after    lead-in 1.000 | cut 0.088 | lead-out 1.000
+```
+
+Both leads run out into air past Z0.
+
+### The distances, which greatEndian was right about
+
+At Z0.0 on `testing_15_4`, for the level at r20.5240:
+
+```
+pre-finish contour        r19.7184     0.8056 mm of material above it
+roughing floor (anchored) r20.4368     0.0872 mm
+```
+
+The 0.088 cut is the distance to the **anchored roughing floor**, not to the
+pre-finish contour - greatEndian's *"distance between this segment start point
+Z0.0 and prefinishing contour is not 0.088"* is exactly right.
+
+`anch_floor` is 20.016, derived from **Final Diameter 38 (r19)** - the chamfer's
+tip - and applied to the whole part, so `lvl_d` is 1.016 rather than the 0.762
+the parameters suggest. The cylinder's own roughing floor would be 20.762.
+
+**Still open**: one ladder floor taken from the deepest point of the profile
+gives the chamfer region levels that can only graze it, and gives the cylinder
+a level 0.016 from its pre-finish contour. A floor that follows the profile -
+per region rather than per part - is what would fix both, and it is a larger
+change than anything in this file.

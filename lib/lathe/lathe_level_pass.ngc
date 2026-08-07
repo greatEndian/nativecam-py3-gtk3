@@ -509,7 +509,14 @@ o<lathe_level_pass> sub
 		(a continuation interval retreat run back over its own start when the)
 		(room ahead happened to be large. Gated on multi-crossing so the)
 		(single-crossing path stays byte-for-byte unchanged)
-		o<lo_cap_all> if [#<_pl_multi_cross> GT 0]
+		(NOT ON THE FIRST INTERVAL. This cap keeps a continuation interval's)
+		(retreat from running back over its own start, where the boss that)
+		(blocked the sweep is sitting. The first interval has no such)
+		(obstruction behind it - it starts at the polyline's Begin Z and)
+		(everything in front of that is air - so capping there just takes)
+		(the lead the operator asked for: on testing_15_4's chamfer level a)
+		(1.000 mm lead came out 0.125 because the cut is 0.088 long.)
+		o<lo_cap_all> if [[#<_pl_multi_cross> GT 0] AND [#<w_from> LT [#<_pl_begin_z> - 0.000001]]]
 			#<_lo_room> = ABS[#<z_end> - #<w_from>]
 			o<lo_lcap> if [#<_lo_cos> GT 0.0001]
 				#<_lo_lmax> = [#<_lo_room> / #<_lo_cos>]
@@ -518,19 +525,6 @@ o<lathe_level_pass> sub
 				o<lo_lcap2> endif
 			o<lo_lcap> endif
 		o<lo_cap_all> endif
-		(A LEAD MAY NOT BE LONGER THAN THE CUT IT SERVES. greatEndian, on the)
-		(chamfer level of testing_15_4: a 1.000 mm lead-in and a 1.000 mm)
-		(lead-out wrapped around a 0.088 mm cut is not a pass, it is a bump,)
-		(and it is what shakes the machine. The 0.088 itself is correct - the)
-		(floor allowance there is 1.016 and the chamfer's offset profile)
-		(crosses this level at Z-0.0882 - so the length is right and the)
-		(SHAPE is not.)
-		(Bounded by the cut, not by a fraction of it: a lead equal to the cut)
-		(still reads as a lead-in and keeps its angle, and there is no honest)
-		(number between "as long as the cut" and "arbitrary".)
-		o<lo_ccap> if [#<_lo_leff> GT ABS[#<z_end_cut> - #<z_start>]]
-			#<_lo_leff> = ABS[#<z_end_cut> - #<z_start>]
-		o<lo_ccap> endif
 
 		(radius is bounded by how much straight lead length there is to blend)
 		(into - a big radius with a short lead would swing wider than lo_len)
@@ -632,7 +626,14 @@ o<lathe_level_pass> sub
 		(li_rad itself is deliberately left uncapped, matching the contour)
 		(pass's own lead-in in lathe_poly_pass.ngc, which has never capped)
 		(it either - only the straight length risks cutting past z_end)
-		o<li_cap_all> if [#<_pl_multi_cross> GT 0]
+		(NOT ON THE FIRST INTERVAL. This cap keeps a continuation interval's)
+		(approach from running back over its own start, where the boss that)
+		(blocked the sweep is sitting. The first interval has no such)
+		(obstruction behind it - it starts at the polyline's Begin Z and)
+		(everything in front of that is air - so capping there just takes)
+		(the lead the operator asked for: on testing_15_4's chamfer level a)
+		(1.000 mm lead came out 0.125 because the cut is 0.088 long.)
+		o<li_cap_all> if [[#<_pl_multi_cross> GT 0] AND [#<w_from> LT [#<_pl_begin_z> - 0.000001]]]
 			#<_li_room> = ABS[#<z_end> - #<w_from>]
 			#<_li_cos>  = [#<z_dir> * #<li_bz>]
 			o<li_lcap> if [#<_li_cos> GT 0.0001]
@@ -642,19 +643,6 @@ o<lathe_level_pass> sub
 				o<li_lcap2> endif
 			o<li_lcap> endif
 		o<li_cap_all> endif
-		(A LEAD MAY NOT BE LONGER THAN THE CUT IT SERVES. greatEndian, on the)
-		(chamfer level of testing_15_4: a 1.000 mm lead-in and a 1.000 mm)
-		(lead-out wrapped around a 0.088 mm cut is not a pass, it is a bump,)
-		(and it is what shakes the machine. The 0.088 itself is correct - the)
-		(floor allowance there is 1.016 and the chamfer's offset profile)
-		(crosses this level at Z-0.0882 - so the length is right and the)
-		(SHAPE is not.)
-		(Bounded by the cut, not by a fraction of it: a lead equal to the cut)
-		(still reads as a lead-in and keeps its angle, and there is no honest)
-		(number between "as long as the cut" and "arbitrary".)
-		o<li_ccap> if [#<_li_leff> GT ABS[#<z_end_cut> - #<z_start>]]
-			#<_li_leff> = ABS[#<z_end_cut> - #<z_start>]
-		o<li_ccap> endif
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<_li_reff> GT 0]
