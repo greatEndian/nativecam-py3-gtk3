@@ -236,3 +236,56 @@ The chamfer is 1.000 mm of Z. With a 0.762 allowance its offset curve runs
 Z-0.4474. No level can cut more of a 1 mm chamfer than the offset curve
 exposes; a longer cut needs a LOWER level, which needs a lower floor - the
 per-region floor still recorded as open above.
+
+---
+
+## Addendum 4 — the chamfer level did not finish on the contour
+
+greatEndian: *"why is this last small pass not tangent to the prefinish
+profile?"*.
+
+### Measured, and it was the odd one out
+
+How far each cut ends from the pre-finish contour, perpendicular:
+
+```
+r20.5240   0.4190 mm off      <- the chamfer level
+r21.0320   0.0001
+r21.5400   0.0002
+r22.0480   0.0001
+r22.5560   0.0002
+r23.0640   0.0003
+```
+
+Every level with a crossing in the stop table is carried onto that contour and
+ends on it. The chamfer level has **no** crossing - it sits above the whole
+offset chamfer - so it stops on the floor scan instead and finishes in air.
+
+### The fix
+
+The cut is carried down to the nearest point on the stop contour. On a level
+that already ends there the move is zero length and nothing is emitted, so the
+guard is the distance itself rather than a special case for chamfers. Bounded
+by one depth of cut, like every other reach in this file.
+
+```
+r20.5240  cut ends Z-0.4474  ->  finishes at Z-0.7436 r20.2277   0.0000 mm off
+```
+
+### What it cost to get right
+
+The first version moved the tool but left the lead-out blending from
+`(z_end_cut, level)` - a point the tool no longer occupied. The interpreter
+rejected the arc outright on `testing_13_arcs`:
+
+```
+Radius to end of arc differs from radius to start:
+start=(Z-2.7666,X9.1815) center=(Z-2.7666,X9.5957) end=(Z-3.0595,X9.9503)
+r1=0.4142 r2=0.4599 rel_err=9.9433%
+```
+
+`test_leads` caught it as all three modes failing to parse. The lead-out now
+blends from `_end_x`, where the tool actually is.
+
+Coverage: `test_ladder` asserts every level finishes on the contour. Negative
+control: `r20.5240 finishes 0.4190 mm off it, hanging in air`.

@@ -45,6 +45,11 @@ o<lathe_level_pass> sub
 	#<_org_z>    = 0
 	#<s_reach>   = 999999
 	#<s_slp>     = 0
+	#<tg_d>      = 0
+	#<tg_z>      = 0
+	#<tg_x>      = 0
+	#<tg_t>      = 0
+	#<_end_x>    = 0
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
 	#<e_have>    = 0
@@ -694,11 +699,72 @@ o<lathe_level_pass> sub
 	o<pa_cut> endif
 
 
+	#<_end_x> = #<level>
 	G1 Z#<z_end_cut>
+
+	(AND FINISH ON THE PRE-FINISH CONTOUR. Every level that has a crossing in)
+	(the stop table ends within 0.0003 mm of that contour - measured on)
+	(testing_15_4, six levels - because the stop lookup carries it there. A)
+	(level with NO crossing, like the one over a chamfer that sits above the)
+	(whole offset curve, stops on the floor scan instead and finishes 0.4190)
+	(mm off it, hanging in air where every other pass is tangent. greatEndian:)
+	("why is this last small pass not tangent to the prefinish profile".)
+	(So the cut is carried down to the nearest point on that contour. On every)
+	(level that already ends there the move is zero length and nothing is)
+	(emitted - the guard is the distance itself, not a special case for the)
+	(chamfer.)
+	o<tg> if [[#<_pl_stop_n> GT 0] AND [#<found>]]
+		#<tg_i> = 0
+		#<tg_d> = 999999
+		#<tg_z> = 0
+		#<tg_x> = 0
+		#<tg_pz> = #[#<_pl_stop_base>]
+		#<tg_px> = #[#<_pl_stop_base> + 1]
+		o<tg_w> while [#<tg_i> LT [#<_pl_stop_n> - 1]]
+			#<tg_i> = [#<tg_i> + 1]
+			#<tg_cz> = #[#<_pl_stop_base> + #<tg_i> * 2]
+			#<tg_cx> = #[#<_pl_stop_base> + #<tg_i> * 2 + 1]
+			#<tg_dz> = [#<tg_cz> - #<tg_pz>]
+			#<tg_dx> = [#<tg_cx> - #<tg_px>]
+			#<tg_n2> = [[#<tg_dz> * #<tg_dz>] + [#<tg_dx> * #<tg_dx>]]
+			o<tg_seg> if [#<tg_n2> GT 0.000001]
+				#<tg_t> = [[[[#<z_end_cut> - #<tg_pz>] * #<tg_dz>] + [[#<level> - #<tg_px>] * #<tg_dx>]] / #<tg_n2>]
+				o<tg_c0> if [#<tg_t> LT 0]
+					#<tg_t> = 0
+				o<tg_c0> endif
+				o<tg_c1> if [#<tg_t> GT 1]
+					#<tg_t> = 1
+				o<tg_c1> endif
+				#<tg_qz> = [#<tg_pz> + #<tg_t> * #<tg_dz>]
+				#<tg_qx> = [#<tg_px> + #<tg_t> * #<tg_dx>]
+				#<tg_dd> = SQRT[[[#<z_end_cut> - #<tg_qz>] * [#<z_end_cut> - #<tg_qz>]] + [[#<level> - #<tg_qx>] * [#<level> - #<tg_qx>]]]
+				(only forward of the cut - never back over what was just cut)
+				o<tg_fw> if [[[#<z_dir> * [#<tg_qz> - #<z_end_cut>]] LT 0.0001] AND [#<tg_dd> LT #<tg_d>]]
+					#<tg_d> = #<tg_dd>
+					#<tg_z> = #<tg_qz>
+					#<tg_x> = #<tg_qx>
+				o<tg_fw> endif
+			o<tg_seg> endif
+			#<tg_pz> = #<tg_cz>
+			#<tg_px> = #<tg_cx>
+		o<tg_w> endwhile
+		(bounded like every other reach in this file - a contour point further)
+		(than one depth of cut away is not this level's corner)
+		o<tg_ok> if [[#<tg_d> GT 0.001] AND [#<tg_d> LT #<_rough_cut>]]
+			G1 X[#<tg_x> * #<_diameter_mode>] Z#<tg_z>
+			#<z_end_cut> = #<tg_z>
+			(the lead-out blends from where the tool ACTUALLY is. Left at)
+			(the level radius it built an arc through a point the tool)
+			(never occupied, and the interpreter rejected it outright:)
+			("Radius to end of arc differs from radius to start", 9.94%)
+			(on testing_13_arcs.)
+			#<_end_x> = #<tg_x>
+		o<tg_ok> endif
+	o<tg> endif
 
 	(retreat lead-out: back toward the window start, rising away from the cut)
 	o<lead_out> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
-		#<phys_x> = #<level>
+		#<phys_x> = #<_end_x>
 		#<end_z>  = #<z_end_cut>
 		(the blend radius still leaves the part, so it stays at the pass feed;)
 		(only the straight retreat below runs at the lead-out feed. Both)

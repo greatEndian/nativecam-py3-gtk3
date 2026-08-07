@@ -312,6 +312,68 @@ def main():
                       % (beside[0][0], beside[0][2], beside[0][1])
                       if beside else '')
 
+        # --- every level finishes ON the pre-finish contour -----------------
+        # greatEndian: "why is this last small pass not tangent to the
+        # prefinish profile?". Measured, it was the odd one out - every level
+        # with a crossing in the stop table ends within 0.0003 mm of that
+        # contour, and the chamfer level, which has no crossing because it sits
+        # above the whole offset curve, stopped 0.4190 mm off it in mid-air.
+        #
+        # The cut is carried down to the nearest point on the contour. On a
+        # level that already ends there the move is zero length and nothing is
+        # emitted - the guard is the distance, not a special case.
+        if os.path.isfile(chamfer):
+            o = os.path.join(d, 'tangent.ngc')
+            subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                            'testing_15_4.xml', '--out', o, '--config-copy'],
+                           capture_output=True, text=True)
+            import re as _re
+            vals = {}
+            if os.path.isfile(o):
+                for ln in open(o):
+                    m = _re.match(r'#(\d+) = (-?[\d.]+)\s*$', ln.strip())
+                    if m and 4400 <= int(m.group(1)) < 4600:
+                        vals[int(m.group(1))] = float(m.group(2))
+            stop, i = [], 4400
+            while i in vals and i + 1 in vals:
+                stop.append((vals[i], vals[i + 1]))
+                i += 2
+
+            def perp(pt):
+                best = None
+                for a, b in zip(stop, stop[1:]):
+                    dz, dr = b[0] - a[0], b[1] - a[1]
+                    n2 = dz * dz + dr * dr
+                    if n2 < 1e-18:
+                        continue
+                    tt = max(0.0, min(1.0, ((pt[0] - a[0]) * dz
+                                            + (pt[1] - a[1]) * dr) / n2))
+                    dd = ((pt[0] - (a[0] + dz * tt)) ** 2
+                          + (pt[1] - (a[1] + dr * tt)) ** 2) ** 0.5
+                    best = dd if best is None else min(best, dd)
+                return best
+
+            t = P.parse_program(o, INI) if stop else None
+            hanging = []
+            if t is not None and not t.error:
+                mv = [m for m in t.moves if m.op == 'Lathe Polyline'
+                      and not m.subs and m.kind == 'feed']
+                for i, m in enumerate(mv):
+                    if (abs(m.b[0] - m.a[0]) > 1e-6
+                            or m.b[2] >= m.a[2] - 1e-6):
+                        continue
+                    end = (m.b[2], m.b[0])
+                    for n in mv[i + 1:i + 2]:
+                        if n.b[0] < n.a[0] - 1e-9:      # the descent onto it
+                            end = (n.b[2], n.b[0])
+                    dd = perp(end)
+                    if dd is not None and dd > 0.01:
+                        hanging.append((m.a[0], dd))
+            check('every level finishes on the pre-finish contour',
+                  not hanging,
+                  'r%.4f finishes %.4f mm off it, hanging in air'
+                  % hanging[0] if hanging else '')
+
         check('   while the floor itself is never skipped',
               abs(tl[-1] - base[-1]) < 1e-6,
               'the deepest level moved from %.4f to %.4f - roughing is no '
