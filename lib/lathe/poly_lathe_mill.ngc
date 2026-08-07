@@ -581,7 +581,18 @@ o<poly_lathe_mill> sub
                         o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [#<lvl_thin> EQ 0] AND [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]]
                                 #<_level_blocked> = 0
                                 (constant floor allowance: the level stops at the offset profile)
-                                #<lvl_d> = [#<dirsign> * [#<step_target> - #<final_radius>]]
+                                (THE STOCK LEFT ON THE PROFILE, which is fin_off + prefin_off and)
+                                (nothing else. It used to be step_target - final_radius, and)
+                                (Space passes from = Final contour REASSIGNS step_target to)
+                                (anch_floor - the ladder's floor rounded outward by a whole depth)
+                                (of cut - so the scan started holding 1.016 off the profile where)
+                                (0.762 was configured. The anchoring decides WHERE THE LEVELS ARE,)
+                                (not how much stock is left, and conflating the two left roughing)
+                                (0.8056 mm clear of the pre-finish contour at testing_15_4's)
+                                (chamfer instead of 0.254, and cut the deepest level's reach there)
+                                (to 0.088 mm. With Stock anchoring step_target - final_radius IS)
+                                (fin_off + prefin_off, so nothing changes in that mode.)
+                                #<lvl_d> = [#<dirsign> * [#<fin_off> + #<prefin_off>]]
 
                                 (repeat this level while a re-entrant profile still has more)
                                 (disjoint safe intervals to cut - a plain level, or with)

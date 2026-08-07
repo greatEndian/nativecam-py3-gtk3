@@ -184,3 +184,55 @@ gives the chamfer region levels that can only graze it, and gives the cylinder
 a level 0.016 from its pre-finish contour. A floor that follows the profile -
 per region rather than per part - is what would fix both, and it is a larger
 change than anything in this file.
+
+---
+
+## Addendum 3 — the scan was holding 1.016 off the profile, not 0.762
+
+greatEndian: *"the length of the last rough segment is wrong .. it has to be
+more than 1mm .. there is a huge gap between the last passing and the
+contour"*, `photo/leadInPresent_1.png`.
+
+### A real bug, found and fixed
+
+```
+#<lvl_d> = [#<dirsign> * [#<step_target> - #<final_radius>]]
+```
+
+`step_target` is REASSIGNED to `anch_floor` by
+*Space passes from = Final contour* - the ladder's floor rounded outward by a
+whole depth of cut. So the scan's stock allowance became
+`20.016 - 19.000 = 1.016` where **0.762** (`fin_off + prefin_off`) was
+configured. The anchoring decides where the LEVELS are, not how much stock is
+left, and conflating the two shortened every level's reach.
+
+It is now `fin_off + prefin_off` directly. With Stock anchoring
+`step_target - final_radius` already equals that, so nothing changes there.
+
+```
+last rough segment on testing_15_4:   0.088 -> 0.447 mm
+```
+
+### The remaining gap is the option, not a fault
+
+```
+Final contour (as saved)  deepest cut r20.5240 len 0.447  gap at Z0  0.8056
+Stock                     deepest cut r20.2684 len 0.791  gap at Z0  0.5500
+```
+
+*Final contour* rounds the roughing floor outward by a whole depth of cut on
+purpose - its own comment says so: *"The pre-finish pass then carries one whole
+depth of cut down to its own contour instead of the configured allowance, which
+is the point of anchoring on the part rather than on the stock."* So it leaves
+`doc + prefin_off = 0.762` rather than `0.254`, and 0.8056 is that plus the
+staircase a 45 degree chamfer gets from horizontal levels.
+
+Switching to Stock closes it to 0.5500 and lengthens the last segment to 0.791.
+
+### Why it cannot reach "more than 1 mm" at this level
+
+The chamfer is 1.000 mm of Z. With a 0.762 allowance its offset curve runs
+(0.539, 19.539) -> (-0.461, 20.539), and the level at r20.5240 meets that at
+Z-0.4474. No level can cut more of a 1 mm chamfer than the offset curve
+exposes; a longer cut needs a LOWER level, which needs a lower floor - the
+per-region floor still recorded as open above.
