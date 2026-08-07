@@ -330,3 +330,53 @@ Worth listing, because the pattern is the lesson and not the individual errors:
 The fifth attempt was not a guess: three options were put with their geometry
 written out, and greatEndian picked one. That should have happened after the
 second miss, not the fourth.
+
+---
+
+## Addendum 6 — the extension ends at the feature, not at a length
+
+greatEndian: *"its position is right but the length is double .. half size is
+again at the prefinish profile contour .. but its valid only when the prefinish
+pass is on; if it's off the path generation is valid"*.
+
+That last clause is the diagnosis. With the pre-finish pass OFF, `prefin_off`
+is 0, the floor allowance and the stop contour coincide, and no extension
+happens at all - which is why that case was already right. With it ON the
+extension exists, and clamping it to `3 x doc` was an arbitrary length: 1.9714
+mm where the chamfer is 1 mm, the surplus running beside the contour.
+
+### Where it ends now
+
+Given three candidate boundaries with their geometry, greatEndian chose the
+**feature boundary** over an allowance-based one. Implemented as a shape test
+rather than a distance: the extension runs while the contour is still climbing
+and stops at the first segment under **half a rise per unit Z**.
+
+```
+stop contour, testing_15_4      slope
+Z+0.6421 r18.8421 -> -0.7579     1.00   the chamfer
+Z-0.7579 -> -0.8955              0.82   rounding
+Z-0.8955 -> -1.0525              0.53
+Z-1.0525 -> -1.2229              0.30   <- first under 0.5, so the pass ends here
+Z-1.4000 onward                  0.00   the cylinder
+```
+
+```
+chamfer level  Z+0.0000 -> -1.0525   1.052 mm      was 1.971
+testing_15_2   deepest  Z+0.0000 -> -19.5534  19.553 mm, 29 cuts, unchanged
+```
+
+It only reaches a level whose crossing lies beyond the reach - one with no
+useful contour to end on ahead of it. Every level that has one, all of them on
+both projects, is untouched.
+
+Negative control: with the feature-boundary branch disabled the pass returns to
+1.971 mm.
+
+### The count of wrong readings, for the record
+
+Five, on one complaint: truncate the level; cap the leads; read tangent as
+touching; treat "too short" as tangency; clamp to an arbitrary length. Two
+questions with the geometry written out settled it. The rule this session
+produced - **when a reading has been wrong twice, ask with numbers rather than
+guess a third time** - was written down after the fourth, not the second.

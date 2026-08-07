@@ -46,6 +46,8 @@ o<lathe_level_pass> sub
 	#<s_reach>   = 999999
 	#<s_slp>     = 0
 	#<s_zc>      = 0
+	#<s_flat>    = 0
+	#<s_fz>      = 0
 	#<tg_d>      = 0
 	#<tg_z>      = 0
 	#<tg_x>      = 0
@@ -395,10 +397,25 @@ o<lathe_level_pass> sub
 		#<s_have> = 0
 		#<s_pz> = #[#<_pl_stop_base>]
 		#<s_px> = #[#<_pl_stop_base> + 1]
+		#<s_flat> = 0
+		#<s_fz> = 0
 		o<s_w> while [#<s_i> LT [#<_pl_stop_n> - 1]]
 			#<s_i> = [#<s_i> + 1]
 			#<s_cz> = #[#<_pl_stop_base> + #<s_i> * 2]
 			#<s_cx> = #[#<_pl_stop_base> + #<s_i> * 2 + 1]
+			(WHERE THE CONTOUR FLATTENS - the end of the feature this level is)
+			(working on. A chamfer climbs at 1.0 rise per unit Z, the rounding)
+			(after it at 0.82 then 0.53, and the cylinder at 0. The first)
+			(segment under half a rise is where the feature stops and the pass)
+			(has nothing left to take, so that is where an extension with no)
+			(nearby crossing ends. greatEndian picked this boundary over an)
+			(allowance-based one: Z-1.0525 on testing_15_4.)
+			o<s_fl> if [[#<s_flat> EQ 0] AND [ABS[#<s_cz> - #<s_pz>] GT 0.000001]]
+				o<s_fl2> if [[ABS[[#<s_cx> - #<s_px>] / [#<s_cz> - #<s_pz>]] LT 0.5] AND [[#<z_dir> * [#<s_pz> - #<z_end>]] LT -0.0001]]
+					#<s_flat> = 1
+					#<s_fz> = #<s_pz>
+				o<s_fl2> endif
+			o<s_fl> endif
 			o<s_cross> if [[[#<s_px> - #<l_eff>] * [#<s_cx> - #<l_eff>]] LT 0]
 				#<s_z> = [#<s_pz> + [#<s_cz> - #<s_pz>] * [#<l_eff> - #<s_px>] / [#<s_cx> - #<s_px>]]
 				(only a crossing further along the cut than the scan found,)
@@ -445,7 +462,16 @@ o<lathe_level_pass> sub
 			(projects, 0.90 to 1.0034 mm - are untouched.)
 			#<s_zc> = #<s_z>
 			o<s_clamp> if [ABS[#<s_zc> - #<z_end>] GT #<s_reach>]
-				#<s_zc> = [#<z_end> - [#<z_dir> * #<s_reach>]]
+				(no crossing within reach, so the level has nothing to end ON)
+				(ahead of it. It runs to the end of the feature - where the)
+				(contour flattens - and not to an arbitrary length: clamping)
+				(to the reach itself gave 1.9714 mm where the chamfer is 1 mm,)
+				(and the surplus ran beside the pre-finish contour.)
+				o<s_cl2> if [#<s_flat>]
+					#<s_zc> = #<s_fz>
+				o<s_cl2> else
+					#<s_zc> = [#<z_end> - [#<z_dir> * #<s_reach>]]
+				o<s_cl2> endif
 			o<s_clamp> endif
 			o<s_fwd> if [[[#<z_dir> * [#<s_zc> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_zc> - #<w_to>]] GT -0.0001]]
 					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_zc> - #<s_best>]] GT 0]]
