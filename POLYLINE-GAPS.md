@@ -160,6 +160,133 @@ Holder.
 
 ---
 
+### From `photo/roughing/geometry/` — the **Geometry** tab, 8 screenshots
+
+Sections: Model, **Front**, **Back**, Groove Suppression, Rest Machining.
+Front and Back each carry a Mode, an Offset and a Tangential Extension; Back
+also carries a Reference and a Tool Limit.
+
+#### 8. Front and Back Z limits, with a reference datum
+
+- **What it is** — *Front Mode* / *Back Mode* choose what the operation's Z
+  limit is measured from: **Stock front, Stock back, Chuck front, Selection,
+  Model front, Model back, Origin (absolute)** — each with its own **Offset**
+  (−0.100 mm on the front here). Back Mode adds a **Back Reference**, a picked
+  face.
+- **In our vocabulary** — we have `param_b_z`, *Start Z*, a typed number, and
+  nothing at the back at all: the profile's Z extent is wherever the Items
+  finish.
+- **Why it is a gap** — two things at once. There is no **back limit**, so an
+  operation cannot be trimmed to stop short of where the polyline ends; and the
+  front limit is an absolute number rather than a reference that follows the
+  stock or the chuck when either changes.
+- **What it would touch** — a back-Z parameter is small and self-contained. The
+  reference datums are not: they assume a model and a stock the operation can
+  point at, which is the CAD paradigm below.
+- **Open question** — is the back limit wanted on its own? That is the useful
+  half and it does not need any of the datum machinery.
+
+#### 9. Tangential Extension
+
+- **What it is** — *"Creates a tangential extension of the geometry from the
+  Front limit"*, shown at 0.0 and 0.300: the profile's end segment is continued
+  along its own tangent past the limit. Front and Back each have one.
+- **In our vocabulary** — nothing the operator can set. We do extend the first
+  segment to Begin Z internally (`analysis/022`), but that is fixed behaviour,
+  not a length anyone can ask for.
+- **Why it is a gap** — no way to run the cut past the drawn profile along its
+  own direction, which is how you clear a face or leave a lead-out on the stock.
+- **What it would touch** — `lathe_sections`, where the contour is built; the
+  extension is a Python question and belongs there. Two parameters, front and
+  back.
+- **Open question** — does greatEndian want it measured along the tangent, as
+  here, or along Z?
+
+#### 10. Tool Limit — Cutting edge vs Contact point
+
+- **What it is** — *"Limits the X axis position in reference to Radii Limits or
+  the Contact point of the tool nose radius. **Cutting Edge** sets a hard limit
+  for the X position of the cut… **Contact Point** positions the nose radius of
+  the tool to the tangent point of the cut. A larger nose radius will create a
+  greater overlap."* It appears twice — on the Back geometry and on the Inner
+  Radius.
+- **In our vocabulary** — nothing. We compensate the nose, but every limit we
+  have is on the control point.
+- **Why it is a gap** — with a limit set to a diameter, we cannot say whether
+  that diameter is where the *edge* stops or where the nose *touches*. The two
+  differ by the nose radius, which is exactly the quantity this whole session
+  has been chasing.
+- **What it would touch** — wherever a radial limit is applied, plus the nose
+  radius already in hand from `tip_comp_inputs`.
+- **Open question** — worth it only where a limit exists; on our polyline that
+  is Start / Final Diameter.
+
+#### 11. Groove Suppression
+
+- **What it is** — a checkbox, unchecked, no tooltip captured.
+- **In our vocabulary** — nothing. Our `param_multi_x`, *Re-entrant profile*,
+  is the opposite instinct: it roughs **all** disjoint intervals.
+- **Why it is a gap** — no way to tell roughing to leave narrow grooves alone
+  for a grooving tool to do properly.
+- **Open question** — the tooltip. Whether it suppresses by width, by depth, or
+  by aspect ratio changes what would be built.
+
+#### 12. Rest Machining
+
+- **What it is** — a checkbox, unchecked, no tooltip captured. Standard meaning:
+  machine only what earlier operations left behind.
+- **In our vocabulary** — nothing. Every operation starts from the stock.
+- **Why it is a gap** — a second, smaller tool cannot be told to clean up only
+  what the first could not reach — which is precisely the 10.0899 mm behind the
+  boss that our own unreachable-contour warning names.
+- **What it would touch** — a model of remaining material carried between
+  operations. Large. The preview's `StockField` already simulates exactly that,
+  so the machinery is not absent, only unconnected.
+- **Open question** — greatEndian's call, and probably far down the list.
+
+---
+
+### From `photo/roughing/radii/` — the **Radii** tab, 9 screenshots
+
+Three radial bands, each *From* a datum plus an *Offset*: **Clearance**
+(orange), **Outer Radius** (light blue), **Inner Radius** (dark blue). The
+tooltip's example: Outer = Stock OD, Clearance = Outer + 5 mm.
+
+The *From* list is long and the same for all three — Retract, Stock OD, Model
+OD, Outer radius, Inner radius, Model ID, Stock ID, Selection, Radius,
+Diameter, **Outermost of…**, **Innermost of…** — with the stated rule
+**Clearance ≥ Retract ≥ Outer ≥ Inner** for a valid toolpath.
+
+#### 13. Distance to Cut Below Inner Radius
+
+- **What it is** — *"an adjustment to a Face or Part cut to position the tool
+  nose past the Inner Radius position. Use this to cut past the Centreline of
+  the part."* Pictured as *Cut up to the CentreLine* against *Cut past the
+  CentreLine*.
+- **In our vocabulary** — nothing. Our Final Diameter is where cutting stops.
+- **Why it is a gap** — parting and facing to centre need the nose to travel
+  past the axis, or a pip is left. Same family as *Turn In Negative Diameter*
+  (gap 4).
+- **What it would touch** — the polyline's X limit handling; small on its own.
+- **Open question** — is this wanted for facing, for parting, or both? We have
+  no parting operation yet.
+
+#### 14. Radial limits as REFERENCES rather than numbers
+
+- **What it is** — Outer and Inner are not typed diameters; they point at the
+  stock OD, the model OD, a picked face, or *Outermost of* two of those, and
+  follow when those change.
+- **In our vocabulary** — `param_b_x` *Start Diameter* and `param_e_x` *Final
+  Diameter*, both typed numbers.
+- **Why it may not be a gap** — the values exist and produce the same toolpath.
+  What is missing is associativity, which presumes a CAD model and a stock body
+  to reference. See the paradigm note below.
+- **Open question** — greatEndian has a Workpiece feature carrying stock
+  diameter. Referencing *that* — "Start Diameter = stock OD" — is a small,
+  real improvement that needs none of the CAD machinery.
+
+---
+
 ## Observations that are not gaps
 
 - **Feed & Speed lives on the OPERATION there, on Tool Change here.** Every
@@ -167,6 +294,21 @@ Holder.
   feed/rev vs feed/min (`feed_mode`), cutting feedrate. The difference is that
   we cannot vary them per operation without a second Tool Change. Placement,
   not capability — but worth knowing before copying their layout.
+
+- **It is a CAD-model CAM package and we are not.** Half of the Geometry and
+  Radii tabs — Model front/back, Chuck front, Selection, a picked Face, Model
+  OD/ID, *Outermost of…* — exist to point at solid geometry that we do not
+  have. Our profile IS the input, drawn as Items. Those entries are not gaps to
+  close but a difference in kind, and copying their vocabulary would leave
+  parameters that can never resolve to anything.
+  **What survives the translation** is the part that references OUR own
+  objects: the Workpiece's stock diameter and face Z. Those we do have, and
+  pointing a limit at them costs nothing.
+
+- **Our Retract already carries the Clearance idea.** `param_ret_mode`
+  (*Full — above stock* / minimal) with `param_ret_dist`, plus Tool Change's
+  `rx` / `rix` / `rz`. What the reference adds is choosing the datum it is
+  measured from, which is the same associativity question as gap 14.
 
 ---
 
