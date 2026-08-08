@@ -154,3 +154,74 @@ leaving, which is the point of the segment.
 `test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
 `test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short` all
 pass.
+
+---
+
+## Issue 3 — a radius that fell between two rules, and was never cut
+
+greatEndian: *"(sectioning on) the first pass (4th from stock envelope) with
+lead in and parallel section is missing and just 2nd one is present with double
+of cutting depth behind the boss segment also"*.
+
+### Measured
+
+```
+last full-length level (cuts both sides)   r33.5955
+first level behind the boss                r32.6602      <- 0.9353 taken
+front-of-boss step                         0.4682
+```
+
+0.9353 is exactly **double** the step. The level at **r33.1273** exists in front
+of the boss and has no behind-the-boss counterpart at all.
+
+### The cause — two rules, and a gap between them
+
+Instrumented the sectioned level loop. `sect_top_r = 33.1273`,
+`_pl_ph1_front_cut = 1`, `_pl_ph1_z_end = -32.1885` — phase 1 cut that radius
+from Z0 to Z−32.1885 and then broke, deliberately: *"it stops the instant the
+first obstruction is found rather than sweeping the rest of the part at this
+radius, which would just be an ordinary, redundant multi-crossing sweep phase
+2's own per-section handling already does properly."*
+
+Except phase 2 does not do it, and cannot:
+
+- **window 0** is the full-length one, band `32.6591 … ALL`. It starts one level
+  BELOW `sect_top_r` because phase 1 "already cut" that radius — true for the
+  front half only.
+- **window 2** is the section behind the boss, and it does start fresh at
+  `sect_top_r`. But its band is `20 … 32.6591`, and 33.1273 is **above** it —
+  over that boundary the sections are merged into window 0.
+
+So the radius is skipped by the window that spans it and out of band in the
+window that starts fresh. It is never cut behind the boss, and the next level
+takes both bites.
+
+### The fix
+
+Phase 1 finishes the level it is on — it takes the resumed interval instead of
+abandoning it — and only then hands over. `_pl_ph1_z_end` becomes where it
+really finished, so every section below may skip that radius, which is now true
+rather than half true. The old comment's fear of a "redundant sweep" is the
+opposite of the case: it is the only pass that covers that radius at all.
+
+```
+behind the boss:  33.127  32.660  32.152  31.644  ...
+steps:            0.4671  0.5080  0.5080  ...
+```
+
+### One own-goal on the way
+
+`ph1_fin` is set when phase 1 hands over and is not reset per level, so the
+break it triggers fired in **every** phase-2 window after its first level: the
+sectioned program fell from 44 level cuts to **9**. Caught by measuring the
+total rather than by looking at the fixed pass. The break is now gated on
+`w_idx < 0`, phase 1 alone.
+
+Sectioning ON now cuts 45 levels, 19 of them touching behind the boss, against
+44 and 18 with sectioning OFF - and OFF is byte-for-byte unchanged.
+
+### Verified
+
+`test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
+`test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short`,
+`test_sections`, flake8 clean.

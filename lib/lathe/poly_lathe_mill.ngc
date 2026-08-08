@@ -454,6 +454,8 @@ o<poly_lathe_mill> sub
                 #<w_idx> = -1
         o<w_idx_init> endif
         #<_pl_ph1_front_cut> = 0
+        (set when phase 1 hands over mid-level, read once that level is done)
+        #<ph1_fin> = 0
         (how far phase 1 actually got at the radius where it stopped. Its own)
         (window is the whole profile, so its last pass can cut well past the)
         (first section boundary - phase 2 needs to know that to avoid redoing)
@@ -727,7 +729,27 @@ o<poly_lathe_mill> sub
                                                                         #<sect_top_r> = #<current_radius>
                                                                         #<_pl_ph1_front_cut> = 1
                                                                         #<_pl_ph1_z_end> = #<_pl_level_z_end>
-                                                                        o<wh_00> break
+                                                                        (FINISH THIS LEVEL BEFORE HANDING OVER.)
+                                                                        (Breaking here left the radius cut in FRONT of)
+                                                                        (the obstruction only, and phase 2 covered)
+                                                                        (neither half of what was left: the full-length)
+                                                                        (window skips this radius because phase 1 had)
+                                                                        (already cut it, and every section window behind)
+                                                                        (the obstruction has a radius band topping out)
+                                                                        (BELOW it - above that boundary the sections are)
+                                                                        (merged into the one full-length window. So the)
+                                                                        (radius fell between the two rules and was never)
+                                                                        (cut behind the boss at all: on testing_15_5)
+                                                                        (phase 1 stopped at r33.1273 having cut Z0 to)
+                                                                        (Z-32.1885, and the next pass behind took 0.9353)
+                                                                        (- double the 0.4682 step. greatEndian: the first)
+                                                                        (pass is missing and just the 2nd is present with)
+                                                                        (double of cutting depth. Sweeping on is not the)
+                                                                        (redundant multi-crossing sweep the old note)
+                                                                        (feared - it is the only pass covering this)
+                                                                        (radius at all.)
+                                                                        #<ph1_fin> = 1
+                                                                        #<l_fr> = #<_pl_resume_z>
                                                                 o<p1_more> endif
                                                         o<mc_p1> else
                                                                 o<wh_lvl> break
@@ -763,6 +785,18 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl> endif
                                         o<ph1_chk> endif
                                 o<wh_lvl> endwhile
+                                (phase 1 handed over on this level, and it is)
+                                (now cut along its whole length - so this is)
+                                (where it really finished, and every section)
+                                (below it may skip this radius)
+                                (phase 1 only - w_idx below 0. ph1_fin is not)
+                                (reset per level, so without this every phase-2)
+                                (window broke out after its first level and the)
+                                (sectioned program fell from 44 level cuts to 9)
+                                o<ph1_brk> if [[#<ph1_fin>] AND [#<w_idx> LT 0]]
+                                        #<_pl_ph1_z_end> = #<_pl_level_z_end>
+                                        o<wh_00> break
+                                o<ph1_brk> endif
                         o<lvl_ok> endif
 
                         o<if_next> if [#<current_radius> EQ #<lvl_floor>]
