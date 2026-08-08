@@ -99,3 +99,58 @@ Not guessed. Recorded in `openPoints` as a decision for greatEndian.
   rule. Per the standing rule it belongs in Python, computing the stop Z per
   level directly. That needs the level ladder in Python, which is most of the
   way there after `analysis/022`.
+
+---
+
+## Issue 2 — the parallel ramp the first pass behind the boss was missing
+
+greatEndian: *"(sectioning off) the first lead in (3rd from stock envelope) is
+missing the parallel artificial lead in section extension as every pass behind
+it has"*.
+
+### Measured
+
+```
+ #  radius    from Z     to Z      side     ramp
+ 3  33.2080    0.0000   -31.3358   front    -
+ 4  33.2080  -35.1477   -69.8920   behind   -          <- missing
+ 6  32.7000  -36.4467   -69.8920   behind   RAMP 2.2004 / 0.5080
+ 8  32.1920  -38.6471   -69.8920   behind   RAMP 2.2004 / 0.5080
+10  31.6840  -40.8475   -69.8919   behind   RAMP 2.2004 / 0.5080
+```
+
+### Two causes, both about where the angle comes from
+
+The ramp copies the contour's own angle at the entry, and it took that angle
+from the crossing that set the pass's START. That conflated two questions.
+
+**First**, `e_reach` bounds how far BACK the start may be pulled, and it
+collapses on a steep segment - rightly, there is no long shallow ramp to be had
+on the face of a boss. But the ramp only needs the segment's DIRECTION, and it
+was being dropped along with the out-of-reach crossing. The nearest crossing's
+direction is now kept whatever the reach says, and the reach goes on bounding
+the start alone.
+
+**Second**, and what this pass actually hit: instrumented, it reports
+`have=0 ahave=0` — **there is no entry crossing at all**. The entry contour
+peaks at **r33.1657** behind the boss and the level sits at **r33.2080**,
+0.0423 over it, so it never crosses anywhere near the feature. The deeper
+passes cross the long taper below, direction (−33.98, −7.85), slope 0.231 —
+the 13° their ramps show.
+
+The surface the pass is leaving is still right there: the entry segment
+spanning `w_from`. It is now the last fallback.
+
+```
+ 4  33.2080  -35.1477  -69.8920  behind  RAMP dz=2.9656 dr=0.5080
+```
+
+Slope 0.1713, 9.7° — the local contour angle, shallower than the deeper passes'
+13° because the contour is shallower there. Parallel to what it is actually
+leaving, which is the point of the segment.
+
+### Verified
+
+`test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
+`test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short` all
+pass.
