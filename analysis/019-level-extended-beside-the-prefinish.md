@@ -380,3 +380,35 @@ touching; treat "too short" as tangency; clamp to an arbitrary length. Two
 questions with the geometry written out settled it. The rule this session
 produced - **when a reading has been wrong twice, ask with numbers rather than
 guess a third time** - was written down after the fourth, not the second.
+
+---
+
+## Addendum 7 — the descent is gone; a level is three moves
+
+greatEndian: *"there is movement lead in, then horizontal pass, then next micro
+lead in, and then lead out, which is wrong - there has to be lead in,
+horizontal and lead out only"*.
+
+The micro move was the descent onto the pre-finish contour added in
+addendum 4, when the chamfer level still stopped 0.4190 mm off it. Once the
+extension was made to carry that level to the feature boundary the descent had
+nothing left to do, and an 0.081 mm move between the cut and the lead-out is
+exactly what shakes a machine.
+
+```
+before   lead-in 1.000 | cut 1.052 | descent 0.081 | lead-out 1.000
+after    lead-in 1.000 | cut 1.052 |                 lead-out 1.000
+```
+
+Removed, along with the `_end_x` plumbing it needed and the assertion that
+demanded it. A level is now lead-in, cut, lead-out, and `test_ladder` asserts
+exactly that: everything between a cut and the next rapid must be ONE move.
+
+Negative control, with the descent restored:
+`r29.1600 has 2 moves after its cut, the shortest 0.077 mm` - and note it fires
+on a level in the middle of the part, not only the chamfer one, so the descent
+was adding a micro move in more places than the case it was written for.
+
+That is the sixth reading of this one complaint, and the second thing I added
+that later had to come out. The fix that stood was the one chosen from written-
+out geometry rather than inferred.
