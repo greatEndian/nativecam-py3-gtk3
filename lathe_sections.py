@@ -893,9 +893,11 @@ BAND_ALL = 1.0e6
 # The floor tables. 3200-3400 is free space: the polyline's own argument slots
 # stop at #3159 and the sections window table starts at #3400.
 #
-#   3300  floor stages, i           the floors the ladder re-anchors on,
+#   3200  entry ramp, i*4           direction and an anchor point on the
+#                                   surface a ramp should follow
+#   3380  floor stages, i           the floors the ladder re-anchors on,
 #                                   shallowest first - see floor_ladder
-SECT_FLOOR_BASE = 3300
+SECT_FLOOR_BASE = 3380
 
 
 def region_floor(min_dia, fin_off, prefin_off, rough_cut, anchored):
@@ -1061,7 +1063,7 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
 # The entry-ramp direction table. One (dz, dx) per entry-contour segment,
 # in the free space under the sections table.
 ERAMP_BASE = 3200
-ERAMP_TOP = 3300
+ERAMP_TOP = 3380
 
 
 def entry_ramp_dirs(points, look):
@@ -1090,11 +1092,15 @@ def entry_ramp_dirs(points, look):
             (z0, x0), (z1, x1) = segs[j]
             dz = z1 - z0
             if abs(dz) > EPS and (best is None or abs(dz) > abs(best[0])):
-                best = (dz, x1 - x0)
+                # the direction AND a point on it. A level that never crosses
+                # the contour has no crossing to start on, and the line this
+                # names is where it WOULD have crossed - which is the line
+                # every neighbouring ramp already lies on.
+                best = (dz, x1 - x0, z0, x0)
             travelled += abs(dz)
             if travelled > look:
                 break
-        out.append(best or (0.0, 0.0))
+        out.append(best or (0.0, 0.0, 0.0, 0.0))
     return out
 
 
@@ -1107,16 +1113,18 @@ def build_entry_ramp_gcode(points, rough_cut):
     if not points or len(points) < 3 or rough_cut <= EPS:
         return ''
     dirs = entry_ramp_dirs(points, 10.0 * rough_cut)
-    if ERAMP_BASE + len(dirs) * 2 + 1 >= ERAMP_TOP:
+    if ERAMP_BASE + len(dirs) * 4 + 3 >= ERAMP_TOP:
         return ''
     lines = ['(the direction a profile-angle ramp should copy, one per entry)',
              '(segment - the dominant surface just ahead of it, which is what)',
              '(a crossing would have named. See entry_ramp_dirs.)',
              '#<_pl_eramp_n> = %d' % len(dirs)]
-    for i, (dz, dx) in enumerate(dirs):
-        slot = ERAMP_BASE + i * 2
+    for i, (dz, dx, az, ax) in enumerate(dirs):
+        slot = ERAMP_BASE + i * 4
         lines.append('#%d = %s' % (slot, _fmt(dz)))
         lines.append('#%d = %s' % (slot + 1, _fmt(dx)))
+        lines.append('#%d = %s' % (slot + 2, _fmt(az)))
+        lines.append('#%d = %s' % (slot + 3, _fmt(ax)))
     return '\n'.join(lines) + '\n'
 
 

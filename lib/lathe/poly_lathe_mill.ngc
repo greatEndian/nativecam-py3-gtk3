@@ -169,7 +169,7 @@ o<poly_lathe_mill> sub
         (the part turned into light cuts in a row.)
         #<lad_tgt> = #<step_target>
         o<lad_fl> if [#<_pl_floor_n> GT 1]
-                #<lad_tgt> = #[3300]
+                #<lad_tgt> = #[3380]
         o<lad_fl> endif
 
         o1001 if [#<lad_tgt> EQ #<start_radius>]
@@ -593,7 +593,7 @@ o<poly_lathe_mill> sub
                 (region any more - the stop contour holds it off - so the Z)
                 (span narrows by itself and the sweep order is unchanged.)
                 (What it must do is LAND on each floor, so it re-anchors at)
-                (each in turn, shallowest first, out of the #3300 table)
+                (each in turn, shallowest first, out of the #3380 table)
                 (Python built. Read the table, move.)
                 (The FIRST stage keeps the window's own ladder untouched and)
                 (only retargets it: every stage after it is anchored on the)
@@ -609,9 +609,9 @@ o<poly_lathe_mill> sub
                 #<fl_i> = -1
                 #<fl_prot> = #<step_target>
                 o<fl_use> if [#<_pl_floor_n> GT 1]
-                        o<fl_last> if [ABS[#<lvl_floor> - #[3300 + #<_pl_floor_n> - 1]] LT 0.000001]
+                        o<fl_last> if [ABS[#<lvl_floor> - #[3380 + #<_pl_floor_n> - 1]] LT 0.000001]
                                 #<fl_i> = 0
-                                #<lvl_floor> = #[3300]
+                                #<lvl_floor> = #[3380]
                                 #<fl_prot> = #<lvl_floor>
                         o<fl_last> endif
                 o<fl_use> endif
@@ -804,7 +804,7 @@ o<poly_lathe_mill> sub
                                 (one down, if the profile is entitled to one)
                                 o<fl_more> if [[#<fl_i> GE 0] AND [#<fl_i> LT [#<_pl_floor_n> - 1]]]
                                         #<fl_i> = [#<fl_i> + 1]
-                                        #<lvl_floor> = #[3300 + #<fl_i>]
+                                        #<lvl_floor> = #[3380 + #<fl_i>]
                                         #<fl_prot> = #<lvl_floor>
                                         #<fl_n> = FUP[ABS[#<lvl_floor> - #<current_radius>] / #<_rough_cut>]
                                         o<fl_n2> if [#<fl_n> LT 1]

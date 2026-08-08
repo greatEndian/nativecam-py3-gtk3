@@ -95,7 +95,7 @@ def main():
                 if m and int(m.group(1)) >= stages:
                     stages = int(m.group(1))
                     floors = [float(x) for x in
-                              re.findall(r'#33\d\d = ([\d.]+)', txt)]
+                              re.findall(r'#33[89]\d = ([\d.]+)', txt)]
         check('both anchorings generate and run', all(lv.values()),
               str({k: v is None for k, v in lv.items()}))
         if not all(lv.values()):
@@ -273,7 +273,7 @@ def main():
         # the floors THIS program is entitled to - the anchoring differs
         # between the runs above, and so do their floors
         floors = [float(x) for x in re.findall(
-            r'#33\d\d = ([\d.]+)', open(thin).read())] \
+            r'#33[89]\d = ([\d.]+)', open(thin).read())] \
             if os.path.isfile(thin) else []
         check('the project generates with a thin-pass threshold', bool(tl))
         if not tl:

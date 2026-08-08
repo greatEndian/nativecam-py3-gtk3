@@ -68,6 +68,9 @@ o<lathe_level_pass> sub
 	#<e_whave>   = 0
 	#<e_wdz>     = 0
 	#<e_wdx>     = 0
+	#<e_waz>     = 0
+	#<e_wax>     = 0
+	#<e_xz>      = 0
 	#<e_rb>      = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
@@ -327,10 +330,13 @@ o<lathe_level_pass> sub
 			(short shallow scrap of fillet at the boss foot, a 2.9656 ramp)
 			(where every neighbour runs 2.2004. Read the table, move.)
 			o<e_ws> if [[#<_pl_eramp_n> GT 0] AND [[[#<e_pz> - #<w_from>] * [#<e_cz> - #<w_from>]] LE 0]]
-				#<e_rb> = [3200 + [#<e_i> - 1] * 2]
+				#<e_rb> = [3200 + [#<e_i> - 1] * 4]
 				o<e_ws2> if [ABS[#[#<e_rb>]] GT 0.000001]
 					#<e_wdz> = #[#<e_rb>]
 					#<e_wdx> = #[#<e_rb> + 1]
+					(and a point ON that line, for a level that never crosses)
+					#<e_waz> = #[#<e_rb> + 2]
+					#<e_wax> = #[#<e_rb> + 3]
 					#<e_whave> = 1
 				o<e_ws2> endif
 			o<e_ws> endif
@@ -404,6 +410,27 @@ o<lathe_level_pass> sub
 			(point, then turning onto the level. Arriving parallel to the)
 			(surface it is about to leave beats driving in at 45 degrees.)
 		o<e_ok> endif
+
+		(A LEVEL THAT NEVER CROSSES THE ENTRY CONTOUR STILL HAS A PLACE)
+		(TO START. Behind a boss the contour peaks - on testing_15_5 at)
+		(r33.1657 - and a level above that peak crosses nothing, so its)
+		(start fell back to the floor scan and landed 0.2509 clear of)
+		(the pre-finish contour, one whole pre-finish allowance out,)
+		(while every neighbour started ON it.)
+		(greatEndian: the parallel ramp has to be in the same line as)
+		(the other ones are - a 45 degree lead-in there engages far)
+		(more of the cutting edge and cuts at a much higher surface.)
+		(The line is known: the table names the surface's direction AND)
+		(a point on it, so the start is where that line reaches this)
+		(level - Z-34.2464, against the Z-34.2463 its neighbour starts)
+		(at. Bounded to three depths of cut of w_from and to the)
+		(window, so it cannot run away.)
+		o<e_ext> if [[#<e_have> EQ 0] AND [#<e_whave> GT 0] AND [ABS[#<e_wdx>] GT 0.000001]]
+			#<e_xz> = [#<e_waz> + [[#<level> - #<e_wax>] * #<e_wdz> / #<e_wdx>]]
+			o<e_xb> if [[ABS[#<e_xz> - #<w_from>] LT [3.0 * #<_rough_cut>]] AND [[#<z_dir> * [#<e_xz> - #<w_to>]] GT 0.0001]]
+				#<z_start> = #<e_xz>
+			o<e_xb> endif
+		o<e_ext> endif
 
 	(NEVER START IN FRONT OF THE POLYLINE'S OWN BEGIN Z. greatEndian: the)
 	(compensated entry is geometrically right against the contour, but on the)

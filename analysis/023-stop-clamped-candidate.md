@@ -349,3 +349,69 @@ table OFF   16 ramps, slopes {0.057: 1, 0.231: 15}
 ```
 
 The 0.057 is the 8.9734 ramp. Assertion 1 fails on it.
+
+---
+
+## The ramp on the family line, and a table-base collision I caused
+
+`photo/leadIn_0.png` — greatEndian drew it: orange the situation, violet what is
+wanted. Same angle, shifted horizontally toward the boss at the same two radii.
+
+```
+now     Z-32.9473 r33.7160  ->  Z-35.1477 r33.2080
+wanted  Z-32.0459 r33.7160  ->  Z-34.2463 r33.2080     +0.9014 in Z
+```
+
+Z−34.2463 is exactly where the NEIGHBOURING ramp starts, so the violet puts this
+one back on the line the others lie on. greatEndian's reason is the machining
+one, not the picture: *"if tool at second pass behind this go inside at 45 lead
+in as it is now it will cut at very high roughing surface and length of active
+cutting edge will be also longer than in the other cuts"*.
+
+### Why it sat 0.9 out
+
+That level, r33.2080, is 0.042 **above** the entry contour's local peak behind
+the boss (r33.1657), so it crosses nothing and its start fell back to the floor
+scan — which stands one pre-finish allowance further out, the 0.2509 measured.
+Every neighbour starts on a crossing, which is why they land on the line.
+
+### The fix, in Python
+
+`entry_ramp_dirs` already named the surface's direction per segment. It now also
+names **a point on that line**, so the start for a non-crossing level is where
+that line reaches its radius — one line of arithmetic in the `.ngc`, bounded to
+three depths of cut of `w_from` and to the window.
+
+```
+ 4  33.2080  behind  ramp Z-32.0503 -> Z-34.2507
+ 6  32.7000  behind  ramp Z-34.2463 -> Z-36.4467
+```
+
+The first now ends exactly where the second begins: the ramps chain along one
+line. Its clearance over the pre-finish contour stays +0.1159 rather than
+0.0000, and that is geometry, not a fault — the level is above the contour's
+peak, so no point on it has that radius.
+
+### And the collision, which was mine
+
+The ramp table needed 4 slots per segment instead of 2, so it grew from
+3200–3300 to 3200–3380 and the floor-stage table moved to 3380. **Python was
+moved and `poly_lathe_mill.ngc` was not** — four reads still at `#3300`, which is
+now ramp data. The floor ladder was reading ramp directions as floor radii, and
+greatEndian saw it immediately: *"in the sectioning on there are that touched
+passes doubles and offsettes in the Z+ directions"*.
+
+Two tests read the same table by regex, `#33\d\d`, which after the move matched
+the ramp slots too — narrowed to `#33[89]\d`. That is the second time a table
+base moved and something reading it did not: the layout comment at the top of
+`lathe_sections.py` is the index, and everything that reads a base must be
+grepped when one changes — including the tests.
+
+### Verified, both modes
+
+Sectioning OFF: 44 level cuts, 18 behind the boss, every step 0.508.
+Sectioning ON: 45 / 19, steps 0.4682 0.4681 0.4682 0.4671 0.508…, every ramp
+tangent at −0.0010. `test_ramps`, `test_floor_ladder`, `test_ladder`,
+`test_rough_comp` (Off 0.1115 / Native 0.0503 / In CAM 0.0503), `test_rough_ends`,
+`test_leads`, `test_skip_short`, `test_sections`, `test_lathe_validation`,
+`test_coord_mapping`, `test_vkb`, flake8 both lists.

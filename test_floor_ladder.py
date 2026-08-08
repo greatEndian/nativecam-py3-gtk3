@@ -123,7 +123,7 @@ def main():
                     check('%s generates' % project, False)
                     continue
                 txt = open(on).read()
-                floors = [float(x) for x in re.findall(r'#33\d\d = ([\d.]+)', txt)]
+                floors = [float(x) for x in re.findall(r'#33[89]\d = ([\d.]+)', txt)]
                 # the gate itself is what "before" means - same file, feature off
                 open(off, 'w').write(
                     re.sub(r'#<_pl_floor_n> = \d+', '#<_pl_floor_n> = 0', txt))
