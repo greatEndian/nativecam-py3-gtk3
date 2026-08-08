@@ -303,10 +303,33 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   whether the crash needs a preview parse to be in flight - toggle Sectioning
   immediately after a Regenerate versus well after one.
 
-- [ ] **Nothing asserts the roughing start or the retreat height directly** —
-  added 2026-08-04. `test_leads.py` covers the pre-finish and finish passes
-  only. A regression in either would show up as `test_rough_comp`'s overcut
-  number moving (0.0394 mm today), which is indirect and easy to explain away.
+- [x] **Nothing asserts the roughing start or the retreat height directly —
+  DONE**, 2026-08-08, `analysis/020`, `test_rough_ends.py`. Both ends of a
+  level now have a test of their own instead of being read off
+  `test_rough_comp`'s overcut number.
+
+  **The start**: no level begins in front of Begin Z, at least one begins
+  exactly ON it (the equality, not the one-sided bound the O-code warns about),
+  all three modes agree, and it **tracks** — the project is generated again with
+  Begin Z at −5.0 and the start has to move exactly with it, which is what stops
+  the whole file passing on a program that always starts at Z0.0.
+
+  **The retreat**: no roughing rapid removes material, measured by sweeping the
+  real nose against the material as it stands at that point in the program; and
+  the return traverse runs r31.8160, **1.8160 mm clear of the r30.0000 bar**.
+
+  Negative controls both fire: with the Begin Z clamp deleted the start goes
+  Off Z1.0000 / Native Z0.6000 — `analysis/010`'s bug reproduced exactly — and
+  with the retract lowered 2 mm into the bar the rapid cut goes 0.0000 → 1.0000.
+
+  Two things it does not cover, both recorded in `analysis/020`: the stock
+  clearance check applies to **OD work only**, and a Begin Z set in FRONT of the
+  profile start is deliberately not clamped and has no test either way.
+
+  Noticed doing it: `test_rough_comp` reports Native **0.0503** today where the
+  line above recorded 0.0394 on 2026-08-04. The subroutine is byte-identical to
+  HEAD, so the number moved with the later commits and nobody saw it — which is
+  the argument for the file.
 
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
   still switch it on inside the finishing loop only.** Standing rule in
