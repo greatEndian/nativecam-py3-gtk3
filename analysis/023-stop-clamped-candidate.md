@@ -225,3 +225,70 @@ Sectioning ON now cuts 45 levels, 19 of them touching behind the boss, against
 `test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
 `test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short`,
 `test_sections`, flake8 clean.
+
+---
+
+## Two the fixes above caused, 2026-08-08
+
+greatEndian verified and found both. `photo/doubledLeadIn_0.png` and
+`photo/wrongExtraLenghtLeadInBehindBossSegment_0.png`.
+
+### The doubled lead-in — the ramp pointed INTO the part
+
+*"before boss section there is path where lead in doubled, means that first
+lead in goes at second pass level and then its return in opposite angle to
+first pass Z0.0"*. Exactly that, in both modes:
+
+```
+feed  Z 1.2151 r34.4231 -> Z 0.5080 r33.7160    dives to the SECOND pass level
+feed  Z 0.5080 r33.7160 -> Z 0.5080 r33.7160    no-op
+feed  Z 0.5080 r33.7160 -> Z 0.0000 r34.2240    climbs back to the first pass
+```
+
+The fallback added for issue 2 armed a ramp on the FRONT passes, where none
+existed before. At Z0 the entry segment rises with the front face, so copying
+its angle gives slope −1 and puts the ramp's start 0.5080 **inside** the level:
+the tool dives to the next pass's radius and climbs back out.
+
+The ramp exists to arrive parallel through material that is already gone, so it
+must start on the stock side. It is now armed only when it does. On those front
+passes that means no ramp, which is the right answer — the plain lead-in
+already handles them, and it is what they had before.
+
+### The ramp behind the boss was longer than its neighbours
+
+*"lead in parallel section at first pass behind the boss segment has to have
+same parameters as each other one no extra length"*.
+
+```
+ 4  33.2080  behind  RAMP dz=2.9656 dr=0.5080   <- mine
+ 6  32.7000  behind  RAMP dz=2.2004 dr=0.5080
+ 8  32.1920  behind  RAMP dz=2.2004 dr=0.5080
+```
+
+Same 0.5080 of depth, longer in Z, because the fallback copied the segment the
+pass merely STARTS on — at the boss foot a short shallow scrap of fillet, slope
+0.1713 — while every crossing-derived neighbour lands on the long taper behind
+it, slope 0.2309.
+
+**Fixed in Python**, per the standing rule and greatEndian's *"everything code
+in python if it is possible"*. `entry_ramp_dirs` names, per entry segment, the
+dominant surface just ahead of it — the longest segment within ten depths of
+cut — which is what a crossing would have named. It rides out with the entry
+contour it indexes, so no saved project has to migrate to get it, and the
+runtime now **reads** the angle where it used to derive one:
+
+```
+ 4  33.2080  behind  RAMP dz=2.2004 dr=0.5080   identical to every other pass
+```
+
+The `.ngc` got smaller in the process: the segment-direction arithmetic is gone,
+replaced by a table lookup.
+
+### Verified
+
+Doubled lead-in gone in both modes. Sectioning ON 45 level cuts / 19 behind the
+boss, OFF 44 / 18, steps 0.4682 0.4681 0.4682 0.4671 0.508… — no double bite.
+`test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
+`test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short`,
+`test_sections`, `test_lathe_validation`, flake8 clean.

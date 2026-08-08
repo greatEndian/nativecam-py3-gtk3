@@ -1058,6 +1058,68 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
     return merged
 
 
+# The entry-ramp direction table. One (dz, dx) per entry-contour segment,
+# in the free space under the sections table.
+ERAMP_BASE = 3200
+ERAMP_TOP = 3300
+
+
+def entry_ramp_dirs(points, look):
+    """Per entry segment, the direction a ramp starting on it should copy.
+
+    The profile-angle approach exists to arrive PARALLEL to the surface the
+    pass is about to run along. Where the level crosses the entry contour the
+    crossing names that surface itself. Where it does not - a level above the
+    contour's own peak - something has to choose, and the segment the pass
+    happens to start on is the wrong answer: near the foot of a boss that is a
+    short shallow scrap of fillet, and copying it made the ramp 2.9656 long
+    where every neighbouring pass runs 2.2004. greatEndian: the parallel
+    section behind the boss has to have the same parameters as the others, no
+    extra length.
+
+    The surface it will actually run along is the DOMINANT one just ahead -
+    the longest segment within `look` of the start. On testing_15_5 that is
+    the long taper down the back of the boss, which is what the crossings of
+    every deeper level land on, so the fallback and the crossings agree.
+    """
+    segs = list(zip(points, points[1:]))
+    out = []
+    for i in range(len(segs)):
+        best, travelled = None, 0.0
+        for j in range(i, len(segs)):
+            (z0, x0), (z1, x1) = segs[j]
+            dz = z1 - z0
+            if abs(dz) > EPS and (best is None or abs(dz) > abs(best[0])):
+                best = (dz, x1 - x0)
+            travelled += abs(dz)
+            if travelled > look:
+                break
+        out.append(best or (0.0, 0.0))
+    return out
+
+
+def build_entry_ramp_gcode(points, rough_cut):
+    """The #3200 ramp-direction table, or '' when there is nothing to say.
+
+    Indexed by entry-contour segment, so the runtime reads the direction for
+    the segment it is standing on instead of working one out.
+    """
+    if not points or len(points) < 3 or rough_cut <= EPS:
+        return ''
+    dirs = entry_ramp_dirs(points, 10.0 * rough_cut)
+    if ERAMP_BASE + len(dirs) * 2 + 1 >= ERAMP_TOP:
+        return ''
+    lines = ['(the direction a profile-angle ramp should copy, one per entry)',
+             '(segment - the dominant surface just ahead of it, which is what)',
+             '(a crossing would have named. See entry_ramp_dirs.)',
+             '#<_pl_eramp_n> = %d' % len(dirs)]
+    for i, (dz, dx) in enumerate(dirs):
+        slot = ERAMP_BASE + i * 2
+        lines.append('#%d = %s' % (slot, _fmt(dz)))
+        lines.append('#%d = %s' % (slot + 1, _fmt(dx)))
+    return '\n'.join(lines) + '\n'
+
+
 def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
     """The #3300 floor-stage table, or '' when one floor fits the whole part.
 
@@ -2070,6 +2132,13 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     for i, (z, x) in enumerate(env):
         lines.append('#%d = %s' % (ENTRY_BASE + 2 * i, _fmt(z)))
         lines.append('#%d = %s' % (ENTRY_BASE + 2 * i + 1, _fmt(x)))
+    # and the ramp direction per segment of that same contour, so the runtime
+    # reads the angle to arrive at instead of choosing one - it rides along
+    # with the contour it indexes rather than needing a call of its own, which
+    # also means no saved project has to migrate to get it
+    ramp = build_entry_ramp_gcode(env, _to_float(entry_off))
+    if ramp:
+        lines.append(ramp.rstrip('\n'))
     return '\n'.join(lines)
 
 

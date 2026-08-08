@@ -68,6 +68,7 @@ o<lathe_level_pass> sub
 	#<e_whave>   = 0
 	#<e_wdz>     = 0
 	#<e_wdx>     = 0
+	#<e_rb>      = 0
 	o<lif_def> if [#<li_feed> LE 0]
 		#<li_feed> = #<pass_feed>
 	o<lif_def> endif
@@ -318,12 +319,18 @@ o<lathe_level_pass> sub
 			(contour peaks at r33.1657 behind the boss and the level sits at)
 			(r33.2080, 0.0423 over it - so there is no crossing to take an)
 			(angle from and the pass drove in at 45 degrees while every)
-			(deeper one arrived parallel. The surface it is leaving is still)
-			(right there: the entry segment spanning w_from.)
-			o<e_ws> if [[[#<e_pz> - #<w_from>] * [#<e_cz> - #<w_from>]] LE 0]
-				o<e_ws2> if [ABS[#<e_cz> - #<e_pz>] GT 0.000001]
-					#<e_wdz> = [#<e_cz> - #<e_pz>]
-					#<e_wdx> = [#<e_cx> - #<e_px>]
+			(deeper one arrived parallel.)
+			(WHICH angle is a Python question, answered at generation time:)
+			(entry_ramp_dirs names, per segment, the dominant surface just)
+			(ahead of it - which is what a crossing would have named. Copying)
+			(the segment the pass merely starts on was tried and gives a)
+			(short shallow scrap of fillet at the boss foot, a 2.9656 ramp)
+			(where every neighbour runs 2.2004. Read the table, move.)
+			o<e_ws> if [[#<_pl_eramp_n> GT 0] AND [[[#<e_pz> - #<w_from>] * [#<e_cz> - #<w_from>]] LE 0]]
+				#<e_rb> = [3200 + [#<e_i> - 1] * 2]
+				o<e_ws2> if [ABS[#[#<e_rb>]] GT 0.000001]
+					#<e_wdz> = #[#<e_rb>]
+					#<e_wdx> = #[#<e_rb> + 1]
 					#<e_whave> = 1
 				o<e_ws2> endif
 			o<e_ws> endif
@@ -614,7 +621,19 @@ o<lathe_level_pass> sub
 			o<e_room> if [#<pa_dz> GT 0.000001]
 				#<pa_z> = [#<z_start> + #<z_dir> * #<pa_dz>]
 				#<pa_x> = [#<level> + #<z_dir> * #<pa_dz> * #<e_slope>]
-				#<pa_on> = 1
+				(THE RAMP MUST COME IN FROM THE STOCK SIDE. Its whole job is)
+				(to arrive parallel to the surface through material that is)
+				(already gone; a direction that puts its start INSIDE the)
+				(level dives into the part and climbs back out, which is)
+				(what greatEndian saw at the front of testing_15_5 - the)
+				(lead-in descending to r33.7160, the NEXT pass's level, then)
+				(returning to r34.2240 at Z0. The entry segment there rises)
+				(with the front face, so copying its angle points the wrong)
+				(way. No ramp is the right answer in that case, and the)
+				(plain lead-in already handles it.)
+				o<pa_side> if [[#<_pl_x_sgn> * [#<pa_x> - #<level>]] GT 0.000001]
+					#<pa_on> = 1
+				o<pa_side> endif
 			o<e_room> endif
 		o<e_proj> endif
 	o<e_arm> endif
