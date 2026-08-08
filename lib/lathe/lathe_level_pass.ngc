@@ -48,6 +48,9 @@ o<lathe_level_pass> sub
 	#<s_zc>      = 0
 	#<s_flat>    = 0
 	#<s_fz>      = 0
+	#<s_cl>      = 0
+	#<s_bcl>     = 0
+	#<s_take>    = 0
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
 	#<e_have>    = 0
@@ -390,6 +393,7 @@ o<lathe_level_pass> sub
 		#<s_i>    = 0
 		#<s_best> = 0
 		#<s_have> = 0
+		#<s_bcl>  = 0
 		#<s_pz> = #[#<_pl_stop_base>]
 		#<s_px> = #[#<_pl_stop_base> + 1]
 		#<s_flat> = 0
@@ -456,7 +460,9 @@ o<lathe_level_pass> sub
 			(crossing already lies inside the reach - every one on both test)
 			(projects, 0.90 to 1.0034 mm - are untouched.)
 			#<s_zc> = #<s_z>
+			#<s_cl> = 0
 			o<s_clamp> if [ABS[#<s_zc> - #<z_end>] GT #<s_reach>]
+				#<s_cl> = 1
 				(no crossing within reach, so the level has nothing to end ON)
 				(ahead of it. It runs to the end of the feature - where the)
 				(contour flattens - and not to an arbitrary length: clamping)
@@ -469,10 +475,35 @@ o<lathe_level_pass> sub
 				o<s_cl2> endif
 			o<s_clamp> endif
 			o<s_fwd> if [[[#<z_dir> * [#<s_zc> - #<z_end>]] LT -0.0001] AND [[#<z_dir> * [#<s_zc> - #<w_to>]] GT -0.0001]]
-					o<s_near> if [[#<s_have> EQ 0] OR [[#<z_dir> * [#<s_zc> - #<s_best>]] GT 0]]
-						#<s_best> = #<s_zc>
-						#<s_have> = 1
+					(A CLAMPED CANDIDATE MUST NOT BEAT A REAL CROSSING. The)
+					(clamp is the answer to "no crossing within reach" - it)
+					(runs the level to the end of the feature - and it lands)
+					(NEARER THE FRONT than a genuine crossing does, so the)
+					(nearest-wins rule below handed it the pass.)
+					(Measured on testing_15_5: the level at r32.7000 crosses)
+					(the pre-finish contour three times - the boss front face)
+					(at Z-29.4588, its back face at Z-36.4467 and the end of)
+					(the part at Z-69.8920. The two far ones are out of reach)
+					(and clamp back to the feature boundary at Z-28.3891,)
+					(which is in front of the real crossing, so the pass)
+					(stopped 1.0697 mm short of the contour it should have)
+					(ended on. greatEndian: the 3rd, 4th and 5th passes are)
+					(not tangent to the pre-finish contour.)
+					(An unclamped candidate wins outright; among equals the)
+					(nearest to the front still wins, exactly as before.)
+					#<s_take> = 0
+					o<s_near> if [#<s_have> EQ 0]
+						#<s_take> = 1
+					o<s_near> elseif [[#<s_bcl> GT 0] AND [#<s_cl> EQ 0]]
+						#<s_take> = 1
+					o<s_near> elseif [[#<s_bcl> EQ #<s_cl>] AND [[#<z_dir> * [#<s_zc> - #<s_best>]] GT 0]]
+						#<s_take> = 1
 					o<s_near> endif
+					o<s_set> if [#<s_take>]
+						#<s_best> = #<s_zc>
+						#<s_bcl>  = #<s_cl>
+						#<s_have> = 1
+					o<s_set> endif
 				o<s_fwd> endif
 			o<s_cross> endif
 			#<s_pz> = #<s_cz>

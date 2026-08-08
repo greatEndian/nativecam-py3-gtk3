@@ -21,6 +21,19 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
 
 ## Next — before anything else
 
+- [ ] **NEEDS A CALL — may a roughing level pass an obstruction it clears at
+  the PRE-FINISH allowance but not at the floor allowance?** `testing_15_5`,
+  2026-08-08, `analysis/023`. Level 3 sits at r33.2080; the pre-finish contour
+  peaks at r33.1657 in front of the boss, so the level clears it by **0.0423**
+  — but the floor allowance (fin + prefin = 0.762) still blocks it, so the pass
+  splits into two intervals with a retract between where one sweep would do.
+  Letting it through leaves **0.5503** at the boss peak instead of 0.762: more
+  than the pre-finish pass needs, less than the roughing allowance promises.
+  The code carries a warning against relaxing that scan — halving it once turned
+  487 mm of cut into 875.6 and finished ten ends inside the contour — so this is
+  greatEndian's call, not a guess.
+
+
 - [ ] **RESTART NATIVECAM DOES NOT COME BACK** — greatEndian 2026-08-04. The
   menu item added in `141a98b` restarts the process but the panel never
   reappears in AXIS. **My bug.** The reasoning behind `os.execv` was that
