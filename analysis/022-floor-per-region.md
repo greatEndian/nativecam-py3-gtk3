@@ -221,3 +221,77 @@ level's bite being handed to the level below it.
 
 testing_15_4 max step 0.5000, no gap over the depth of cut. `test_rough_comp`
 Off 0.1115 / Native 0.0503 / In CAM 0.0503. testing_13_arcs runs in 41.7 s.
+
+---
+
+## Addendum 2 — a floor taken from a single point is not a floor, 2026-08-08
+
+greatEndian: *"the first section in front of the boss segment is still wrong ..
+it is overflow with the extra passes now .. verify the near 5 passes to
+prefinish where is different depth of cut .. verify it to each cutting section
+.. fix it with accent to python .. we are running from final contour but at from
+stock its same mess"*.
+
+### Verified, per cutting section
+
+The question "what does a level at this floor actually CUT in its own region"
+had never been asked. Measured on testing_15_4 — the Z length where the profile
+plus the allowance is still under the floor:
+
+```
+chamfer   Z0    .. -1.0     floor 20.0160     0.2500 mm
+cylinder  Z-1.0 .. -20.0    floor 21.0160    19.0000 mm
+boss      Z-20  .. -32.5    floor 21.7227     0.0301 mm
+cylinder  Z-32.5.. -70.4    floor 21.0160    25.4000 mm
+```
+
+**The two floors that broke the descent are exactly the two that cut nothing.**
+Both are a curve touching its minimum at a single point — the tip of the
+chamfer, the foot of the boss arc where it meets the cylinder. Neither is a
+surface; each demanded a stage, and each stage cost the WHOLE part its uniform
+descent:
+
+```
+before   0.5080 ... 0.3252  0.3534  0.3534  0.5000
+after    0.5080 ... 0.5080  0.5080  0.5080  0.5000   <- 0.5000 is chamfer-only,
+                                                        1.05 mm long
+```
+
+### The fix, in Python
+
+`region_cut_length` samples the profile inside a region and reports how much Z a
+level at that floor could cut. `floor_ladder` drops any floor under one depth of
+cut of it — below that a level costs an approach and a retract to remove a
+smear. The part's own deepest floor is always kept, since roughing has to stop
+somewhere and that is the radius `poly_lathe_mill` would have used anyway.
+
+No new O-code: the filtering is entirely in `lathe_sections.py` and the `.ngc`
+reads the same table it already read.
+
+**This also released the retarget that had to be reverted.** Aiming the main
+ladder at the first floor is what makes the descent uniform, and it was backed
+out because testing_13_arcs then ran `rs274` past ten minutes. The cause was the
+floor count: 7 floors, most of them point-derived, so the per-window stage walk
+carried nearly the whole depth. With the filter 13_arcs has **2** floors, the
+main ladder does the work again, and it runs in **43.4 s**. Both changes are in.
+
+### Effect on the other projects
+
+| project | floors | result |
+|---|---|---|
+| testing_15_4 | 3 → **2** | uniform 0.508 to 21.016, then one chamfer-only pass |
+| testing_15_2 | 2 → **1** | no table at all — its Final Diameter already matches its only real region, so it was never anchored on the wrong number |
+| testing_13_arcs | 7 → **2** | 43.4 s, lands on both |
+| testing_11 | 2 → **0** | no table; both its floors are point-derived |
+
+That testing_15_2 collapses to one floor is the useful negative result: **it was
+never broken**, and the earlier "1 of 2 floors" was counting a floor that no
+level can reach. `test_floor_ladder` now says so rather than failing, and
+asserts that a one-floor project is byte-identical with the gate on and off.
+
+### Both anchorings
+
+greatEndian: *"at from stock its same mess"*. Right — the extra stages were
+inserted regardless of anchoring, so Stock got the same broken descent. The
+filter is upstream of both, and `test_ladder` covers both: Final contour and
+Stock now each show a single odd gap, the stock-end remainder.

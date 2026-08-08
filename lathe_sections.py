@@ -965,6 +965,29 @@ def floor_regions(points, fin_off, prefin_off, rough_cut, anchored):
     return regions
 
 
+def region_cut_length(points, z_from, z_to, floor, allowance, samples=24):
+    """How much Z a roughing level at `floor` could actually cut in a region.
+
+    A level cuts where the material still stands above it - where the profile
+    plus the allowance roughing must leave is still under the level. Sampled
+    rather than solved: the profile is a polyline of hundreds of chords here
+    and this only has to tell a real surface from a single touching point.
+    """
+    lo, hi = min(z_from, z_to), max(z_from, z_to)
+    total = 0.0
+    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+        a, b = max(min(z0, z1), lo), min(max(z0, z1), hi)
+        if a > b:
+            continue
+        for k in range(samples):
+            zm = a + (b - a) * (k + 0.5) / samples
+            x = x0 if abs(z1 - z0) < EPS else \
+                x0 + (x1 - x0) * (zm - z0) / (z1 - z0)
+            if x / DIAMETER_MODE + allowance < floor:
+                total += (b - a) / samples
+    return total
+
+
 def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
     """The floors a roughing ladder must land on, shallowest first.
 
@@ -978,10 +1001,39 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
     the other 0.016 out. Re-anchoring at each floor in turn lands on both.
     """
     regions = floor_regions(points, fin_off, prefin_off, rough_cut, anchored)
+    if not regions:
+        return []
+
+    # A FLOOR TAKEN FROM A SINGLE POINT IS NOT A FLOOR. A region's floor comes
+    # from its deepest material, and where that depth is reached at one point -
+    # the tip of a chamfer, the foot of an arc where it meets a cylinder - a
+    # level there cuts nothing worth an approach, while the stage it demands
+    # breaks the uniform descent for the WHOLE part.
+    #
+    # Measured on testing_15_4, the Z a level at each floor could cut inside
+    # its own region:
+    #
+    #     chamfer   Z0 .. -1        floor 20.0160     0.2500 mm
+    #     cylinder  Z-1 .. -20      floor 21.0160    19.0000 mm
+    #     boss      Z-20 .. -32.5   floor 21.7227     0.0301 mm
+    #     cylinder  Z-32.5 .. -70.4 floor 21.0160    25.4000 mm
+    #
+    # The two that broke the descent into 0.3252 / 0.3534 / 0.3534 are exactly
+    # the two that cut nothing. One depth of cut of Z is the bar: below that a
+    # level costs an approach and a retract to remove a smear.
+    allowance = fin_off + prefin_off
     floors = []
-    for _z_from, _z_to, floor in regions:
+    for z_from, z_to, floor in regions:
+        if region_cut_length(points, z_from, z_to, floor, allowance) < rough_cut:
+            continue
         if not any(abs(floor - f) < EPS for f in floors):
             floors.append(floor)
+    # the part's own deepest floor is always the end of the ladder, whether or
+    # not any single region earns it - roughing has to stop somewhere, and that
+    # is the radius poly_lathe_mill would have used on its own
+    deepest = min(f for _a, _b, f in regions)
+    if not any(abs(deepest - f) < EPS for f in floors):
+        floors.append(deepest)
     floors.sort(reverse=True)
 
     # FLOORS TOO CLOSE TOGETHER ARE ONE FLOOR. testing_13_arcs is entitled to

@@ -161,7 +161,16 @@ o<poly_lathe_mill> sub
         (the first one and was clamped onto it, so its last step came out)
         (0.3252 where 0.508 was configured and the descent near the part)
         (turned into three light cuts in a row.)
+        (WHERE THE MAIN LADDER ENDS. With one floor that is the floor itself,)
+        (as it always was. With several it is the SHALLOWEST - the stages)
+        (below take over from there. Left aiming at the deepest floor the main)
+        (ladder overshot the first one and was clamped onto it, so its last)
+        (step came out 0.3252 where 0.508 was configured and the descent near)
+        (the part turned into light cuts in a row.)
         #<lad_tgt> = #<step_target>
+        o<lad_fl> if [#<_pl_floor_n> GT 1]
+                #<lad_tgt> = #[3300]
+        o<lad_fl> endif
 
         o1001 if [#<lad_tgt> EQ #<start_radius>]
                 #<cut_step> = 0
@@ -218,7 +227,9 @@ o<poly_lathe_mill> sub
                         (profile has several - the stages below take over from)
                         (there. With one floor lad_tgt IS anch_floor, so this)
                         (is the same arithmetic it always was.)
-                        #<lad_tgt> = #<anch_floor>
+                        o<anch_fl> if [#<_pl_floor_n> LE 1]
+                                #<lad_tgt> = #<anch_floor>
+                        o<anch_fl> endif
                         #<rough_passes> = FUP[ABS[#<lad_tgt> - #<start_radius>] / #<_rough_cut>]
                         (first step takes the remainder, so the last level lands)
                         (exactly on that grid)

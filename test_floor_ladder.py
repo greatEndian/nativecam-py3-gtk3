@@ -111,6 +111,7 @@ def main():
     else:
         import ncam_preview as P
         d = tempfile.mkdtemp(prefix='floor_ladder_')
+        exercised = []
         try:
             for project in PROJECTS:
                 on = os.path.join(d, project[:-4] + '_on.ngc')
@@ -133,10 +134,20 @@ def main():
                 if a.error or b.error:
                     continue
                 new, old = level_radii(a, P), level_radii(b, P)
-                check('%s is entitled to more than one floor' % project,
-                      len(floors) > 1, '%d floors' % len(floors))
+                # A PROJECT WITH ONE FLOOR IS NOT A FAILURE. testing_15_2's
+                # Final Diameter already matches its only region that has real
+                # material at depth, so its ladder was never anchored on the
+                # wrong number and there is nothing here to show. It stays in
+                # the list as the control: no table, and the gate then cannot
+                # change its motion at all.
                 if len(floors) < 2:
+                    print('   %-20s one floor - nothing to re-anchor, and no '
+                          'table emitted' % project)
+                    check('%s is unchanged when it has one floor' % project,
+                          new == old,
+                          '%d radii against %d' % (len(new), len(old)))
                     continue
+                exercised.append(project)
 
                 hit_new, hit_old = landed(floors, new), landed(floors, old)
                 print('   %-20s %d floors, landed on %d -> %d'
@@ -150,6 +161,11 @@ def main():
                       len(hit_old) < len(floors),
                       'the old ladder already landed on every floor, so this '
                       'project cannot show the difference')
+
+            check('at least one project actually exercises the ladder',
+                  bool(exercised),
+                  'every project collapsed to one floor - the re-anchoring is '
+                  'not being tested by anything here')
 
             # 3. A SINGLE-FLOOR PART IS UNTOUCHED. testing_11's profile has two
             #    floors, so the one to prove this on is any project whose table
