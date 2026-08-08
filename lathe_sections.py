@@ -982,7 +982,28 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
     for _z_from, _z_to, floor in regions:
         if not any(abs(floor - f) < EPS for f in floors):
             floors.append(floor)
-    return sorted(floors, reverse=True)
+    floors.sort(reverse=True)
+
+    # FLOORS TOO CLOSE TOGETHER ARE ONE FLOOR. testing_13_arcs is entitled to
+    # 22.7805 and 22.762 - 0.0185 apart - and giving each its own stage buys a
+    # 0.0185 mm cut, which is a pass that rubs rather than cuts, plus its own
+    # approach and retract. Seven such stages made the program heavy enough to
+    # run rs274 past its 120 s budget.
+    #
+    # The SHALLOWER one survives, and that direction is not arbitrary: merging
+    # to the deeper floor would cut 0.0185 past what the shallower region is
+    # entitled to and eat into its pre-finish allowance, while merging to the
+    # shallower leaves that much standing for the pre-finish pass to take -
+    # which is what the pass is for.
+    #
+    # Half the depth of cut is a CHOICE, not a measurement: it is the point
+    # below which a level is not worth the approach it costs. Same shape of
+    # judgement as the ramp cap in lathe_level_pass.
+    merged = []
+    for f in floors:
+        if not merged or abs(merged[-1] - f) > 0.5 * rough_cut:
+            merged.append(f)
+    return merged
 
 
 def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):

@@ -116,12 +116,27 @@ def main():
                 # still has exactly one, which is what this asserted before.
                 odd = [(i, g) for i, g in enumerate(gaps)
                        if abs(g - DOC) > 1e-3]
-                # stages + 1: one remainder per re-anchoring, plus the
-                # window ladder's own first-step remainder at the stock end,
-                # which is what this anchoring has always spent there.
-                check('Final contour: one gap per floor stage is not a whole '
-                      'step', len(odd) <= stages + 1,
-                      '%d odd gaps against %d floor stages: %s'
+                # COUNTING ODD GAPS STOPPED MEANING ANYTHING once the ladder
+                # re-anchors: a floor stage divides its own run EVENLY, so
+                # every one of its steps is a fraction of a whole one. What
+                # the old count was really protecting - no overload, and no
+                # sliver beside the finished surface - is asserted directly
+                # instead, and both bounds are stronger than the count was.
+                check('Final contour: no gap exceeds the depth of cut',
+                      max(gaps) <= DOC + 1e-3,
+                      'largest %.4f against a %.4f depth of cut' %
+                      (max(gaps), DOC))
+                # EXCEPT THE FIRST, at the stock. This anchoring puts its
+                # remainder there on purpose - a full-length cut through
+                # oversize material - and that is the whole difference between
+                # it and Stock anchoring. The rule protects the descent NEAR
+                # THE PART, which is where a sliver rubs.
+                rest = gaps[1:]
+                check('   and none after the first is under half of it',
+                      not rest or min(rest) >= DOC / 2.0 - 1e-3,
+                      'smallest %.4f, under half the %.4f depth of cut'
+                      % (min(rest) if rest else 0.0, DOC))
+                print('      %d odd gaps, %d floor stages: %s'
                       % (len(odd), stages,
                          ', '.join('%.4f' % g for _i, g in odd)))
                 check('   and the remainder is NOT the last gap', 
@@ -274,18 +289,27 @@ def main():
         # A stage handover is not a whole step and never was skippable - it
         # lands on a floor. So the rule is: no gap SMALLER than a whole step
         # survives, which is what "the thin ones are gone" actually means.
-        # A gap thinner than a whole step survives ONLY if it lands on a
-        # floor: those levels are the surface roughing must leave for the
-        # pre-finish pass and are never skippable, whatever the threshold.
-        # Any other thin gap means a sliver got through.
+        # NOTHING THINNER THAN THE THRESHOLD SURVIVES - which is what the
+        # setting means - unless it lands on a floor, because a floor level is
+        # the surface roughing must leave for the pre-finish pass and is never
+        # skippable whatever the threshold. Gaps BETWEEN the threshold and a
+        # whole step are legitimate: a floor stage divides its own run evenly,
+        # so a 0.7068 handover becomes two cuts of 0.3534 rather than a whole
+        # step and a 0.1988 sliver.
+        thr = DOC / 2.0
         thin_bad = [(g, tl[i + 1]) for i, g in enumerate(tgaps)
-                    if g < DOC - 1e-3
+                    if g < thr - 1e-3
                     and not any(abs(tl[i + 1] - f) < 1e-3 for f in floors)]
-        check('   and every remaining thin gap lands on a floor',
+        check('   and nothing thinner than the threshold survives off a floor',
               not thin_bad,
-              'gap %.4f ends at r%.4f, which is no floor of %s'
-              % (thin_bad[0][0], thin_bad[0][1],
-                 ['%.4f' % f for f in floors]) if thin_bad else '')
+              'gap %.4f ends at r%.4f, under the %.4f threshold and no floor '
+              'of %s' % (thin_bad[0][0], thin_bad[0][1], thr,
+                         ['%.4f' % f for f in floors]) if thin_bad else '')
+        check('   and no gap exceeds the depth of cut',
+              max(tgaps) <= DOC + 1e-3,
+              'largest %.4f against a %.4f depth of cut - a level was skipped '
+              'and the one under it took the combined bite'
+              % (max(tgaps), DOC))
         # --- no level may run beside the pre-finish contour -----------------
         # greatEndian, testing_15_4: the deepest level ran the whole part
         # 0.0160 mm from the pre-finish contour - two passes in the same spot,

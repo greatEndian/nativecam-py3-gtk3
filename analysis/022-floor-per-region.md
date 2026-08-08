@@ -143,3 +143,81 @@ Its own `import re` inside `main()` shadowed the module-level one and raised
 - The ramp is now capped at **half** the cut. Half is a choice, not a
   measurement: it guarantees the ramp never eats the whole pass, but nothing
   says half is the best fraction.
+
+---
+
+## Addendum — the passes near the part, 2026-08-08
+
+greatEndian, looking at `testing_15_4` in the GUI: *"there is first roughing
+section last 2 3 near the part is wrong... behind the boss segment is right"*.
+
+Right. The gaps down the first section were:
+
+```
+22.0480 -> 21.7228   0.3252
+21.7228 -> 21.0160   0.7068     <- 39 percent OVER the 0.508 depth of cut
+21.0160 -> 20.5240   0.4920
+```
+
+**Cause.** A stage handover kept the anchored rule of putting the odd remainder
+on its FIRST step. That rule is right at the stock, where the remainder is a
+full-length cut through oversize material, and wrong partway down the part: the
+handover from 21.7228 to 21.016 is 0.7068, which anchoring split into a
+**0.1988** sliver and a whole 0.508 step. 0.1988 is under this project's 0.3
+skip-short threshold, so the sliver was dropped - and the level beneath it then
+took the two together, 0.7068, right beside the finished work.
+
+Behind the boss there is no handover in that range, which is exactly why that
+half looked right.
+
+**Fix.** A stage divides its own run **evenly**, whatever the anchoring says.
+Even steps land on the floor just as exactly and no step is ever over the depth
+of cut:
+
+```
+22.0480 -> 21.7228   0.3252
+21.7228 -> 21.3694   0.3534
+21.3694 -> 21.0160   0.3534
+21.0160 -> 20.5160   0.5000
+```
+
+### Two things this turned up
+
+**Floors closer together than half a depth of cut are one floor.**
+`testing_13_arcs` is entitled to 22.7805 and 22.762 - **0.0185 apart** - and
+also 12.7817 and 12.762. Giving each its own stage buys a 0.0185 mm cut, which
+rubs rather than cuts, and costs an approach and a retract to do it. They are
+merged in `floor_ladder`, keeping the **shallower**: merging to the deeper one
+would cut past what the shallower region is entitled to and eat its pre-finish
+allowance, while merging to the shallower leaves that much for the pre-finish
+pass, which is what the pass is for. 7 floors become 5. Half the depth of cut
+is a choice, not a measurement - the same shape of judgement as the ramp cap.
+
+**Retargeting the MAIN ladder to the first floor was tried and reverted.** It
+gave a uniform 0.508 descent all the way to 21.7228 and removed the 0.3252 - a
+better picture - but it left the main ladder tiny and pushed nearly the whole
+depth into the stage walk, which runs **per window**. On testing_13_arcs
+`rs274` then failed to finish in **ten minutes**, where it takes 41.7 s
+without it. The 0.3252 stays: it is a LIGHT cut landing on a floor, not an
+overload, and the overload is what was wrong.
+
+### `test_ladder.py` again
+
+Counting odd gaps stopped meaning anything once a stage divides its run evenly -
+every step of a stage is a fraction of a whole one. The count is replaced by the
+two bounds it was really protecting, both stronger than it was:
+
+- **no gap exceeds the depth of cut** - this is what a dropped sliver causes,
+  and it is the fault greatEndian saw;
+- **no gap after the first is under half of it** - no sliver. The first is
+  exempt because Final-contour anchoring puts its remainder at the stock on
+  purpose, which is the whole difference between it and Stock anchoring.
+
+The skip-short rule became: nothing under the threshold survives unless it lands
+on a floor, plus no gap over the depth of cut - which is what catches a skipped
+level's bite being handed to the level below it.
+
+### Numbers after
+
+testing_15_4 max step 0.5000, no gap over the depth of cut. `test_rough_comp`
+Off 0.1115 / Native 0.0503 / In CAM 0.0503. testing_13_arcs runs in 41.7 s.

@@ -154,7 +154,16 @@ o<poly_lathe_mill> sub
                 #<_lo_rad_cap> = #<fin_off>
         o<lo_rad_cap> endif
 
-        o1001 if [#<step_target> EQ #<start_radius>]
+        (WHERE THE MAIN LADDER ENDS. With one floor that is the floor itself,)
+        (as it always was. With several, it is the SHALLOWEST - the first)
+        (stage - and the stages below it take over from there. Retargeting it)
+        (matters: left aiming at the deepest floor, the main ladder overshot)
+        (the first one and was clamped onto it, so its last step came out)
+        (0.3252 where 0.508 was configured and the descent near the part)
+        (turned into three light cuts in a row.)
+        #<lad_tgt> = #<step_target>
+
+        o1001 if [#<lad_tgt> EQ #<start_radius>]
                 #<cut_step> = 0
                 #<rough_passes> = 1
                 #<first_step> = 0
@@ -167,8 +176,8 @@ o<poly_lathe_mill> sub
         #<p2_sgn> = 1
         #<lvl_thin> = 0
         o1001 else
-                #<rough_passes> = FUP[ABS[#<step_target> - #<start_radius>] / #<_rough_cut>]
-                #<cut_step> = [[#<step_target> - #<start_radius>] / #<rough_passes>]
+                #<rough_passes> = FUP[ABS[#<lad_tgt> - #<start_radius>] / #<_rough_cut>]
+                #<cut_step> = [[#<lad_tgt> - #<start_radius>] / #<rough_passes>]
                 #<first_step> = #<cut_step>
                 (Where the levels are ANCHORED. Spacing them evenly between the)
                 (stock and the floor - the default - divides the total by the)
@@ -205,10 +214,15 @@ o<poly_lathe_mill> sub
                         (the configured allowance, which is the point of)
                         (anchoring on the part rather than on the stock.)
                         #<step_target> = #<anch_floor>
-                        #<rough_passes> = FUP[ABS[#<anch_floor> - #<start_radius>] / #<_rough_cut>]
+                        (and the LADDER ends at the first floor stage when the)
+                        (profile has several - the stages below take over from)
+                        (there. With one floor lad_tgt IS anch_floor, so this)
+                        (is the same arithmetic it always was.)
+                        #<lad_tgt> = #<anch_floor>
+                        #<rough_passes> = FUP[ABS[#<lad_tgt> - #<start_radius>] / #<_rough_cut>]
                         (first step takes the remainder, so the last level lands)
                         (exactly on that grid)
-                        #<first_step> = [[#<anch_floor> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
+                        #<first_step> = [[#<lad_tgt> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
                 o<anch> endif
         o1001 endif
 
@@ -399,20 +413,20 @@ o<poly_lathe_mill> sub
                 #<p1_step>  = [[#<sect_top_r> - #<start_radius>] / #<p1_n>]
                 #<p1_first> = #<p1_step>
             o<lad_p1> endif
-            o<lad_p2> if [ABS[#<step_target> - #<sect_top_r>] GT 0.000001]
+            o<lad_p2> if [ABS[#<lad_tgt> - #<sect_top_r>] GT 0.000001]
                 #<p2_sgn> = 1
-                o<p2_sg> if [#<step_target> LT #<sect_top_r>]
+                o<p2_sg> if [#<lad_tgt> LT #<sect_top_r>]
                     #<p2_sgn> = -1
                 o<p2_sg> endif
-                #<p2_n> = FUP[ABS[#<step_target> - #<sect_top_r>] / #<_rough_cut>]
+                #<p2_n> = FUP[ABS[#<lad_tgt> - #<sect_top_r>] / #<_rough_cut>]
                 o<p2_n0> if [#<p2_n> LT 1]
                     #<p2_n> = 1
                 o<p2_n0> endif
                 o<p2_an> if [#<_pl_pass_from> GT 0]
                     #<p2_step>  = [#<p2_sgn> * #<_rough_cut>]
-                    #<p2_first> = [[#<step_target> - #<sect_top_r>] - #<p2_step> * [#<p2_n> - 1]]
+                    #<p2_first> = [[#<lad_tgt> - #<sect_top_r>] - #<p2_step> * [#<p2_n> - 1]]
                 o<p2_an> else
-                    #<p2_step>  = [[#<step_target> - #<sect_top_r>] / #<p2_n>]
+                    #<p2_step>  = [[#<lad_tgt> - #<sect_top_r>] / #<p2_n>]
                     #<p2_first> = #<p2_step>
                 o<p2_an> endif
             o<lad_p2> endif
@@ -751,13 +765,26 @@ o<poly_lathe_mill> sub
                                         o<fl_n2> if [#<fl_n> LT 1]
                                                 #<fl_n> = 1
                                         o<fl_n2> endif
-                                        o<fl_an2> if [#<_pl_pass_from> GT 0]
-                                                #<cut_step> = [-#<dirsign> * #<_rough_cut>]
-                                                #<first_step> = [[#<lvl_floor> - #<current_radius>] - #<cut_step> * [#<fl_n> - 1]]
-                                        o<fl_an2> else
-                                                #<cut_step> = [[#<lvl_floor> - #<current_radius>] / #<fl_n>]
-                                                #<first_step> = #<cut_step>
-                                        o<fl_an2> endif
+                                        (EVENLY, whatever the anchoring says.)
+                                        (Anchoring puts the odd remainder on)
+                                        (the FIRST step, which is right at the)
+                                        (stock - a full-length cut through)
+                                        (oversize material - and wrong here:)
+                                        (a stage starts partway down the part,)
+                                        (so its remainder is a sliver against)
+                                        (the finished work. On testing_15_4)
+                                        (that sliver was 0.1988, thinner than)
+                                        (the 0.3 skip-short threshold, so it)
+                                        (was dropped and the level under it)
+                                        (took 0.7068 - 39 percent over the)
+                                        (depth of cut, right beside the part.)
+                                        (greatEndian: the last passes near the)
+                                        (part are wrong, behind the boss is)
+                                        (right. Even steps land on the floor)
+                                        (just as exactly and no step is ever)
+                                        (over the depth of cut.)
+                                        #<cut_step> = [[#<lvl_floor> - #<current_radius>] / #<fl_n>]
+                                        #<first_step> = #<cut_step>
                                 o<fl_more> else
                                         o<wh_00> break
                                 o<fl_more> endif

@@ -301,9 +301,19 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   other way and every comparison inverts, and a wrong guess would rough INTO the
   wall rather than leave a sliver. Blocked on ID work resuming.
 
-- [ ] **The ramp cap's "half the cut" is a choice, not a measurement.** It
-  guarantees the ramp never eats the whole pass; nothing says half is the best
-  fraction.
+- [ ] **Two "halves" are choices, not measurements.** The ramp cap keeps the
+  approach to half the cut it enters, and `floor_ladder` merges floors closer
+  together than half a depth of cut. Both are the point below which a pass is
+  not worth its approach; nothing says half is the best fraction for either.
+
+- [ ] **The first stage still ends on a light cut.** On testing_15_4 the main
+  ladder lands on the first floor with 0.3252 where 0.508 is configured, because
+  it aims at the deepest floor and is clamped onto the first. Retargeting it to
+  the first floor was tried 2026-08-08 and **reverted**: it gave a uniform
+  descent but left the main ladder tiny and pushed the whole depth into the
+  per-window stage walk, and `rs274` then failed to finish testing_13_arcs in
+  ten minutes against 41.7 s without it. A light cut landing on a floor is not
+  the fault that was reported; the 0.7068 overload was, and that is fixed.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
