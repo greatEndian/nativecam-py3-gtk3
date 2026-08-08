@@ -261,17 +261,49 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   controls: roughing +1.0000/+0.6000/+0.6000, contour the same.
   `test_leads` still passes - the lead-in stays out of the material.
 
-- [ ] **One ladder floor for the whole part, taken from its deepest point** —
-  `analysis/019` addendum 2, 2026-08-07. On testing_15_4 `anch_floor` is 20.016,
-  from Final Diameter 38 (r19, the chamfer tip), so `lvl_d` is **1.016** rather
-  than the 0.762 the parameters suggest. Consequences at both ends: the chamfer
-  region gets levels that can only graze it (a 0.088 mm cut at r20.5240, where
-  0.8056 mm of material stands above the pre-finish contour), and the cylinder
-  gets a level 0.016 mm from its own pre-finish contour.
+- [x] **One ladder floor for the whole part — FIXED**, 2026-08-08,
+  `analysis/022`, `test_floor_ladder.py`. greatEndian: *"floor has to follow
+  the profile per region"*.
 
-  A floor that follows the profile - per region rather than per part - fixes
-  both. Larger than anything attempted so far; the workarounds tried and
-  reverted were the level truncation and the lead cap.
+  The whole bug in one line: on testing_15_4 the chamfer is entitled to a floor
+  of 20.016 and the cylinder to 21.016 — **1.000 apart against a 0.508 depth of
+  cut**, and 0.508 does not divide 1.000, so no single grid lands on both.
+
+  **The ladder now re-anchors on each floor as it descends.** It does not need
+  to know where each applies: a level that drops past a region's floor cannot
+  reach it any more, so the Z span narrows by itself — **no windowing change and
+  no traversal change.** Python emits the floors (`floor_ladder`, `#3300+i`);
+  the `.ngc` walks them.
+
+  Measured against the same program with the gate forced off: floors landed on
+  go 0 → 2 (testing_15_4), 1 → 2 (15_2), **1 → 7** (13_arcs), 0 → 1 (11). The
+  cylinder stops at 21.016 where it stopped at 21.032.
+
+  Tried and rejected on the way: per-region **windows** — testing_15_4 has
+  Sectioning on and the window that cuts spans both regions, so it cannot
+  separate them, and splitting it would double the sweeps.
+
+  **Caused one regression, fixed**: the moved ladder left a 1.3003 mm cut behind
+  the boss where the profile-angle ramp no longer fitted, so it was dropped and
+  the pass plunged. The cap now shortens the ramp to fit — half the cut — rather
+  than dropping it, which also removes the coupling that let any ladder change
+  cause a plunge.
+
+- [ ] **Not every floor is reachable, and one of them is a point.**
+  testing_15_4's chamfer bottoms at r19 at a SINGLE POINT, so no level can cut
+  at its 20.016 floor and the pass is correctly blocked — 2 of 3 floors is the
+  right answer there. testing_11 lands on 1 of 2 and has **not** been checked
+  for the same cause. Worth confirming before anyone reads the number as a
+  fault.
+
+- [ ] **ID work has no floor ladder at all.** `build_floor_ladder_gcode`
+  declines when the pass starts inside the part: on a bore the floors run the
+  other way and every comparison inverts, and a wrong guess would rough INTO the
+  wall rather than leave a sliver. Blocked on ID work resuming.
+
+- [ ] **The ramp cap's "half the cut" is a choice, not a measurement.** It
+  guarantees the ramp never eats the whole pass; nothing says half is the best
+  fraction.
 
 - [ ] **CRASH: toggling the Sectioning property kills the panel** —
   greatEndian 2026-08-04, hard X error, LinuxCNC terminated.

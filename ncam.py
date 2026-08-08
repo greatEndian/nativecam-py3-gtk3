@@ -2696,6 +2696,10 @@ class Preferences(object):
             self.default += ("#<_pl_rgh_ox>              = 0.0\n")
             self.default += ("#<_pl_skip_thin>           = 0.0\n")
             self.default += ("#<_pl_begin_z>             = 0.0\n")
+            # how many floors the profile is entitled to. 1 or 0 means one
+            # floor fits the whole part, and poly_lathe_mill then takes exactly
+            # the ladder it took before floor stages existed.
+            self.default += ("#<_pl_floor_n>             = 0\n")
 
         if self.cat_name == 'mill' :
             self.default += ("#<_probe_func>              = 38." + self.ngc_probe_func + "\n")

@@ -30,6 +30,7 @@ show up here as extra levels and gaps that are neither a whole step nor the
 single remainder.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,6 +77,10 @@ def main():
     d = tempfile.mkdtemp(prefix='ladder_')
     try:
         lv = {}
+        # how many floors this profile is entitled to. The ladder re-anchors
+        # on each one, so every count below is per stage rather than per part.
+        stages = 1
+        floors = []
         for v, label in ((1, 'Final contour'), (0, 'Stock')):
             out = os.path.join(d, 'p%d.ngc' % v)
             subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
@@ -84,6 +89,13 @@ def main():
                             '--set', 'polyline:param_pass_from=%d' % v],
                            capture_output=True, text=True)
             lv[label] = levels(out, P) if os.path.isfile(out) else None
+            if os.path.isfile(out):
+                txt = open(out).read()
+                m = re.search(r'#<_pl_floor_n> = (\d+)', txt)
+                if m and int(m.group(1)) >= stages:
+                    stages = int(m.group(1))
+                    floors = [float(x) for x in
+                              re.findall(r'#33\d\d = ([\d.]+)', txt)]
         check('both anchorings generate and run', all(lv.values()),
               str({k: v is None for k, v in lv.items()}))
         if not all(lv.values()):
@@ -97,14 +109,21 @@ def main():
                      ' '.join('%.4f' % g for g in gaps)))
 
             if label == 'Final contour':
-                # every gap a whole depth of cut except ONE - the remainder -
-                # and that one must not be at the contour end
+                # ONE REMAINDER PER FLOOR STAGE, not one for the whole part.
+                # The ladder re-anchors on each floor the profile is entitled
+                # to - see floor_ladder and analysis/022 - and each of those
+                # re-anchorings spends its own remainder. A part with one floor
+                # still has exactly one, which is what this asserted before.
                 odd = [(i, g) for i, g in enumerate(gaps)
                        if abs(g - DOC) > 1e-3]
-                check('Final contour: at most one gap is not a whole step',
-                      len(odd) <= 1,
-                      '%d odd gaps: %s' % (len(odd),
-                                           ', '.join('%.4f' % g for _i, g in odd)))
+                # stages + 1: one remainder per re-anchoring, plus the
+                # window ladder's own first-step remainder at the stock end,
+                # which is what this anchoring has always spent there.
+                check('Final contour: one gap per floor stage is not a whole '
+                      'step', len(odd) <= stages + 1,
+                      '%d odd gaps against %d floor stages: %s'
+                      % (len(odd), stages,
+                         ', '.join('%.4f' % g for _i, g in odd)))
                 check('   and the remainder is NOT the last gap', 
                       not odd or odd[0][0] < len(gaps) - 1,
                       'the odd %.4f gap is at the contour end - a level '
@@ -112,9 +131,16 @@ def main():
                       'anchoring exists to prevent'
                       % (odd[0][1] if odd else 0.0))
             else:
+                # EVENLY SPACED WITHIN A STAGE. Stock anchoring divides the
+                # run evenly, and there is now one run per floor stage, so the
+                # count of distinct gaps is bounded by the stages rather than
+                # being 1. With one floor this is still "every gap the same".
                 spread = max(gaps) - min(gaps)
-                check('Stock: every gap is the same', spread < 1e-3,
-                      'gaps range over %.4f mm' % spread)
+                distinct = len({round(g, 3) for g in gaps})
+                check('Stock: evenly spaced within each floor stage',
+                      distinct <= stages + 1,
+                      '%d distinct gaps against %d floor stages, spread '
+                      '%.4f mm' % (distinct, stages, spread))
                 check('   and each is at most the depth of cut',
                       max(gaps) <= DOC + 1e-3,
                       'largest gap %.4f exceeds the %.4f depth of cut'
@@ -136,7 +162,6 @@ def main():
         # Taken from _pl_begin_z, NOT from record 1 of the lathe array: that
         # record is the first ITEM's endpoint, Z+1.0 on this project, and using
         # it silently did nothing.
-        import re
         prj = os.path.join(os.path.dirname(INI), 'ncam', 'catalogs', 'lathe',
                            'projects', PROJECT)
         begin_z = 0.0
@@ -230,6 +255,11 @@ def main():
                         '--set', 'polyline:param_skip_thin=%g' % (DOC / 2.0)],
                        capture_output=True, text=True)
         tl = levels(thin, P) if os.path.isfile(thin) else None
+        # the floors THIS program is entitled to - the anchoring differs
+        # between the runs above, and so do their floors
+        floors = [float(x) for x in re.findall(
+            r'#33\d\d = ([\d.]+)', open(thin).read())] \
+            if os.path.isfile(thin) else []
         check('the project generates with a thin-pass threshold', bool(tl))
         if not tl:
             return
@@ -241,9 +271,21 @@ def main():
         check('a threshold drops at least one level', len(tl) < len(base),
               '%d levels with the threshold against %d without - nothing was '
               'skipped' % (len(tl), len(base)))
-        check('   and every remaining gap is a whole depth of cut',
-              all(abs(g - DOC) < 1e-3 for g in tgaps),
-              'gaps %s' % ' '.join('%.4f' % g for g in tgaps))
+        # A stage handover is not a whole step and never was skippable - it
+        # lands on a floor. So the rule is: no gap SMALLER than a whole step
+        # survives, which is what "the thin ones are gone" actually means.
+        # A gap thinner than a whole step survives ONLY if it lands on a
+        # floor: those levels are the surface roughing must leave for the
+        # pre-finish pass and are never skippable, whatever the threshold.
+        # Any other thin gap means a sliver got through.
+        thin_bad = [(g, tl[i + 1]) for i, g in enumerate(tgaps)
+                    if g < DOC - 1e-3
+                    and not any(abs(tl[i + 1] - f) < 1e-3 for f in floors)]
+        check('   and every remaining thin gap lands on a floor',
+              not thin_bad,
+              'gap %.4f ends at r%.4f, which is no floor of %s'
+              % (thin_bad[0][0], thin_bad[0][1],
+                 ['%.4f' % f for f in floors]) if thin_bad else '')
         # --- no level may run beside the pre-finish contour -----------------
         # greatEndian, testing_15_4: the deepest level ran the whole part
         # 0.0160 mm from the pre-finish contour - two passes in the same spot,

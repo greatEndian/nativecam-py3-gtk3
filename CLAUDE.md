@@ -23,6 +23,14 @@ that kills the program with `Command too long`; named parameters must exist at
 load-time pre-parse; and debugging means instrument, run rs274, revert, where
 Python needs a print.
 
+**And it applies backwards, to O-code that already exists.** greatEndian,
+2026-08-08: *"code everything in the python — even existing O-code, move to
+python if there is gap"*. Whenever a `.ngc` is opened for any reason — a bug in
+it, a feature touching it, a spare gap in the work — look at what it is
+*computing* and move that part to Python. Do not leave existing runtime
+geometry alone merely because it works. The `.ngc` is meant to **shrink** over
+time, not just to stop growing; say in the commit message what moved.
+
 ## Commands
 
 ```bash

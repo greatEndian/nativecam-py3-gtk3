@@ -890,6 +890,151 @@ def build_sections_gcode(polyline_feature):
 BAND_ALL = 1.0e6
 
 
+# The floor tables. 3200-3400 is free space: the polyline's own argument slots
+# stop at #3159 and the sections window table starts at #3400.
+#
+#   3300  floor stages, i           the floors the ladder re-anchors on,
+#                                   shallowest first - see floor_ladder
+SECT_FLOOR_BASE = 3300
+
+
+def region_floor(min_dia, fin_off, prefin_off, rough_cut, anchored):
+    """The roughing floor a region with this deepest diameter is entitled to.
+
+    Radius units out, diameter units in - the same asymmetry the rest of this
+    module lives with, because `points` are diameters and a floor is a radius.
+
+    This REPRODUCES poly_lathe_mill.ngc's own arithmetic, deliberately and
+    exactly. Anywhere it drifts from that, the table would ask the level loop
+    for a floor the loop's own ladder cannot land on, which is the bug this
+    whole thing exists to remove:
+
+        rough_target = final + fin_off             the pre-finish surface
+        step_target  = rough_target + prefin_off   the roughing floor
+        anchored     rough_target stepped OUTWARD by whole depths of cut,
+                     taking the first grid level still clear of step_target
+
+    OD only - see floor_regions.
+    """
+    rough_target = min_dia / DIAMETER_MODE + fin_off
+    step_target = rough_target + prefin_off
+    if not anchored or rough_cut <= EPS:
+        return step_target
+    k_min = int(math.ceil((step_target - rough_target) / rough_cut - EPS))
+    return rough_target + max(k_min, 0) * rough_cut
+
+
+def floor_regions(points, fin_off, prefin_off, rough_cut, anchored):
+    """[(z_from, z_to, floor_radius)] - the profile split where its floor moves.
+
+    THE POINT OF THIS. A roughing level is one radius held across its whole
+    sweep, and the ladder of levels is anchored on a floor. Take that floor
+    from the deepest point of the WHOLE part - which is what a single
+    `final_radius` does - and every region that is not the deepest gets its
+    levels positioned by somebody else's floor.
+
+    Measured on testing_15_4: the front chamfer bottoms at r19 and the
+    cylinder behind it at r20, so their own floors are 20.016 and 21.016.
+    The difference is 1.000 mm against a 0.508 depth of cut, so **no single
+    grid can land on both** - one of them always gets its deepest level as a
+    sliver. It was the cylinder, 0.016 mm above its own pre-finish contour.
+
+    Regions come from detect_sections, which already splits the profile
+    wherever its trend changes, so each one is monotonic and its `min_x` IS
+    that region's deepest material. Neighbours entitled to the same floor are
+    merged so a plain cylinder stays one window.
+
+    OD ONLY. On a bore the floor runs the other way and every comparison here
+    inverts; ID work is paused (openPoints) and a wrong guess would rough into
+    the wall rather than leave a sliver, so it returns [] instead.
+    """
+    if len(points) < 2 or rough_cut <= EPS:
+        return []
+    sections = detect_sections(points)
+    if not sections:
+        return []
+
+    regions = []
+    for z_from, z_to, min_x in sections:
+        floor = region_floor(min_x, fin_off, prefin_off, rough_cut, anchored)
+        if regions and abs(regions[-1][2] - floor) < EPS \
+                and abs(regions[-1][1] - z_from) < EPS:
+            regions[-1] = (regions[-1][0], z_to, floor)
+        else:
+            regions.append((z_from, z_to, floor))
+    return regions
+
+
+def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
+    """The floors a roughing ladder must land on, shallowest first.
+
+    One entry per DISTINCT floor the profile's own regions are entitled to.
+    The ladder does not need to know WHERE each one applies: a level that
+    drops past a region's floor simply cannot reach that region any more -
+    the stop contour holds it off - so the Z span narrows by itself. What it
+    does need is to LAND on each of them, and a single grid cannot:
+    testing_15_4's chamfer is entitled to 20.016 and its cylinder to 21.016,
+    1.000 apart against a 0.508 depth of cut, so anchoring on either leaves
+    the other 0.016 out. Re-anchoring at each floor in turn lands on both.
+    """
+    regions = floor_regions(points, fin_off, prefin_off, rough_cut, anchored)
+    floors = []
+    for _z_from, _z_to, floor in regions:
+        if not any(abs(floor - f) < EPS for f in floors):
+            floors.append(floor)
+    return sorted(floors, reverse=True)
+
+
+def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
+    """The #3300 floor-stage table, or '' when one floor fits the whole part.
+
+    '' is the common case and it matters: the runtime gate is
+    `_pl_floor_n > 1`, so a single-floor profile takes exactly the ladder it
+    took before this existed and cannot be changed by it.
+
+    The last entry is the part's own deepest floor, which is where the ladder
+    ended before - so this only ever ADDS the intermediate floors it was
+    skipping past, and the bottom of the ladder does not move.
+    """
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2 or rough_cut <= EPS:
+        return ''
+
+    dir_param = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
+    if rough_dir == 1:
+        points = list(reversed(points))
+
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    # OD only: the pass starts outside the part and works in. On a bore the
+    # floors run the other way and every comparison here inverts; ID work is
+    # paused (openPoints) and a wrong guess would rough INTO the wall rather
+    # than leave a sliver, so it declines instead.
+    if _p('param_b_x') <= _p('param_e_x') + EPS:
+        return ''
+
+    floors = floor_ladder(points, _p('param_f_off'), _p('param_pf_off'),
+                          rough_cut, _p('param_pass_from') > 0)
+    if len(floors) < 2:
+        return ''
+    if SECT_FLOOR_BASE + len(floors) >= SECT_BASE:
+        raise ValueError('%d floor stages will not fit under #%d'
+                         % (len(floors), SECT_BASE))
+
+    lines = ['(the floors this profile is entitled to, shallowest first: a)',
+             '(level lands on the floor of the region it is cutting, not on)',
+             '(the floor of the deepest point of some other region. The)',
+             '(ladder re-anchors at each in turn - see floor_ladder.)',
+             '#<_pl_floor_n> = %d' % len(floors)]
+    for i, floor in enumerate(floors):
+        lines.append('#%d = %s' % (SECT_FLOOR_BASE + i, _fmt(floor)))
+    return '\n'.join(lines) + '\n'
+
+
+
 def boundary_height(points, z_b):
     """How far up the profile actually reaches at boundary z_b - the height
     of whatever separates the two sections meeting there.
