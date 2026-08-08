@@ -31,6 +31,20 @@ it, a feature touching it, a spare gap in the work — look at what it is
 geometry alone merely because it works. The `.ngc` is meant to **shrink** over
 time, not just to stop growing; say in the commit message what moved.
 
+Reaffirmed 2026-08-08 — *"use python as much as possible"*, *"everything code in
+python if it is possible"*. It has already paid twice on the roughing ramp: the
+angle a profile-angle approach should copy is a **generation-time** question,
+and moving it into `entry_ramp_dirs` both fixed two faults and made the `.ngc`
+smaller. When a runtime rule is choosing between things Python already knows,
+that is the signal to move it.
+
+**Verify in the configuration the report came from.** A screenshot shows its own
+settings — Sectioning on or off, which anchoring, which project. Checking the
+other one and calling it fixed wasted a round on 2026-08-08: the ramp was
+correct unsectioned and four times too long sectioned, and the screenshot had
+Sectioning ticked. Read the settings out of the picture, and measure that case
+first.
+
 ## Commands
 
 ```bash
