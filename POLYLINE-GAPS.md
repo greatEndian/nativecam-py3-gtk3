@@ -47,6 +47,62 @@ which we should NOT re-add under a new name:
 
 ---
 
+## Summary — all five tabs read
+
+`photo/roughing/{tool,geometry,radii,passes,linking}`, 54 screenshots, the
+whole *Profile Roughing* operation. **27 entries**, of which the ones that
+matter are far fewer than the count suggests.
+
+**Worth building, in the order I would do them** — each is small, self-
+contained, and Python-first:
+
+| # | Gap | Why it earns its place |
+|---|---|---|
+| 15 | **Separate X and Z stock to leave** | ordinary practice; one value cannot leave more on walls than diameters. Lives in `offset_contour` |
+| 8 | **A back Z limit** | we have no way to stop an operation short of where the polyline ends. The datum machinery is not needed — just the number |
+| 16 | **Pecking** | chip breaking has no expression at all; a Python subdivision of an interval we already compute |
+| 9 | **Tangential extension** | run the cut past the profile along its own direction, front and back |
+| 1 | **Tool clearance FRONT** | we have back only, and the reachable-contour maths already takes a front angle |
+| 13 | **Cut below the inner radius** | facing and parting to centre leave a pip without it |
+
+**Worth a decision before any work** — these change what the operation
+promises, and greatEndian's answer decides whether they are work at all:
+
+- **18 — the wall pass.** Their switch *skips* a cusp cleanup; we have no such
+  move, so we are permanently skipped. Is our pre-finish contour pass the
+  better trade, or do the levels want their own cleanup?
+- **7 / 11 — Machine Undercuts, Groove Suppression.** Both may be our
+  *Respect tool back angle* and *Re-entrant profile* worded differently. Two
+  tooltips would settle both.
+- **23 — rapids posted as G1.** Real safety on a control that doglegs. Does
+  yours?
+- **12 — rest machining.** The only large one, and the preview's `StockField`
+  already simulates remaining material, so it is less far off than it looks.
+
+**Recorded and parked** — real differences, but not things to chase now:
+Tool Orientation as a B axis (2), tailstock M21/M22 (3), negative diameter (4),
+six coolant modes (5), cutting-data presets (6), sharp corners (17), grooving
+split radial/axial (19), canned cycle framing (20), extend to stock (21),
+linearisation tolerance (22), approach/retract datums (24), Z/X clearance
+naming (25), entry clearance datum (26), rapid-to-next-depth (27), and radial
+limits as references (14).
+
+**The finding that outranks the list:** it is a CAD-model package and we are
+not. A large share of Geometry and Radii — Model front/back, Chuck front,
+Selection, picked faces, Model OD/ID, *Outermost of…* — exists to point at
+solid geometry we do not have, because **our profile is the input**. Copying
+that vocabulary would leave parameters that can never resolve. What survives
+the translation is pointing at **our own** objects: the Workpiece's stock
+diameter and face Z. That single idea would close the useful half of gaps 8 and
+14 at once.
+
+**And what we have that they do not**, worth remembering before treating their
+UI as the target: a per-region roughing floor ladder, the reachable-contour
+warning that names the span it cannot make in millimetres, and nose
+compensation switchable between CNC-side and CAM-side.
+
+---
+
 ## Gaps
 
 ### From `photo/roughing/tool/` — the operation's **Tool** tab, 15 screenshots
@@ -419,6 +475,90 @@ gaps below are ordinary turning practice we simply cannot express.
 
 ---
 
+### From `photo/roughing/linking/` — the **Linking** tab, 14 screenshots
+
+Sections: **Linking**, **Approach & Retract**, **Clearance**, **Angled Entry**,
+**Retract**. Completes the five tabs.
+
+Much of this is our lead-in / lead-out and retract machinery under other names,
+and the *Angled Entry* group is very nearly ours exactly. Four gaps.
+
+#### 23. High Feedrate Mode — rapids posted as G1
+
+- **What it is** — *"Specifies when rapid movements should be output as true
+  rapids (G0) and when they should be output as high feedrate movements (G1)"*,
+  six choices: preserve all, preserve axial **and** radial, preserve axial only,
+  preserve radial only, preserve single-axis, or **always use high feed**.
+  *"Usually set to avoid collisions at rapids on machines which perform
+  'dogleg' movements at rapid."*
+- **In our vocabulary** — nothing. Every rapid we emit is G0.
+- **Why it is a gap** — a G0 with both axes moving is not a straight line on
+  many controls; it doglegs. Our retreats and returns move both axes, and
+  `test_rough_ends` proves they clear the **stock**, not that they clear it
+  along the path the machine will actually take.
+- **What it would touch** — the rapid emission in `lathe_level_pass` and
+  `poly_lathe_mill`, plus a feed to run them at. Small, and it is real safety.
+- **Open question** — does greatEndian's control dogleg? On LinuxCNC a G0 is
+  coordinated, so this may not bite here. Worth confirming before building.
+
+#### 24. Approach / Retract reference, in Z and in X
+
+- **What it is** — **Approach Z** and **Retract Z**: *Safe Z* (from the Setup)
+  or *First / Last toolpath point*. **Approach X** and **Retract X**:
+  *Clearance* or *First / Last toolpath point* — *"can improve toolpath
+  efficiency as the tool does not travel a further distance to start at the
+  clearance height"*. Plus **Override Setup Safe Z**, redefining the safe-Z
+  datum as WCS or Stock-back plus an offset.
+- **In our vocabulary** — `param_ret_mode` (*Full — above stock* / minimal) and
+  `param_ret_dist`, plus Tool Change's `rx` / `rix` / `rz`, and the polyline's
+  own `park_on` / `park_x` / `park_z`.
+- **Why it is a partial gap** — we have the retract heights, but not the choice
+  of **where the first approach and the last retract are measured from**. Ours
+  always goes to the clearance plane; theirs can start at the first cut's own X
+  or Z and save the air move.
+- **Open question** — this is cycle-time trimming, not capability. Low value
+  unless the air moves are actually costing something.
+
+#### 25. Z Clearance and X Clearance as separate distances
+
+- **What it is** — **Z Clearance** *"in reference to the start of the cut"* and
+  **X Clearance** *"in reference to the farthest cut on the profile"*, 0.600
+  each here. Two independent stand-offs.
+- **In our vocabulary** — one `param_ret_dist` (1.016) plus `param_zc_ovr`,
+  *Z lead-in distance*. So we have a Z one and a radial one, but they are not
+  the same pair: ours are a retract distance and a lead-in distance rather than
+  two clearances measured from the cut.
+- **Why it is a small gap** — mostly naming. Worth checking against ours before
+  adding anything, or we end up with four parameters doing three jobs.
+
+#### 26. Angled Entry — we have it, except the feedrate
+
+- **What it is** — a group with its own on/off: **Entry Angle** 45.0 deg
+  *"with respect to the positive Z axis, of the entry move to the start of the
+  cutting pass"*, **Entry Clearance** 2.00 mm *"the incremental distance from
+  the material at which the entry move begins"*, and **Entry Feedrate**
+  120.00 mm/min.
+- **In our vocabulary** — `param_li_ang` (Lead-in angle, default 45),
+  `param_li_len` (Lead-in length), `param_li_feed` (Lead-in feed), and the
+  group toggles off by setting the length to 0. **We have all three.**
+- **Why it is recorded at all** — their *Entry Clearance* is measured **from the
+  material**, ours is a length along the lead. Same intent, different datum;
+  worth knowing if the two are ever compared on the same part.
+
+#### 27. Rapid to Next Cutting Depth
+
+- **What it is** — *"Rapid linking move to the next depth of cut"*, a checkbox,
+  ticked.
+- **In our vocabulary** — our level-to-level move is always a rapid, with no
+  option to feed it.
+- **Why it is a tiny gap** — the ability to *feed* between depths, for a
+  machine or material where a rapid plunge to the next level is unwelcome.
+  Related to 23.
+
+---
+
+---
+
 ## Observations that are not gaps
 
 - **Feed & Speed lives on the OPERATION there, on Tool Change here.** Every
@@ -471,3 +611,13 @@ From the **Passes** tab:
 | Even Depths of Cut | Polyline → `pass_from`, *Space passes from = Stock* spaces evenly; *Final contour* takes whole depths |
 | Machine Multiple Regions | Polyline → `multi_x`, *rough all disjoint intervals* — along Z. **Theirs also spans OD and ID in one operation, ours does not**; recorded as a difference, not yet a gap |
 | No Dragging | our roughing retreat already clears the stock and no rapid removes material (`test_rough_ends`). Probably the same thing; no tooltip captured to confirm |
+
+From the **Linking** tab:
+
+| Reference | Ours |
+|---|---|
+| Angled Entry — Entry Angle | Polyline → `li_ang`, Lead-in angle (45 default) |
+| Angled Entry — Entry Feedrate | Polyline → `li_feed`, Lead-in feed |
+| Angled Entry — on/off | Polyline → `li_len` = 0 turns it off |
+| Retract Distance, *"the lead out move after each roughing cut"* | Polyline → `lo_len`, Lead-out length — **exactly ours**, and the same pictures: a longer value lifts the tool further off each finished level |
+| Safe Z / clearance plane | Tool Change → `rz` retract Z, `rx` / `rix` retract X; polyline `ret_mode`, `ret_dist` |
