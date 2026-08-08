@@ -287,6 +287,138 @@ Diameter, **Outermost of…**, **Innermost of…** — with the stated rule
 
 ---
 
+### From `photo/roughing/passes/` — the **Passes** tab, 14 screenshots
+
+Sections: **Cycle and Direction**, **Passes**, **Stock to Leave**. The tab with
+the heaviest overlap so far — much of it we already have — but four of the
+gaps below are ordinary turning practice we simply cannot express.
+
+#### 15. Separate X and Z stock to leave
+
+- **What it is** — **X Stock to Leave** *"the amount of material to leave in
+  the radial direction"* and **Z Stock to Leave** *"in the axial direction…
+  used for leaving stock on the vertical faces being turned"*, 0.100 each here.
+  *"For surfaces that are not exactly horizontal, the program interpolates
+  between the Axial Stock value (wall) and the Radial Stock values."* Changing
+  X sets Z to match; either may then be typed differently. **Negative is
+  allowed** — cutting past the model — *"maximum negative stock to leave must
+  be less than the tool nose radius… you cannot compensate past the theoretical
+  tip of the tool."*
+- **In our vocabulary** — `param_f_off`, *Offset (per side)*, a **single**
+  value applied as a true normal offset to the whole contour, and its minimum
+  is **0.0**.
+- **Why it is a gap** — we cannot leave more on the walls than on the
+  diameters, which is ordinary when a face is finished by a different tool or
+  a different pass. Nor can we go negative.
+- **What it would touch** — `offset_contour` in `lathe_sections`, which offsets
+  perpendicular by one distance; an X/Z pair means interpolating by segment
+  angle exactly as the tooltip describes. Python, and testable.
+- **Open question** — the negative case needs the nose-radius bound they state,
+  and we have that number already in `tip_comp_inputs`.
+
+#### 16. Use Pecking
+
+- **What it is** — *"Pecking creates multiple steps across the length of the
+  cutting direction. Between Pecking Depths the tool retracts along its path by
+  the specified Pecking retract distance. Use this if your material creates
+  long strings of chips."* Illustrated at 18 mm peck with 3 mm retract.
+- **In our vocabulary** — nothing. A roughing level is one continuous cut from
+  its start to its stop.
+- **Why it is a gap** — chip breaking on long cuts in gummy material has no
+  expression at all.
+- **What it would touch** — `lathe_level_pass`, which walks one interval; the
+  peck points are a Python question — a length and a retract, subdivided from
+  the interval Python already knows. Two parameters.
+- **Open question** — retract *along the path*, as here, or radial?
+
+#### 17. Make Sharp Corners
+
+- **What it is** — *"Forces a sharp toolpath intersection on all external
+  corners. When unchecked the toolpath will roll around all external sharp
+  corners, creating a toolpath that flows to avoid sudden changes in
+  direction."* With the note: *"Only the toolpath is affected. The part will
+  always have a sharp intersection. Using a tool with a smaller nose radius can
+  gouge the part."*
+- **In our vocabulary** — nothing. Our contour passes roll every external
+  corner, because that is what dynamic cutter compensation does.
+- **Why it is a gap** — no way to ask for the sharp intersection where the
+  machine prefers it.
+- **Open question** — under LinuxCNC comp the roll is the interpreter's, not
+  ours. Forcing sharp may mean leaving comp and computing the corner in Python
+  — which is the direction we are going anyway.
+
+#### 18. Wall pass / cusp cleanup — we do not have the thing being skipped
+
+- **What it is** — *Skip Wall Pass*, *"skips the cusp cleanup move after every
+  cutting move… use to reduce the number of tool movements to save time, then
+  follow up with a finishing toolpath."* The pictures show the difference: with
+  it, each level climbs the wall to clear the cusp it left.
+- **In our vocabulary** — our levels lead out and retract; **there is no cusp
+  cleanup move at all**. So we are permanently in the "skipped" state.
+- **Why it is a gap** — the inverse of how it reads: the missing feature is the
+  **wall pass itself**, not the switch. On a steep wall each roughing level
+  leaves a cusp that only the pre-finish pass removes.
+- **Open question** — worth it? Our pre-finish contour pass already cleans the
+  walls in one go, which may be the better trade. Needs greatEndian's view.
+
+#### 19. Grooving — radial and axial, separately
+
+- **What it is** — *"allow or restrict undercut toolpath motion. Can be used to
+  keep the tool from dipping into channels along the diameter, face or end."*
+  Four states: **Don't allow / Allow Radial / Allow Axial / Allow Radial and
+  Axial**.
+- **In our vocabulary** — `param_multi_x`, *Re-entrant profile*, is two states:
+  stop at the first crossing, or rough all disjoint intervals. Plus
+  `param_flank`, which keeps the tool out of what its back angle cannot reach.
+- **Why it is a partial gap** — we can say "all or nothing"; we cannot say
+  "radial channels yes, axial channels no". The distinction is about which way
+  the channel faces, and the tool's ability to enter it differs by direction.
+- **Open question** — does the reachable-contour work already cover the real
+  need here? It refuses what the insert cannot enter, which is the physical
+  version of the same question.
+
+#### 20. Use Canned Cycle
+
+- **What it is** — a checkbox under Cycle and Direction, unchecked, no tooltip
+  captured. Standard meaning: post the machine's own roughing cycle rather than
+  every move long-hand.
+- **In our vocabulary** — `param_mode`, *Strategy*, already offers **G71
+  Contour Roughing** and **G72 Face Roughing** for LinuxCNC 2.9+, beside our own
+  Profile Shift. So the capability exists — but it is a *strategy*, chosen
+  instead of ours, not a posting option applied to it.
+- **Why it may not be a gap** — probably ours is equivalent. Recorded so the
+  difference in framing is not mistaken for a missing feature.
+
+#### 21. Extend to Stock
+
+- **What it is** — *"applies the finish allowance (defined by Stock to Leave) to
+  the stock in addition to the model. The toolpath does not dip as it comes off
+  the shoulder; instead it continues in a straight line, leaving a finish
+  allowance on the stock as well."*
+- **In our vocabulary** — nothing named, though it is close to work already
+  done: our stop contour is extended to the pre-finish contour, and the first
+  segment is extended to Begin Z (`analysis/019`, `022`).
+- **Why it is a gap** — those extensions are internal rules, not a switch, and
+  they do not cover the shoulder-to-stock case this describes.
+- **Open question** — is the dip it prevents something greatEndian has seen? If
+  not, this is a solution to a problem we may not have.
+
+#### 22. Linearisation tolerance
+
+- **What it is** — *Tolerance*, 0.010 mm, *"used when linearizing geometry such
+  as splines and ellipses… taken as the maximum chord distance"*, with a long
+  note on data starving from too-tight values.
+- **In our vocabulary** — a hard-coded **0.005** handed to `poly_mesh_lathe` in
+  `poly_lathe_mill.ngc`. Nobody can change it.
+- **Why it is a small gap** — our items are lines and arcs, and arcs are emitted
+  as arcs, so there is far less to linearise than in a spline-based package. But
+  the number exists and is invisible.
+- **What it would touch** — one parameter, threaded to the existing call.
+
+---
+
+---
+
 ## Observations that are not gaps
 
 - **Feed & Speed lives on the OPERATION there, on Tool Change here.** Every
@@ -328,3 +460,14 @@ Shown in these screenshots and already present, under our own names:
 | Use Feed per Revolution | Tool Change → `feed_mode` (G94 / G95) |
 | Cutting Feedrate | Tool Change → `r_feed` roughing, `f_feed` finishing |
 | Coolant: Disabled / Flood / Mist | Tool Change → `cooling` (None / Flood / Mist) |
+
+From the **Passes** tab:
+
+| Reference | Ours |
+|---|---|
+| Cycle: Horizontal / Vertical / Back Cutting | Polyline → `mode`, Strategy — Profile Shift, G71 Contour, G72 Face |
+| Direction: Front to Back / Back to Front / Both Ways | Polyline → `dir`, Direction — the same three |
+| Maximum Depth of Cut | Tool Change → `c_dpt`, Cut depth |
+| Even Depths of Cut | Polyline → `pass_from`, *Space passes from = Stock* spaces evenly; *Final contour* takes whole depths |
+| Machine Multiple Regions | Polyline → `multi_x`, *rough all disjoint intervals* — along Z. **Theirs also spans OD and ID in one operation, ours does not**; recorded as a difference, not yet a gap |
+| No Dragging | our roughing retreat already clears the stock and no rapid removes material (`test_rough_ends`). Probably the same thing; no tooltip captured to confirm |
