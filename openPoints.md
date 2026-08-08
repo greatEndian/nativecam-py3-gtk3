@@ -419,10 +419,21 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
   build D the same way through `tip_comp_dia`; whether any of them ever passes a
   non-zero `extra_r` has not been established. `analysis/004` has the mechanism.
 
-- [ ] **Two zero-length feeds per contour pass.** `(Z−70.4000, r30.0000) →
-  (Z−70.4000, r30.0000)`, one at the end of the pre-finish pass and one at the
-  end of the finish pass on testing_15_2. Harmless, and noise in every move
-  count taken from these programs.
+- [x] **Two zero-length feeds per contour pass — CLOSED, will not be removed**,
+  2026-08-08, `analysis/021`. `(Z−70.4000, r30.0000) → (Z−70.4000, r30.0000)`,
+  one at the end of the pre-finish pass and one at the end of the finish pass on
+  testing_15_2 — `lathe_poly_pass.ngc:366` naming the point the tool already
+  occupies when the pass carries no offset and no nose term.
+
+  **They stay.** `test_leads.py`'s exit-line check is literally *"a zero-length
+  move exists in the tail"*, in all three modes, and that formulation is the one
+  that survived after three wrong ones (locating the line by position broke when
+  the modes stopped having equal move counts; the largest-Z-jerk version caught
+  the lead-out blend arc, 0.3902 then 0.2168 mm, and failed on Off itself).
+  Skipping the no-op deletes the regression detector for `analysis/009`'s
+  0.5657 mm G40 jerk in exchange for 2 moves out of 323. My earlier
+  *"skip it when `comp_r` is 0"* was wrong: that is exactly the mode set the
+  detector lives in.
 
 ## Tool shape
 
@@ -638,18 +649,30 @@ so picking it up again does not start from a blank page.
 
 ## Consequences of decisions taken, worth a look in AXIS
 
-- [ ] The **unbounded flank leaves up to 9.73 mm of radius uncut** behind the
-  boss on testing_15_2, Z-70.22 to Z-36.31. The unreachable-contour warning
-  names the span.
-- [ ] **Back angle clearance defaults to 2°**, so every existing project gains
-  a small standoff on migration.
-- [ ] **Skip short passes is now off by default.**
-- [ ] **testing_15_2 and testing_15_3 need their flank length re-entered** on
-  the Tool Change, 25 mm each — though with the contour unbounded it now only
-  affects the drawn silhouette, and with a shank set it affects nothing at all.
-- [ ] **Every project gains a 25 mm / 1 in shank on migration** to
-  tool-change.cfg 1.22. That is the common size and it only changes the
-  picture, but a 12 mm boring-bar tool will look too big until it is set.
+All four measured 2026-08-08, `analysis/021`. Three are provably harmless; one
+is not, and it is the one to look at.
+
+- [ ] **Back angle clearance defaults to 2° and it CHANGES THE PART.** Measured
+  on testing_15_2 Native: **323 → 345 moves, 198 of them different** against
+  clearance 0, and it deepens the unreachable shadow behind the boss by
+  0.3562 mm of radius. Every migrated project's roughing moved. Whether 2° is
+  the right standoff is a judgement in AXIS, not a number measurable here —
+  **this is the one worth your eyes.**
+- [ ] The **unbounded flank leaves up to 10.0899 mm of radius uncut** behind the
+  boss on testing_15_2, Z−70.22 to Z−35.77, from `unreachable_spans` with the
+  live arguments. *(The 9.73 mm over Z−70.22..−36.31 recorded here before was
+  the clearance-0 figure, from before the 2° default.)* testing_15_4 is the
+  same to four decimals. Still a consequence of the tool and the setup, not a
+  defect: reaching it needs a second tool or a second setup.
+- [x] **Skip short passes off by default — verified a true no-op**, 2026-08-08.
+  Identical program at the default; 0.3 changes 307 moves.
+- [x] **Flank length is picture-only — verified**, 2026-08-08. 16 mm and 25 mm
+  produce a **byte-identical** program on testing_15_2. testing_15_2 and
+  testing_15_3 can have their 25 mm re-entered for the silhouette; it does not
+  touch the metal.
+- [x] **The 25 mm / 1 in shank is picture-only — verified**, 2026-08-08.
+  Byte-identical program with the shank at 0 and at 25 mm. A 12 mm boring-bar
+  tool still looks too big until it is set.
 
 ## Watch list
 
