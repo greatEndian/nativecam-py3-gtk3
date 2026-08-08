@@ -583,15 +583,24 @@ o<lathe_level_pass> sub
 	(the crossing that set the START if there was one, else the nearest)
 	(crossing there is - the angle to arrive at does not depend on whether)
 	(the pass was allowed to start early)
-	o<e_pick> if [#<e_have>]
+	(THE TABLE FIRST, and the crossings only when there is no table.)
+	(A crossing names the segment the level happens to meet, which is not)
+	(always the surface the pass will run along: behind the boss on)
+	(testing_15_5 the level at r33.1273 crosses the near-FLAT top of the)
+	(boss, slope 0.0566, and copying that gave a ramp 8.9734 long where)
+	(every neighbour runs 2.2004. Python already answers this properly for)
+	(every segment - the dominant surface just ahead of it - so ask it)
+	(rather than the crossing. The crossing branches stay for a program)
+	(generated before the table existed.)
+	o<e_pick> if [#<e_whave>]
+		#<e_rdz> = #<e_wdz>
+		#<e_rdx> = #<e_wdx>
+	o<e_pick> elseif [#<e_have>]
 		#<e_rdz> = #<e_bdz>
 		#<e_rdx> = #<e_bdx>
 	o<e_pick> elseif [#<e_ahave>]
 		#<e_rdz> = #<e_adz>
 		#<e_rdx> = #<e_adx>
-	o<e_pick> elseif [#<e_whave>]
-		#<e_rdz> = #<e_wdz>
-		#<e_rdx> = #<e_wdx>
 	o<e_pick> endif
 	o<e_arm> if [[ABS[#<e_rdz>] GT 0.000001] AND [#<_rough_cut> GT 0]]
 		#<e_slope> = [#<e_rdx> / #<e_rdz>]

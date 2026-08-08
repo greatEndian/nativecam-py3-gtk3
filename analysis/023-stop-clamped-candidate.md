@@ -292,3 +292,60 @@ boss, OFF 44 / 18, steps 0.4682 0.4681 0.4682 0.4671 0.508… — no double bite
 `test_rough_comp` Off 0.1115 / Native 0.0503 / In CAM 0.0503, `test_ladder`,
 `test_floor_ladder`, `test_rough_ends`, `test_leads`, `test_skip_short`,
 `test_sections`, `test_lathe_validation`, flake8 clean.
+
+### And it was still wrong with Sectioning ON
+
+greatEndian, on the same screenshot: *"this is not solved yet"*. Right — I had
+checked the ramp table on the **unsectioned** run, and the screenshot has
+Sectioning ticked.
+
+```
+sectioning ON
+ 5  33.1273  behind  RAMP dz=8.9734 dr=0.5080   <- four times its neighbours
+ 7  32.6602  behind  RAMP dz=2.2004 dr=0.5080
+```
+
+Slope 0.0566: the level at r33.1273 **crosses the near-flat top of the boss**,
+and the crossing-derived direction was still preferred over the table. A
+crossing names the segment the level happens to meet, which is not the surface
+the pass will run along.
+
+The Python table now wins outright and the crossing branches remain only for a
+program generated before it existed. Every ramp across three projects in both
+modes is now one angle, slope **0.2309**:
+
+```
+testing_15_5 sect=1   16 ramps   14 x 2.2004  1 x 2.2003  1 x 1.2336
+testing_15_5 sect=0   16 ramps   14 x 2.2004  1 x 2.2003  1 x 1.3198
+testing_15_4 sect=1    9 ramps    7 x 2.2004  1 x 2.2003  1 x 1.3199
+testing_15_2 sect=1   10 ramps    8 x 2.2004  1 x 2.2003  1 x 1.3199
+```
+
+The short one in each is the same angle, proportionally shortened where the cut
+cannot fit a full ramp — deliberate, and the reason the test below bounds
+length rather than demanding equality.
+
+### `test_ramps.py` — the test that should have existed
+
+Three faults reached greatEndian in one day because the ramp had three sources
+for its angle and nothing asserted which fired where. It now asserts, over
+three projects in both modes, **69 ramps**:
+
+1. **one angle** — every ramp in a program shares a slope. That is greatEndian's
+   criterion exactly, and all three faults broke it.
+2. **shorter is allowed, longer is not.**
+3. **a ramp never starts inside the level it enters** — the doubled lead-in,
+   stated directly.
+
+Not circular: the angle is compared against the OTHER ramps in the same
+program, read back out of `rs274`, never against the table Python emitted.
+
+Negative control, by forcing `_pl_eramp_n` to 0 in the generated file — the
+runtime gate, so it is the old behaviour exactly:
+
+```
+table ON    16 ramps, slopes {0.231: 16}
+table OFF   16 ramps, slopes {0.057: 1, 0.231: 15}
+```
+
+The 0.057 is the 8.9734 ramp. Assertion 1 fails on it.
