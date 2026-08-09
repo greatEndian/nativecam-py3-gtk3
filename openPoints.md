@@ -21,6 +21,36 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
 
 ## Next — before anything else
 
+- [ ] **ROUGHING IGNORES THE AXIAL STOCK TO LEAVE** — greatEndian 2026-08-09,
+  `photo/separateOffsetZ_0.png`, `analysis/024`. With *Separate Z offset* on,
+  X 0.508 and Z 2.000, measured against testing_15_2's Z−70.4 end wall:
+
+  ```
+  stop contour (Python)   stands off 2.0000   correct
+  pre-finish reaches      2.0000              honours Z
+  finish reaches          0.0000              correct - it is the final pass
+  roughing reaches        0.7620              WRONG - fin_off + prefin_off
+  ```
+
+  **Cause.** `lathe_level_pass` scans the profile and offsets each segment
+  perpendicular by the single scalar `cross_t` at runtime, so it cannot express
+  two allowances. The stop table only ever EXTENDS a stop, never pulls it back,
+  so it cannot rescue the case where the axial value is larger than the floor
+  allowance. Roughing then cuts 1.238 mm past where it was told to stop.
+
+  The part still comes out right - the finish pass reaches the profile - but
+  the whole point of the setting, controlling what roughing leaves, is lost.
+
+  **Fix, and it is the standing rule again**: the level scan should walk a
+  FLOOR CONTOUR that Python builds - the profile offset by
+  `fin_off + prefin_off` anisotropically - instead of offsetting by a scalar at
+  runtime. Same shape as the stop and entry tables. The subroutine's own
+  comment warns that halving that scan once turned 487 mm of cut into 875.6, so
+  it wants its own measurement and a negative control.
+
+  The tooltip has been corrected to say so rather than promise it.
+
+
 - [ ] **NEEDS A CALL — may a roughing level pass an obstruction it clears at
   the PRE-FINISH allowance but not at the floor allowance?** `testing_15_5`,
   2026-08-08, `analysis/023`. Level 3 sits at r33.2080; the pre-finish contour
@@ -728,6 +758,63 @@ is not, and it is the one to look at.
 - [x] **The 25 mm / 1 in shank is picture-only — verified**, 2026-08-08.
   Byte-identical program with the shank at 0 and at 25 mm. A 12 mm boring-bar
   tool still looks too big until it is set.
+
+## Z limits, stock to leave, and the validations — 2026-08-09
+
+Everything left open from `analysis/024` and `analysis/025`, including the
+validation ones.
+
+- [ ] **Negative stock to leave is not exposed, and fails SILENTLY past its
+  bound.** `offset_contour` already cuts past the model correctly down to
+  `extra > -nose_r` — measured −0.10 → −0.1000 and −0.39 → −0.3900 with a 0.4
+  nose. At −0.40 and −0.50 the guard returns the profile unchanged: **ask for
+  0.5 past the model and get 0.0, with no warning.** The cfg minimum is 0.0 so
+  it is unreachable today. Exposing it needs the bound enforced loudly and a
+  decision about roughing, which cannot hold a negative allowance without a
+  nose.
+
+- [ ] **Intermediate finish passes under Native comp use the radial value
+  alone.** `G41.1 D` is a single number. Only bites with Passes > 1 AND Native;
+  the final pass is offset 0 and the pre-finish traces a Python table, so both
+  are fine. In CAM has no limit. In the tooltip.
+
+- [ ] **A front limit's lead-in still encroaches 0.707 mm.** Feeds reach
+  Z−19.293 against a Z−20.0 limit — 1.0 mm of lead at 45°. It is the rule the
+  Begin Z bound has always followed, the TIP is bounded and the lead descends
+  from outside, and changing it would change that settled behaviour. Asserted
+  as bounded by the lead-in length so it cannot grow. **NEEDS A CALL:** should
+  a front limit approach radially instead?
+
+- [ ] **The Z limits have no datum modes.** Both are absolute Z. The reference
+  measures from the stock face, the chuck or a picked face; the version that
+  could work here is pointing at the **Workpiece** feature, which already
+  carries a face Z and stock diameter. Gap 14's useful half.
+
+- [ ] **VALIDATION — a `[VALIDATION]` block cannot use `resolve_points`.** It
+  runs from `Feature.validate()` part-way through `to_gcode`'s walk, before the
+  children are resolvable, so it returns an **empty list** there. A check
+  written as "if the trim leaves fewer than two points, refuse" fired on a
+  perfectly good profile. Only parameter-against-parameter checks are reliable
+  in that block. In `LEARNINGS-LOG.md`.
+
+- [ ] **VALIDATION — `msg_inv` at severity 1 blocks any headless run.** It ends
+  in `Gtk.Dialog.run()`, waiting for a button nobody can press when
+  `gen_project.py` or a test drives the generator; the symptom is a silent
+  45-second hang, found with `faulthandler.dump_traceback_later`. Severity 2
+  does not block. **No test may exercise a severity-1 validation**, which is
+  why the crossed-limits check is untested.
+
+- [ ] **VALIDATION — the Z limits are only half validated.** The crossed case
+  is refused. NOT checked: a limit that falls outside the profile entirely (it
+  silently does nothing), and limits that leave too little to machine. Both
+  need the resolved profile, which the block cannot have — they belong in the
+  `[AFTER]` block or in Python at generation time.
+
+- [ ] **The ramp and stop machinery is still runtime O-code.** `s_reach`, the
+  slope term, the flat-boundary clamp, the clamped-candidate rule, and the
+  level scan's own perpendicular offset. Python already answers most of these
+  questions better, and the roughing defect at the top of this file is the
+  first place it has actually cost something. `analysis/023`.
 
 ## Watch list
 

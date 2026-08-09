@@ -155,3 +155,57 @@ refuses any negative value the same way, returning the raw profile.
 needs the bound enforced loudly rather than silently, and a decision about
 roughing, which cannot hold a negative allowance without a nose. Both are real
 work, and half of it would be worse than none.
+
+---
+
+## Addendum 2 — roughing does not honour it, 2026-08-09
+
+greatEndian, `photo/separateOffsetZ_0.png` on testing_15_2, In CAM, X 0.508,
+**Z 2.000**, 1 pass: *"its applied at prefinish contour only … finishing
+contour is reached regularly and roughing also"*.
+
+Right, and measured against that project's Z−70.4 end wall:
+
+```
+stop contour (Python)   stands off 2.0000   correct
+pre-finish reaches      2.0000              honours Z
+finish reaches          0.0000              correct - it IS the final pass
+roughing reaches        0.7620              wrong - fin_off + prefin_off
+```
+
+The finish pass reaching the profile is right and not part of the complaint;
+roughing stopping at **0.762** when it was told 2.000 is the defect.
+
+### Why the earlier measurement missed it
+
+`analysis/024`'s first addendum measured a **45° chamfer** — 0.3008 against an
+expected 0.3 — and I read that as roughing honouring the blend. It was not
+proof. On a slope the level's scan stops on the scalar allowance and the stop
+TABLE then extends it forward onto the anisotropic contour, so the right number
+came out for the wrong reason. A **wall** with an axial value larger than the
+floor allowance needs the stop pulled BACK, and the table only ever extends.
+
+One surface, one direction, one number — and it agreed with the rule by
+coincidence. The check that would have caught it is the one greatEndian made:
+set the axial value far larger than the radial one, where the two cannot be
+confused.
+
+### The cause
+
+`lathe_level_pass` walks the record array and offsets each segment
+perpendicular by the single scalar `cross_t`, at runtime. Two allowances cannot
+be expressed that way. The stop table is consulted afterwards and is bounded to
+extending the cut, never retracting it — deliberately, because halving that
+same scan once turned 487 mm of cut into 875.6 and finished ten ends inside the
+contour.
+
+### The fix, when it is wanted
+
+The scan should walk a **floor contour Python builds** — the profile offset by
+`fin_off + prefin_off` anisotropically — instead of computing a perpendicular
+offset from a scalar. Same shape as the entry and stop tables that already
+exist beside it, and the standing rule's answer. It wants its own measurement
+and a negative control, given what that scan has cost before.
+
+Recorded at the top of `openPoints.md`. The parameter tooltip has been
+corrected to state the limit rather than promise the opposite.
