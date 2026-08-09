@@ -50,6 +50,11 @@ o<lathe_level_pass> sub
 	#<s_fz>      = 0
 	#<s_cl>      = 0
 	#<s_bcl>     = 0
+	#<fc_i>      = 0
+	#<fc_pz>     = 0
+	#<fc_px>     = 0
+	#<fc_cz>     = 0
+	#<fc_cx>     = 0
 	#<s_take>    = 0
 	#<pa_dz>     = 0
 	(read by the ramp arming below, which now sits outside the entry block)
@@ -100,6 +105,46 @@ o<lathe_level_pass> sub
 	#<px>    = #[#<pds> + 2]
 	#<scan_ptr> = [#<pds> + 9]
 	#<scan_i>   = 1
+
+	(WHERE THIS LEVEL STOPS, from the floor contour Python built.)
+	(The scan below works it out itself, offsetting every segment of the)
+	(record array perpendicular by the single number cross_t. That cannot)
+	(hold two allowances, and it showed: with a radial 0.508 and an axial)
+	(2.000 roughing stopped 0.762 from the end wall - fin_off + prefin_off -)
+	(because nothing here knew about the axial value. The stop table could)
+	(not rescue it either, being bounded to EXTENDING a cut and never)
+	(pulling one back.)
+	(The table is the same contour, blended by each surface own normal and)
+	(with its corners already joined, so this walk needs neither the offset)
+	(arithmetic nor the gap connector the scan below carries for corners)
+	(its independently offset segments leave open. Read the table, move.)
+	o<flc> if [#<_pl_flc_n> GT 1]
+		#<fc_i>  = 0
+		#<fc_pz> = #[#<_pl_flc_base>]
+		#<fc_px> = #[#<_pl_flc_base> + 1]
+		(already above the level where the contour starts)
+		o<fc_st> if [#<fc_px> GE #<l_eff>]
+			#<zc> = #<fc_pz>
+			#<found> = 1
+		o<fc_st> endif
+		o<fc_w> while [#<fc_i> LT [#<_pl_flc_n> - 1]]
+			#<fc_i>  = [#<fc_i> + 1]
+			#<fc_cz> = #[#<_pl_flc_base> + #<fc_i> * 2]
+			#<fc_cx> = #[#<_pl_flc_base> + #<fc_i> * 2 + 1]
+			o<fc_x> if [[#<found> EQ 0] AND [#<fc_px> LT #<l_eff>] AND [#<fc_cx> GE #<l_eff>]]
+				o<fc_d> if [ABS[#<fc_cx> - #<fc_px>] GT 0.000001]
+					#<zc> = [#<fc_pz> + [#<fc_cz> - #<fc_pz>] * [#<l_eff> - #<fc_px>] / [#<fc_cx> - #<fc_px>]]
+				o<fc_d> else
+					#<zc> = #<fc_cz>
+				o<fc_d> endif
+				#<found> = 1
+			o<fc_x> endif
+			#<fc_pz> = #<fc_cz>
+			#<fc_px> = #<fc_cx>
+		o<fc_w> endwhile
+		#<scan_i> = #<rec_count>
+	o<flc> endif
+
 	o<scan01> while [#<scan_i> LT #<rec_count>]
 		#<scan_i> = [#<scan_i> + 1]
 		#<cz> = #[#<scan_ptr>]
@@ -170,6 +215,58 @@ o<lathe_level_pass> sub
 		#<mc_px> = #[#<pds> + 2]
 		#<mc_scan_ptr> = [#<pds> + 9]
 		#<mc_i> = 1
+
+		(THE SAME REPLAY, walked on the floor contour Python built. It has to)
+		(be the same source as the scan above or the two disagree about where)
+		(the level stops - and this one wins, because with multi-crossing on)
+		(it sets the cut target. That is why fixing the scan alone changed)
+		(nothing: roughing still stopped 0.762 from a wall set to 2.000.)
+		(Simpler than the walk below, because a joined contour has at most)
+		(ONE crossing per segment: no gap connector, and no pair of)
+		(independent events to keep apart.)
+		o<mc_flc> if [#<_pl_flc_n> GT 1]
+			#<fc_i>  = 0
+			#<fc_pz> = #[#<_pl_flc_base>]
+			#<fc_px> = #[#<_pl_flc_base> + 1]
+			o<mcf_st> if [#<fc_px> GE #<l_eff>]
+				#<mc_state> = 1
+			o<mcf_st> endif
+			o<mcf_w> while [#<fc_i> LT [#<_pl_flc_n> - 1]]
+				#<fc_i>  = [#<fc_i> + 1]
+				#<fc_cz> = #[#<_pl_flc_base> + #<fc_i> * 2]
+				#<fc_cx> = #[#<_pl_flc_base> + #<fc_i> * 2 + 1]
+				#<mc_seg_found> = 0
+				o<mcf_ent> if [[#<fc_px> LT #<l_eff>] AND [#<fc_cx> GE #<l_eff>]]
+					#<mc_seg_dirup> = 1
+					#<mc_seg_found> = 1
+				o<mcf_ent> elseif [[#<fc_px> GE #<l_eff>] AND [#<fc_cx> LT #<l_eff>]]
+					#<mc_seg_dirup> = 0
+					#<mc_seg_found> = 1
+				o<mcf_ent> endif
+				o<mcf_t> if [#<mc_seg_found>]
+					o<mcf_d> if [ABS[#<fc_cx> - #<fc_px>] GT 0.000001]
+						#<mc_seg_tz> = [#<fc_pz> + [#<fc_cz> - #<fc_pz>] * [#<l_eff> - #<fc_px>] / [#<fc_cx> - #<fc_px>]]
+					o<mcf_d> else
+						#<mc_seg_tz> = #<fc_cz>
+					o<mcf_d> endif
+					o<mcf_past> if [[#<z_dir> * [#<mc_seg_tz> - #<w_from>]] LT [-0.0001]]
+						o<mcf_frz> if [#<mc_wf_state> LT 0]
+							#<mc_wf_state> = #<mc_state>
+						o<mcf_frz> endif
+						o<mcf_q> if [[#<mc_seg_dirup>] AND [#<mc_qual_found> EQ 0]]
+							#<mc_qual_found> = 1
+							#<mc_zc> = #<mc_seg_tz>
+						o<mcf_q> endif
+					o<mcf_past> else
+						#<mc_state> = #<mc_seg_dirup>
+					o<mcf_past> endif
+				o<mcf_t> endif
+				#<fc_pz> = #<fc_cz>
+				#<fc_px> = #<fc_cx>
+			o<mcf_w> endwhile
+			#<mc_i> = #<rec_count>
+		o<mc_flc> endif
+
 		o<mc01> while [#<mc_i> LT #<rec_count>]
 			#<mc_i> = [#<mc_i> + 1]
 			#<mc_cz> = #[#<mc_scan_ptr>]

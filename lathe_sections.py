@@ -2106,13 +2106,21 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 #
 #   3400  sections window table   i*4
 #   3600  flank envelope          i*2, capped below
+#   3700  floor contour           i*2 - where a roughing LEVEL stops
 #   4000  finish soft contour     i*2, capped below
 #   4400  In-CAM offsets          directory + points, capped at CAM_TOP
 #
 # test_table_layout in test_sections.py asserts they stay disjoint.
 SECT_BASE = 3400
 FLANK_BASE = 3600
-FLANK_TOP = 4000
+# the flank envelope has never needed more than 58 slots of its 400, measured
+# across four projects, so 100 is left to it and the rest goes to the floor
+# contour - which is built from the RAW profile and so has more points than the
+# tables built from the simplified reachable one: 226 slots on testing_15_2,
+# where 200 was not enough and it silently fell back to the old scan
+FLANK_TOP = 3700
+FLOORC_BASE = 3700
+FLOORC_TOP = 4000
 FC_BASE = 4000
 FC_TOP = 4200
 # the ENTRY contour - see entry_contour(). It shares 4000-4400 with the finish
@@ -2346,6 +2354,74 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     ramp = build_entry_ramp_gcode(env, _to_float(entry_off))
     if ramp:
         lines.append(ramp.rstrip('\n'))
+    return '\n'.join(lines)
+
+
+def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                              flank_len=0.0, clearance=0.0, orient=0):
+    """Where a roughing LEVEL stops: the profile offset by the floor allowance.
+
+    The subroutine used to work this out itself, offsetting every segment of
+    the record array perpendicular by one scalar at runtime. That cannot hold
+    two allowances, and it showed: with X 0.508 and Z 2.000 roughing stopped
+    **0.762** from testing_15_2's end wall instead of 2.000, because 0.762 is
+    `fin_off + prefin_off` and nothing there knew about the axial value. The
+    stop table could not rescue it either - that one is bounded to EXTENDING a
+    cut and never pulls one back.
+
+    So the floor becomes a table like the entry and stop contours beside it,
+    and the scan walks it. Two things come free with the move:
+
+    - **the allowance is anisotropic**, because `entry_contour` blends by the
+      surface normal;
+    - **the corners are joined** - inside ones trimmed to their crossing,
+      outside ones rounded - which is what the runtime scan's gap-connector
+      hack exists to paper over, because independently offset segments leave
+      gaps at a corner.
+
+    The pre-finish allowance stays isotropic: it is a depth of cut for the
+    pass that follows, not a face-versus-diameter choice.
+    """
+    fin_off, fin_off_z = stock_pair(polyline_feature)
+    pf = polyline_feature.get_param('param_pf_off')
+    pf_on = polyline_feature.get_param('param_pf_on')
+    pf_off = _to_float(pf.get_ngc_value()) if pf is not None else 0.0
+    if pf_on is not None and _to_float(pf_on.get_ngc_value()) <= 0:
+        pf_off = 0.0
+    floor_x, floor_z = fin_off + pf_off, fin_off_z + pf_off
+    if max(floor_x, floor_z) <= 0:
+        return ''
+
+    # THE RAW PROFILE, not the reachable one. The scan this replaces walks the
+    # record array, which is the polyline as drawn; the back-angle shadow is a
+    # separate table the level pass consults on its own. Building this from
+    # finish_profile instead changed which surface roughing stops against and
+    # cost testing_15_2 nine of its 29 levels - the only thing that may change
+    # here is the ALLOWANCE.
+    pts = resolve_points(polyline_feature)
+    if not pts or len(pts) < 2:
+        return ''
+    d = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
+    env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
+                        floor_x, rough_dir, _nr, _or, floor_z)
+    if len(env) < 2:
+        return ''
+    if FLOORC_BASE + 2 * len(env) > FLOORC_TOP:
+        return ('(WARNING - the floor contour needs %d parameter slots and only '
+                '%d are free, so roughing works its own floor out as before and '
+                'a separate Z offset will not reach it.)'
+                % (2 * len(env), FLOORC_TOP - FLOORC_BASE))
+    lines = ['(where a roughing LEVEL stops: the profile offset by the floor)',
+             '(allowance, joined at its corners and blended between the radial)',
+             '(and axial values by each surface own normal. The scan walks this)',
+             '(instead of offsetting the record array by one number at runtime.)',
+             '#<_pl_flc_base> = %d' % FLOORC_BASE,
+             '#<_pl_flc_n>    = %d' % len(env)]
+    for i, (z, x) in enumerate(env):
+        lines.append('#%d = %s' % (FLOORC_BASE + 2 * i, _fmt(z)))
+        lines.append('#%d = %s' % (FLOORC_BASE + 2 * i + 1, _fmt(x)))
     return '\n'.join(lines)
 
 

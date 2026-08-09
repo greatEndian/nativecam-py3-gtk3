@@ -2701,6 +2701,8 @@ class Preferences(object):
             # the ladder it took before floor stages existed.
             self.default += ("#<_pl_floor_n>             = 0\n")
             self.default += ("#<_pl_eramp_n>             = 0\n")
+            self.default += ("#<_pl_flc_base>            = 0\n")
+            self.default += ("#<_pl_flc_n>               = 0\n")
 
         if self.cat_name == 'mill' :
             self.default += ("#<_probe_func>              = 38." + self.ngc_probe_func + "\n")

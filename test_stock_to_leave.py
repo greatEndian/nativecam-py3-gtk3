@@ -146,6 +146,48 @@ def main():
                 return [float(x) for x in
                         re.findall(r'#4[45]\d\d = (-?[\d.]+)', txt)]
 
+            # AND ROUGHING HONOURS IT, which is the assertion this file did
+            # not have. It measured a 45 degree chamfer, 0.3008 against 0.3,
+            # and I read that as proof - but on a slope the level scan stops
+            # on the scalar and the STOP table then extends it forward onto
+            # the anisotropic contour, so the right number came out for the
+            # wrong reason. A WALL with an axial value far larger than the
+            # radial one needs the stop pulled BACK, which the stop table can
+            # never do. greatEndian set Z to 2.000 against X 0.508 and
+            # roughing stopped at 0.762 - fin_off + prefin_off, the scalar.
+            def wall_gap(sets):
+                out = os.path.join(d, 'wall.ngc')
+                cmd = [sys.executable, GEN, '--ini', INI, '--project', PROJECT,
+                       '--out', out, '--config-copy']
+                for kv in sets:
+                    cmd += ['--set', kv]
+                subprocess.run(cmd, capture_output=True, text=True)
+                if not os.path.isfile(out):
+                    return None
+                import ncam_preview as P
+                tp = P.parse_program(out, INI)
+                if tp.error:
+                    return None
+                lv = [m for m in tp.moves
+                      if m.op == 'Lathe Polyline' and not m.subs
+                      and m.kind == 'feed' and abs(m.b[0] - m.a[0]) < 1e-6
+                      and abs(m.b[2] - m.a[2]) > 1e-6 and m.b[2] < -60.0]
+                return min(m.b[2] for m in lv) + 70.4 if lv else None
+
+            iso = wall_gap(['polyline:param_n_comp=2'])
+            ani = wall_gap(['polyline:param_n_comp=2',
+                            'polyline:param_f_off=0.508',
+                            'polyline:param_f_off_sep=1',
+                            'polyline:param_f_off_z=2.0'])
+            check('roughing leaves the AXIAL allowance on a wall',
+                  ani is not None and abs(ani - 2.0) < 0.05,
+                  'the deepest level stops %.4f from the Z-70.4 wall with the '
+                  'axial value set to 2.000 - the level scan is using one '
+                  'scalar allowance again' % (ani if ani is not None else -1))
+            check('   and the isotropic case is where it always was',
+                  iso is not None and abs(iso - 0.508) < 0.05,
+                  'stops %.4f, expected 0.508' % (iso if iso is not None else -1))
+
             base = gen('base', [])
             offb = gen('sep_off', ['polyline:param_f_off_z=0.1'])
             on = gen('sep_on', ['polyline:param_f_off_sep=1',

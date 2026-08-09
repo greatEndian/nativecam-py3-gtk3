@@ -21,7 +21,13 @@ Branch: `liveTooling`. Last pushed: `57eea44`.
 
 ## Next — before anything else
 
-- [ ] **ROUGHING IGNORES THE AXIAL STOCK TO LEAVE** — greatEndian 2026-08-09,
+- [x] **ROUGHING IGNORES THE AXIAL STOCK TO LEAVE — FIXED**, 2026-08-09,
+  `analysis/026`. Roughing now stops **2.0000** from the wall where it stopped
+  0.7620; the isotropic case is unchanged at 0.5080 with the same 341 moves and
+  29 levels. The level scan walks a floor contour Python builds instead of
+  offsetting the record array by one scalar at runtime. Original report below.
+
+- [x] ~~ROUGHING IGNORES THE AXIAL STOCK TO LEAVE~~ — greatEndian 2026-08-09,
   `photo/separateOffsetZ_0.png`, `analysis/024`. With *Separate Z offset* on,
   X 0.508 and Z 2.000, measured against testing_15_2's Z−70.4 end wall:
 
