@@ -48,6 +48,52 @@ def _fmt(val):
     return '%0.8f' % val
 
 
+def resolve_points_untrimmed(polyline_feature):
+    """The profile as drawn, before any Z limit is applied.
+
+    The validation needs it to say whether a limit actually falls inside the
+    profile: asked of the TRIMMED points, a limit is always at the edge and
+    every limit would look inert.
+    """
+    return resolve_points(polyline_feature, trim=False)
+
+
+def trim_to_front_z(points, f_z):
+    """The profile clipped at a FRONT limit, keeping the part behind it.
+
+    The mirror of trim_to_end_z: that one keeps what is in front of the limit,
+    this one keeps what is behind it, so the two together cut a span out of the
+    profile. Same rules - active only when the limit falls inside the profile,
+    and the clipped segment interpolated so the profile begins exactly on it.
+
+    NOT param_b_z. Start Z is a DATUM: it resolves the first item's relative
+    coordinates and it is the reference roughing starts from, and it never
+    removes profile. Measured on testing_15_2, moving Start Z to -1 and -5 left
+    the contour table unchanged at (1.0, 20.0) both times and only moved the
+    roughing start. Overloading it would change where relative items land as a
+    side effect of asking for a limit.
+    """
+    if not points or len(points) < 2 or f_z is None:
+        return points
+    zs = [z for z, _x in points]
+    if not (min(zs) < f_z < max(zs)):
+        return points
+
+    # the far end tells us which way "behind" is, without assuming a direction
+    behind_is_less = points[-1][0] < points[0][0]
+    out = []
+    for i, (z, x) in enumerate(points):
+        keep = z < f_z if behind_is_less else z > f_z
+        if keep:
+            if not out and i:
+                pz, px = points[i - 1]
+                if abs(z - pz) > EPS:
+                    t = (f_z - pz) / (z - pz)
+                    out.append((f_z, px + (x - px) * t))
+            out.append((z, x))
+    return out if len(out) >= 2 else points
+
+
 def trim_to_end_z(points, e_z):
     """The profile clipped at an End Z, keeping the part in front of it.
 
@@ -97,7 +143,7 @@ def trim_to_end_z(points, e_z):
     return out if len(out) >= 2 else points
 
 
-def resolve_points(polyline_feature, vertices=None):
+def resolve_points(polyline_feature, vertices=None, trim=True):
     """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
     in (diameter units as typed - see module docstring in the plan:
@@ -176,10 +222,25 @@ def resolve_points(polyline_feature, vertices=None):
 
     pts = apply_merge_radii(points, merges)
     # and the back limit, if one falls inside the profile - see trim_to_end_z
-    on = polyline_feature.get_param('param_e_z_on')
-    e = polyline_feature.get_param('param_e_z')
-    if e is not None and on is not None and _to_float(on.get_ngc_value()) > 0:
-        pts = trim_to_end_z(pts, _to_float(e.get_ngc_value()))
+    # the front limit first, then the back one - each gated on its own switch,
+    # because no Z value is safe as a sentinel when a profile may begin at a
+    # positive Z. See trim_to_end_z.
+    def _lim(sw, val):
+        a = polyline_feature.get_param(sw)
+        b = polyline_feature.get_param(val)
+        if a is None or b is None or _to_float(a.get_ngc_value()) <= 0:
+            return None
+        return _to_float(b.get_ngc_value())
+
+    if not trim:
+        return pts
+
+    fz = _lim('param_fr_z_on', 'param_fr_z')
+    if fz is not None:
+        pts = trim_to_front_z(pts, fz)
+    ez = _lim('param_e_z_on', 'param_e_z')
+    if ez is not None:
+        pts = trim_to_end_z(pts, ez)
     return pts
 
 

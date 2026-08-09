@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 # coding: utf-8
-"""An End Z stops the operation short of where the polyline ends.
+"""Z limits: a Front Z and an End Z bound what the operation machines.
 
 Standalone, like the other test_*.py here - run it directly, no pytest.
 
-Gap 8 of `POLYLINE-GAPS.md`. We had a Start Z and nothing at the back, so an
-operation always ran to the end of the drawn profile - no way to machine this
-much of a part and leave the rest for another setup or a tool that can reach
-past a chuck.
+Gap 8 of `POLYLINE-GAPS.md`. We had a Start Z and nothing at either limit, so
+an operation always ran the whole drawn profile - no way to machine this much
+of a part and leave the rest for another setup or a tool that can reach past a
+chuck. The two together cut a span out of the middle.
+
+NOT TESTED HERE, deliberately: the crossed-limits validation. `msg_inv` at
+severity 1 calls `Gtk.Dialog.run()`, which BLOCKS waiting for a button nobody
+can press in a headless run - it hung `gen_project` for 45 seconds until a
+faulthandler dump named it. Any test that drives a severity-1 validation hangs
+the suite, so this file stays on the side of it.
 
 The trim happens once, in `resolve_points`, to the profile every builder reads.
 The contours, the section windows, the floor ladder and the entry and stop
@@ -65,6 +71,17 @@ def main():
     check('a profile that would be left with one point is not trimmed',
           L.trim_to_end_z(prof, 0.5) == prof)
 
+    # the FRONT limit is the mirror: it keeps what is BEHIND it
+    check('a front limit outside the profile does nothing',
+          L.trim_to_front_z(prof, 5.0) == prof
+          and L.trim_to_front_z(prof, -40.0) == prof)
+    check('a front limit keeps the part behind it, interpolated',
+          L.trim_to_front_z(prof, -10.0)
+          == [(-10.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-30.0, 50.0)])
+    check('the two together cut a span out of the middle',
+          L.trim_to_end_z(L.trim_to_front_z(prof, -10.0), -25.0)
+          == [(-10.0, 40.0), (-20.0, 40.0), (-20.0, 50.0), (-25.0, 50.0)])
+
     if not (os.path.isfile(INI) and os.path.isfile(GEN)):
         print('SKIP  demo config or generator not present')
     elif not shutil.which('rs274'):
@@ -90,16 +107,26 @@ def main():
                       and abs(m.b[0] - m.a[0]) < 1e-6
                       and abs(m.b[2] - m.a[2]) > 1e-6]
                 zs = [q for m in mv for q in (m.a[2], m.b[2])]
+                feeds = [q for m in mv if m.kind != 'rapid'
+                         for q in (m.a[2], m.b[2])]
                 return {'moves': [(round(m.a[0], 4), round(m.a[2], 4),
                                    round(m.b[2], 4)) for m in mv],
-                        'levels': len(lv), 'reach': min(zs)}
+                        'levels': len(lv), 'reach': min(zs),
+                        'feed_front': max(feeds) if feeds else 0.0}
 
             off = run('off', [])
-            off_v = run('off_v', ['polyline:param_e_z=-40.0'])
+            off_v = run('off_v', ['polyline:param_e_z=-40.0',
+                                  'polyline:param_fr_z=-20.0'])
             on = run('on', ['polyline:param_e_z_on=1',
                             'polyline:param_e_z=-40.0'])
-            check('the project generates all three ways',
-                  off and off_v and on)
+            front = run('front', ['polyline:param_fr_z_on=1',
+                                  'polyline:param_fr_z=-20.0'])
+            span = run('span', ['polyline:param_fr_z_on=1',
+                                'polyline:param_fr_z=-20.0',
+                                'polyline:param_e_z_on=1',
+                                'polyline:param_e_z=-40.0'])
+            check('the project generates every way',
+                  off and off_v and on and front and span)
             if off and off_v and on:
                 # THE ONE THAT MATTERS
                 check('the switch OFF is identical whatever End Z holds',
@@ -125,6 +152,43 @@ def main():
                       'only %d levels reaching Z%.3f - the profile is being '
                       'trimmed when nothing asked for it'
                       % (off['levels'], off['reach']))
+                if front and span:
+                    print('      front: %d levels, feeds reach Z%.3f'
+                          % (front['levels'], front['feed_front']))
+                    print('      span:  %d levels, reaches Z%.3f'
+                          % (span['levels'], span['reach']))
+                    # A FRONT LIMIT MUST STOP THE CUTTING, not just trim the
+                    # profile. Trimming alone left the levels starting at Start
+                    # Z and sweeping BACK through the material the limit was
+                    # meant to leave - the program still began at Z+0.707 and
+                    # cut the whole front of the part. Rapids above the stock
+                    # may cross it; feeds may not.
+                    # THE LEAD-IN STILL APPROACHES FROM IN FRONT, by its own
+                    # length: 1.0 mm at 45 degrees is 0.707 in Z, so feeds
+                    # reach Z-19.293 against a Z-20.0 limit. That is the same
+                    # rule the Begin Z bound has always followed - the TIP is
+                    # bounded, and the lead descends to it from outside - but
+                    # at a front limit it means cutting 0.707 into material
+                    # the limit was asked to leave. Recorded in analysis/025
+                    # for greatEndian to rule on; asserted as bounded, not as
+                    # absent, so it cannot quietly grow.
+                    lead = 1.0
+                    check('no FEED goes more than the lead-in in front of the '
+                          'front limit',
+                          front['feed_front'] < -20.0 + lead,
+                          'a cutting move reaches Z%.3f, more than %.1f in '
+                          'front of the Z-20.0 limit'
+                          % (front['feed_front'], lead))
+                    check('   and the span is bounded at both ends',
+                          span['feed_front'] < -20.0 + lead
+                          and span['reach'] > -41.0,
+                          'feeds Z%.3f .. %.3f' % (span['feed_front'],
+                                                   span['reach']))
+                    check('   and each limit removes work',
+                          front['levels'] < off['levels']
+                          and span['levels'] < front['levels'],
+                          '%d off, %d front, %d span'
+                          % (off['levels'], front['levels'], span['levels']))
         finally:
             shutil.rmtree(d, ignore_errors=True)
 

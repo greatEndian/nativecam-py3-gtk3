@@ -91,3 +91,66 @@ lists.
   the preview both follow it. That is right, but it means an End Z also changes
   what the warning reports — worth knowing before reading a warning on a
   trimmed part.
+
+---
+
+## Addendum — the front limit, 2026-08-09
+
+`param_fr_z_on` / `param_fr_z`, polyline.cfg **1.46**. `trim_to_front_z` is the
+mirror of the back trim — it keeps what is *behind* the limit — so the two
+together cut a span out of the middle of a part.
+
+```
+none              341 moves, 29 levels, Z-70.400
+front only  -20   299 moves, 22 levels
+back only   -40   265 moves, 20 levels, Z-40.604
+a span -20..-40   223 moves, 13 levels, Z-40.604
+```
+
+### Trimming the profile is not enough on its own
+
+The first version trimmed only the geometry, and the program **still began at
+Z+0.707 and cut the whole front of the part**. Roughing levels start at Begin Z
+and sweep back, so they ran straight through the material the limit was asked
+to leave. `_pl_begin_z` now takes the front limit when one is on, which is the
+bound that actually stops the cutting.
+
+Only two moves cross the limit afterwards, both **rapids at r31.816** — above
+the r30 stock, travelling to the start. They remove nothing.
+
+### One encroachment, bounded and not hidden
+
+Feeds reach **Z−19.293** against a Z−20.0 limit — the lead-in, 1.0 mm at 45°,
+which is 0.707 in Z. That is the rule the Begin Z bound has always followed:
+the **tip** is bounded and the lead descends to it from outside. At a front
+limit it means cutting 0.707 mm into material the limit was asked to leave.
+
+Left as it is, because changing it would change the Begin Z behaviour
+greatEndian settled deliberately — but asserted as *bounded by the lead-in
+length* rather than absent, so it cannot quietly grow. **Worth a ruling:** a
+front limit arguably wants a radial approach instead of an angled lead.
+
+### Validation, and a trap in testing it
+
+`if #param_fr_z_on and #param_e_z_on and #param_fr_z <= #param_e_z` refuses the
+crossed case — the two limits keep the span *between* them, so a front limit at
+or behind the end limit leaves nothing.
+
+The first attempt validated much more: whether the trim left fewer than two
+points, and whether each limit fell inside the raw profile. **It hung
+generation for 45 seconds.** `resolve_points` returns empty when called from
+`validate()`, because validation runs mid-walk in `to_gcode` before the
+children are resolvable — so the "leaves nothing" branch fired, and
+`msg_inv` at severity 1 calls `Gtk.Dialog.run()`, which blocks on a button
+nobody can press headlessly. A `faulthandler.dump_traceback_later` named it.
+
+Two lessons, both recorded in `LEARNINGS-LOG.md`: **a cfg `[VALIDATION]` block
+cannot rely on `resolve_points`**, and **a severity-1 `msg_inv` blocks any
+headless run**, so no test may drive one.
+
+### Still open
+
+- The **datum modes** — measuring either limit from the stock face or the
+  chuck rather than in absolute Z. The Workpiece feature carries a face Z, so
+  that is the version that could work here; gap 14's useful half.
+- The **lead-in encroachment** above.
