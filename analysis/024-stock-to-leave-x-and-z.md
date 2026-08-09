@@ -107,3 +107,51 @@ point-to-polyline — and the three numbers come out flat.
   means the walls' extra allowance is honoured by where roughing *stops*, not
   by where its levels *sit*. Nothing measured suggests that is wrong; it has
   simply not been examined.
+
+---
+
+## Addendum — the two open points investigated, 2026-08-09
+
+### The floor ladder staying radial is correct — measured, not argued
+
+The question was whether roughing's floors, which are radial, can honour an
+axial allowance at all. They do not need to: a floor **is** a diameter, and the
+axial allowance reaches roughing through where each level **stops**, which is
+the stop contour and is anisotropic.
+
+End to end on `testing_15_4`, roughing only, no pre-finish pass, measuring the
+perpendicular gap between the roughed surface and the profile:
+
+```
+isotropic 0.5    chamfer (45 deg) left 0.5014    cylinder left 0.5161
+X 0.5  Z 0.1     chamfer (45 deg) left 0.3008    cylinder left 0.5161
+```
+
+The 45° chamfer takes the mean and the cylinder is untouched, from roughing
+alone. Closed.
+
+### Negative stock to leave — it already works, up to a bound it fails silently at
+
+`offset_contour` with a nose of 0.4, measured at an r20 cylinder:
+
+```
+extra -0.10   roll +0.300   contour at -0.1000
+extra -0.39   roll +0.010   contour at -0.3900
+extra -0.40   roll  0.000   contour at +0.0000   <- silently does nothing
+extra -0.50   roll -0.100   contour at +0.0000   <- silently does nothing
+```
+
+So the contour passes already cut past the model correctly, down to
+`extra > -nose_r` — exactly the bound the reference states, *"you cannot
+compensate past the theoretical tip of the tool"*. Past it the guard
+`nose_r + extra <= EPS` returns the profile unchanged: **ask for 0.5 past the
+model and get 0.0, with no warning.** That silence is the hazard, not the
+maths.
+
+`entry_contour` with no nose — the roughing case with compensation off —
+refuses any negative value the same way, returning the raw profile.
+
+**Not exposed, deliberately.** The parameter minimum stays 0.0. Exposing it
+needs the bound enforced loudly rather than silently, and a decision about
+roughing, which cannot hold a negative allowance without a nose. Both are real
+work, and half of it would be worse than none.

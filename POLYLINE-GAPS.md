@@ -59,7 +59,7 @@ contained, and Python-first:
 | # | Gap | Why it earns its place |
 |---|---|---|
 | ~~15~~ | ~~Separate X and Z stock to leave~~ | **DONE 2026-08-09** — `analysis/024`, polyline.cfg 1.44 |
-| 8 | **A back Z limit** | we have no way to stop an operation short of where the polyline ends. The datum machinery is not needed — just the number |
+| ~~8~~ | ~~A back Z limit~~ | **DONE 2026-08-09** — `analysis/025`, polyline.cfg 1.45. Front limit and datums still open |
 | 16 | **Pecking** | chip breaking has no expression at all; a Python subdivision of an interval we already compute |
 | 9 | **Tangential extension** | run the cut past the profile along its own direction, front and back |
 | 1 | **Tool clearance FRONT** | we have back only, and the reachable-contour maths already takes a front angle |
@@ -222,7 +222,7 @@ Sections: Model, **Front**, **Back**, Groove Suppression, Rest Machining.
 Front and Back each carry a Mode, an Offset and a Tangential Extension; Back
 also carries a Reference and a Tool Limit.
 
-#### 8. Front and Back Z limits, with a reference datum
+#### 8. Front and Back Z limits, with a reference datum — **BACK LIMIT DONE**, 2026-08-09, `analysis/025`
 
 - **What it is** — *Front Mode* / *Back Mode* choose what the operation's Z
   limit is measured from: **Stock front, Stock back, Chuck front, Selection,
@@ -241,6 +241,12 @@ also carries a Reference and a Tool Limit.
   point at, which is the CAD paradigm below.
 - **Open question** — is the back limit wanted on its own? That is the useful
   half and it does not need any of the datum machinery.
+- **BUILT, the back half.** `param_e_z_on` / `param_e_z`, polyline.cfg 1.45.
+  The trim happens once in `resolve_points`, so every contour, window, floor
+  and table follows it. Switch off, 341 moves / 29 levels / Z−70.400; on at
+  −40, 265 / 20 / Z−40.604. The FRONT limit and the datum modes are still open
+  — `param_b_z` is the profile's origin, not a trim, so it cannot double as
+  one.
 
 #### 9. Tangential Extension
 

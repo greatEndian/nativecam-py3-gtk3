@@ -48,6 +48,55 @@ def _fmt(val):
     return '%0.8f' % val
 
 
+def trim_to_end_z(points, e_z):
+    """The profile clipped at an End Z, keeping the part in front of it.
+
+    A back limit stops the operation short of where the polyline itself ends -
+    machine this much of the part and leave the rest for another setup, or for
+    a tool that can reach past a chuck.
+
+    It is applied HERE, to the profile every builder reads, rather than to each
+    of them: the contours, the section windows, the floor ladder and the entry
+    and stop tables are all derived from these points, so trimming once is what
+    keeps them agreeing with each other. That is the same reason the reference
+    package puts its Front and Back limits on the geometry rather than on the
+    passes.
+
+    ACTIVE ONLY WHEN THE LIMIT FALLS INSIDE THE PROFILE. At or beyond either
+    end it does nothing.
+
+    THE CALLER GATES IT ON ITS OWN SWITCH, and that is not belt-and-braces.
+    Using 0.0 as "no limit" was tried and is wrong: testing_15_2's profile
+    starts at **Z+1.0**, so 0.0 falls inside it and trimmed the part down to
+    its first millimetre - 29 roughing levels became 2. A profile may begin at
+    a positive Z, so no Z value is safe as a sentinel.
+
+    The clipped segment is interpolated, so the profile ends exactly on the
+    limit rather than at the last vertex before it.
+    """
+    if not points or len(points) < 2 or e_z is None:
+        return points
+    zs = [z for z, _x in points]
+    if not (min(zs) < e_z < max(zs)):
+        return points
+
+    # which side is "in front" is the side the profile starts on
+    forward = points[0][0] > e_z
+    out = []
+    for i, (z, x) in enumerate(points):
+        keep = z > e_z if forward else z < e_z
+        if keep:
+            out.append((z, x))
+            continue
+        if out:
+            pz, px = points[i - 1]
+            if abs(z - pz) > EPS:
+                t = (e_z - pz) / (z - pz)
+                out.append((e_z, px + (x - px) * t))
+            break
+    return out if len(out) >= 2 else points
+
+
 def resolve_points(polyline_feature, vertices=None):
     """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
@@ -125,7 +174,13 @@ def resolve_points(polyline_feature, vertices=None):
 
         prev_z, prev_r = seg['z'], seg['r']
 
-    return apply_merge_radii(points, merges)
+    pts = apply_merge_radii(points, merges)
+    # and the back limit, if one falls inside the profile - see trim_to_end_z
+    on = polyline_feature.get_param('param_e_z_on')
+    e = polyline_feature.get_param('param_e_z')
+    if e is not None and on is not None and _to_float(on.get_ngc_value()) > 0:
+        pts = trim_to_end_z(pts, _to_float(e.get_ngc_value()))
+    return pts
 
 
 # X is entered and carried here as a diameter, while a polar length, an arc
