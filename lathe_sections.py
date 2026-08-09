@@ -1565,7 +1565,55 @@ def _unit(dz, dx):
     return (dz / n, dx / n) if n > EPS else (0.0, 0.0)
 
 
-def offset_contour(points, nose_r, orient, side=1, extra=0.0):
+def stock_pair(polyline_feature):
+    """(radial, axial) stock to leave, in whatever units the feature holds.
+
+    One number unless *Separate Z offset* is on, in which case the diameters
+    keep `param_f_off` and the walls take `param_f_off_z`. Returning the pair
+    equal when the switch is off is what keeps every saved project bit-for-bit
+    where it was - `stock_at_normal` then reduces to the single value for
+    every normal.
+    """
+    def _v(name):
+        p = polyline_feature.get_param(name)
+        return _to_float(p.get_ngc_value()) if p is not None else 0.0
+    off_x = _v('param_f_off')
+    sep = polyline_feature.get_param('param_f_off_sep')
+    if sep is None or _to_float(sep.get_ngc_value()) <= 0:
+        return off_x, off_x
+    return off_x, _v('param_f_off_z')
+
+
+def stock_at_normal(nz, nr, off_x, off_z):
+    """The allowance a surface with this outward normal is entitled to.
+
+    Stock to leave is TWO numbers, not one: a radial allowance held on the
+    diameters and an axial one held on the walls. A surface between the two
+    gets a blend of them, and the blend is not a guess - it is what the normal
+    already says.
+
+    Displace the surface by the vector (nz * off_z, nr * off_x): a horizontal
+    run has normal (0, 1) and moves off_x radially; a wall has normal (1, 0)
+    and moves off_z axially. The perpendicular distance that displacement
+    produces is its projection on the normal,
+
+        d = nz^2 * off_z + nr^2 * off_x
+
+    which is off_x on a diameter, off_z on a wall, and their mean at 45
+    degrees. That is exactly the interpolation the reference package describes:
+    "for surfaces that are not exactly horizontal, the program interpolates
+    between the Axial Stock value (wall) and the Radial Stock values".
+
+    (nz, nr) is the UNIT outward normal in (z, radius). With off_x == off_z
+    this returns that value for every normal, so the isotropic path is
+    unchanged to the last bit.
+    """
+    if abs(off_x - off_z) < EPS:
+        return off_x
+    return nz * nz * off_z + nr * nr * off_x
+
+
+def offset_contour(points, nose_r, orient, side=1, extra=0.0, extra_z=None):
     """The control-point path that puts the nose circle tangent to the profile.
 
     With compensation off the machine positions the tool's CONTROL point, and
@@ -1605,7 +1653,9 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0):
     testing_15_2: the pre-finish pass sat 0.0890 mm from the finish pass
     instead of 0.508, and in places 0.4389 mm INSIDE it.
     """
-    if not points or len(points) < 2 or nose_r + extra <= EPS:
+    if extra_z is None:
+        extra_z = extra
+    if not points or len(points) < 2 or nose_r + max(extra, extra_z) <= EPS:
         return list(points)
     roll = nose_r + extra
 
@@ -1631,9 +1681,13 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0):
         # offset to +Z and -Z respectively, each away from its own material.
         # The other rotation gets the cylinder right and both walls backwards.
         nz, nr = ur * side, -uz * side
+        # the allowance this surface is entitled to, by its own normal - one
+        # number when the stock to leave is isotropic, a blend when it is not
+        seg_roll = nose_r + stock_at_normal(nz, nr, extra, extra_z)
         segs.append({'v0': (z0, r0), 'v1': (z1, r1), 'u': (uz, ur),
-                     'a': (z0 + roll * nz, r0 + roll * nr),
-                     'b': (z1 + roll * nz, r1 + roll * nr)})
+                     'roll': seg_roll,
+                     'a': (z0 + seg_roll * nz, r0 + seg_roll * nr),
+                     'b': (z1 + seg_roll * nz, r1 + seg_roll * nr)})
     if not segs:
         return list(points)
 
@@ -1710,18 +1764,24 @@ def _join_offsets(segs, sign, roll, vkey='v'):
             out.append(cur['b'])
             break
         nxt = segs[i + 1]
+        # each segment may carry its own roll, when the stock to leave is
+        # anisotropic - see stock_at_normal. Falls back to the caller's single
+        # value, so the isotropic path is untouched.
+        r_cur = cur.get('roll', roll)
+        r_nxt = nxt.get('roll', roll)
+        r_max = max(r_cur, r_nxt)
         (uz0, ur0), (uz1, ur1) = cur['u'], nxt['u']
         cross = (uz0 * ur1 - ur0 * uz1) * sign
         if cross > EPS:
             out.append(cur['b'])
-            out.extend(_corner_arc(cur[vkey], cur['b'], nxt['a'], roll))
+            out.extend(_corner_arc(cur[vkey], cur['b'], nxt['a'], r_cur))
         elif cross < -EPS:
             hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
             if hit is not None and (
                     math.hypot(hit[0] - cur['b'][0], hit[1] - cur['b'][1])
-                    > TRIM_REACH * roll
+                    > TRIM_REACH * r_max
                     or math.hypot(hit[0] - nxt['a'][0], hit[1] - nxt['a'][1])
-                    > TRIM_REACH * roll):
+                    > TRIM_REACH * r_max):
                 hit = None
             if hit is not None and _consumed(hit, nxt):
                 if i + 2 < len(segs):
@@ -1738,13 +1798,23 @@ def _join_offsets(segs, sign, roll, vkey='v'):
 def _corner_arc(vertex, start, end, radius):
     """Chords around an external corner, from start to end about vertex.
 
-    Both ends already lie radius from the vertex; this fills the sweep between
-    them, taking the short way round, subdivided so each chord's sagitta stays
-    under MESH_MAX_SAG.
+    Both ends normally lie `radius` from the vertex; this fills the sweep
+    between them, taking the short way round, subdivided so each chord's
+    sagitta stays under MESH_MAX_SAG.
+
+    WHEN THE TWO ENDS ARE AT DIFFERENT RADII the corner is not an arc at all.
+    That happens with an anisotropic stock to leave: the wall and the diameter
+    meeting at the corner are entitled to different allowances, so the offset
+    leaves the vertex at one distance and rejoins at another. The radius is
+    interpolated across the sweep, which blends the two allowances through the
+    corner instead of stepping between them. With equal ends this is the plain
+    arc it always was.
     """
     vz, vr = vertex
     a0 = math.atan2(start[1] - vr, start[0] - vz)
     a1 = math.atan2(end[1] - vr, end[0] - vz)
+    r0 = math.hypot(start[0] - vz, start[1] - vr)
+    r1 = math.hypot(end[0] - vz, end[1] - vr)
     sweep = a1 - a0
     while sweep > math.pi:
         sweep -= 2 * math.pi
@@ -1754,8 +1824,8 @@ def _corner_arc(vertex, start, end, radius):
         return [end]
     step = 2.0 * math.acos(max(1.0 - MESH_MAX_SAG / radius, -1.0))
     n = max(int(math.ceil(abs(sweep) / max(step, 1e-6))), 1)
-    return [(vz + radius * math.cos(a0 + sweep * k / n),
-             vr + radius * math.sin(a0 + sweep * k / n))
+    return [(vz + (r0 + (r1 - r0) * k / n) * math.cos(a0 + sweep * k / n),
+             vr + (r0 + (r1 - r0) * k / n) * math.sin(a0 + sweep * k / n))
             for k in range(1, n + 1)]
 
 
@@ -1842,11 +1912,20 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
         p = polyline_feature.get_param(pname)
         return _to_float(p.get_ngc_value()) if p is not None else 0.0
 
-    fin_off = _off('param_f_off')
+    fin_off, fin_off_z = stock_pair(polyline_feature)
     pf_off = _off('param_pf_off') * (1 if _off('param_pf_on') else 0)
     offsets = cam_pass_offsets(fin_off, pf_off, _off('param_f_pass'))
 
-    paths = [offset_contour(points, nose_r, int(orient), side, extra)
+    # each pass steps its allowance down proportionally, and the axial one has
+    # to step with it or the walls would keep their full stock while the
+    # diameters lost theirs. Scaled by the pass's own share of fin_off.
+    def _z_for(extra):
+        if abs(fin_off_z - fin_off) < EPS or fin_off <= EPS:
+            return extra
+        return fin_off_z * (extra / fin_off)
+
+    paths = [offset_contour(points, nose_r, int(orient), side, extra,
+                            _z_for(extra))
              for extra in offsets]
     if any(len(p) < 2 for p in paths):
         return _refuse('the offset path collapsed - the nose radius is too '
@@ -1938,7 +2017,8 @@ STOP_TOP = 4600
 TRIM_REACH = 4.0
 
 
-def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
+def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0,
+                  dist_z=None):
     """The contour offset outward by `dist`, as a (z, radius) polyline.
 
     This is where a roughing level may BEGIN cutting. The level stops on the
@@ -1992,8 +2072,10 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
     parallel to Z, and there the two terms cancel. What moves is where the
     level STARTS and STOPS against the contour, which is what this decides.
     """
+    if dist_z is None:
+        dist_z = dist
     roll = dist + nose_r
-    if not points or len(points) < 2 or roll <= 0:
+    if not points or len(points) < 2 or max(dist, dist_z) + nose_r <= 0:
         return list(points)
     ox, oz = (NOSE_OFFSET[orient] if 0 < orient < len(NOSE_OFFSET)
               else (0.0, 0.0))
@@ -2008,9 +2090,10 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0):
             continue
         uz, ux = dz / n, dx / n
         nz, nx = z_dir * ux, -z_dir * uz
-        segs.append({'a': (z0 + roll * nz, x0 + roll * nx),
-                     'b': (z1 + roll * nz, x1 + roll * nx),
-                     'u': (uz, ux), 'v': (z1, x1)})
+        seg_roll = nose_r + stock_at_normal(nz, nx, dist, dist_z)
+        segs.append({'a': (z0 + seg_roll * nz, x0 + seg_roll * nx),
+                     'b': (z1 + seg_roll * nz, x1 + seg_roll * nx),
+                     'u': (uz, ux), 'v': (z1, x1), 'roll': seg_roll})
     if not segs:
         return list(points)
 
@@ -2168,9 +2251,8 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     and ten level ends finished inside the contour. So the scan keeps the floor
     allowance and the stop is looked up here.
     """
-    p = polyline_feature.get_param('param_f_off')
-    fin_off = _to_float(p.get_ngc_value()) if p is not None else 0.0
-    if fin_off <= 0:
+    fin_off, fin_off_z = stock_pair(polyline_feature)
+    if max(fin_off, fin_off_z) <= 0:
         return ''
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
                                clearance)
@@ -2180,7 +2262,7 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
-                        fin_off, rough_dir, _nr, _or)
+                        fin_off, rough_dir, _nr, _or, fin_off_z)
     if len(env) < 2:
         return ''
     top = STOP_BASE + 2 * len(env)
@@ -2435,9 +2517,8 @@ def build_prefinish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     p = polyline_feature.get_param('param_n_comp')
     if p is None or int(_to_float(p.get_ngc_value())) != 1:
         return ''                      # native only; Off and In CAM are right
-    o = polyline_feature.get_param('param_f_off')
-    allowance = _to_float(o.get_ngc_value()) if o is not None else 0.0
-    if allowance <= EPS:
+    allowance, allowance_z = stock_pair(polyline_feature)
+    if max(allowance, allowance_z) <= EPS:
         return ''
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
                                clearance)
@@ -2447,7 +2528,7 @@ def build_prefinish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     tp = polyline_feature.get_param('param_side')
     side = -1 if (tp is not None
                   and int(_to_float(tp.get_ngc_value())) == 1) else 1
-    out = offset_contour(pts, 0.0, orient, side, allowance)
+    out = offset_contour(pts, 0.0, orient, side, allowance, allowance_z)
     if not out or len(out) < 2:
         return ''
     top = CAM_BASE + 2 * len(out)

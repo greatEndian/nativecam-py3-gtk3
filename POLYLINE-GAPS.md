@@ -58,7 +58,7 @@ contained, and Python-first:
 
 | # | Gap | Why it earns its place |
 |---|---|---|
-| 15 | **Separate X and Z stock to leave** | ordinary practice; one value cannot leave more on walls than diameters. Lives in `offset_contour` |
+| ~~15~~ | ~~Separate X and Z stock to leave~~ | **DONE 2026-08-09** — `analysis/024`, polyline.cfg 1.44 |
 | 8 | **A back Z limit** | we have no way to stop an operation short of where the polyline ends. The datum machinery is not needed — just the number |
 | 16 | **Pecking** | chip breaking has no expression at all; a Python subdivision of an interval we already compute |
 | 9 | **Tangential extension** | run the cut past the profile along its own direction, front and back |
@@ -349,7 +349,7 @@ Sections: **Cycle and Direction**, **Passes**, **Stock to Leave**. The tab with
 the heaviest overlap so far — much of it we already have — but four of the
 gaps below are ordinary turning practice we simply cannot express.
 
-#### 15. Separate X and Z stock to leave
+#### 15. Separate X and Z stock to leave — **DONE**, 2026-08-09, `analysis/024`
 
 - **What it is** — **X Stock to Leave** *"the amount of material to leave in
   the radial direction"* and **Z Stock to Leave** *"in the axial direction…
@@ -371,6 +371,13 @@ gaps below are ordinary turning practice we simply cannot express.
   angle exactly as the tooltip describes. Python, and testable.
 - **Open question** — the negative case needs the nose-radius bound they state,
   and we have that number already in `tip_comp_inputs`.
+- **BUILT.** `param_f_off_sep` (*Separate Z offset*, default off) and
+  `param_f_off_z`, polyline.cfg 1.44. The rule is `stock_at_normal`:
+  `nz²·off_z + nr²·off_x`, which is off_x on a diameter, off_z on a wall and
+  their mean at 45°. Measured 0.5000 / 0.1000 / 0.3000 on those three surfaces.
+  Roughing, the pre-finish pass and the final finish pass all honour both;
+  **intermediate** finish passes under Native comp cannot, because `G41.1 D` is
+  a single number — that is in the tooltip. Negative stock still not exposed.
 
 #### 16. Use Pecking
 
