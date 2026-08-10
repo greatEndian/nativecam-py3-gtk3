@@ -238,6 +238,17 @@ isotropic     0.00019 mm
 
 So it is a real geometric error, not a drawing artefact.
 
+> **Correction, 2026-08-10 — those two numbers are inflated.** The throwaway
+> harness that produced them multiplied the profile by `DIAMETER_MODE` before
+> calling `entry_contour`, which takes **radius** — every production call site
+> divides on the way in. So it measured a doubled arc. At true scale the same
+> comparison is **0.02580 mm anisotropic against 0.00007 mm isotropic**. The
+> ratio is worse than first reported, not better — 368× rather than 1900× — and
+> the conclusion is unchanged, but the millimetre figures below and in the
+> commit message that quotes them are wrong by that factor. `test_arc_smoothness`
+> now carries the corrected numbers and asserts the control as a **ratio**, so
+> no absolute threshold can be mis-scaled again.
+
 ### Why
 
 The allowance depends on the surface normal, and **along a straight chord the
@@ -274,3 +285,100 @@ Densify the ARC when the allowance is anisotropic. The variation is bounded by
 computable rather than guessed, and it costs nothing when the two are equal.
 That belongs where arcs are meshed, not in the offsetter, and it wants its own
 measurement — the 0.3566 mm above is the number to drive down.
+
+
+---
+
+## Addendum 4 — fixed: the offset follows the curve's own normal, 2026-08-10
+
+### The rule
+
+The offset of a smooth curve is `p + d(n)·n` evaluated with **the curve's own
+normal**. On a chorded arc that normal is the bisector of the two chords meeting
+at a vertex — so at a vertex *interior to a curve* both sides offset along the
+bisector and land on the **same point**, and the polyline sits on the true
+offset curve instead of stepping around it.
+
+At a **corner** each surface keeps its own normal and its own allowance. That is
+the whole distinction, and it is why the earlier vertex-averaging attempt was
+wrong: it applied the curve rule everywhere, including at corners, where a wall's
+axial allowance then bled into the diameter beside it.
+
+`curve_offsets()` in `lathe_sections.py`, consumed by both `offset_contour` and
+`entry_contour`. With `off_x == off_z` it returns the plain parallel offset
+without classifying anything, so the isotropic path is untouched by
+construction, not merely by test.
+
+### Where the cut sits, and why a blunt one is safe
+
+`CURVE_TURN_DEG = 20`, derived rather than picked: `_densify_arc` holds each
+sub-chord's sagitta under `MESH_MAX_SAG`, giving `2·acos(1 − sag/R)` per chord —
+**3.2° on R12.66, 11.4° on R1, 16.2° on R0.5**. Every arc this system draws
+arrives as turns under about 16°; a real corner is 30° or more.
+
+**Mis-classifying is safe in both directions**, which is what makes a blunt cut
+tolerable:
+
+- a curve vertex called a corner keeps today's behaviour there;
+- a shallow corner called a curve gets its two allowances blended — but a
+  shallow corner is one where the normals are nearly equal, so the allowances
+  are nearly equal too and the blend changes almost nothing.
+
+The damage only grows with the angle, and by then the vertex is firmly a corner.
+
+### Measured
+
+On the synthetic arc, at true scale (radius, `nose_r` 0):
+
+```
+                    reversals   deviation from 8x sampling
+isotropic 0.508          0            0.00007 mm
+X 0.508  Z 2.000         0            0.00224 mm
+   the same, unfixed    75            0.02580 mm
+```
+
+And end to end on **testing_15_2**, the project greatEndian reported, counting
+direction reversals along the whole cutting path:
+
+```
+isotropic 0.508      247 moves,  6 reversals
+X 0.508  Z 2.000     216 moves,  8 reversals     <- fixed
+   the same, unfixed 247 moves, 66 reversals     <- photo/klingyArc_0.png
+```
+
+**66 → 8, against 6 for the isotropic case it is asked to match.** The move count
+drops because a curve vertex now emits one point rather than a spurious
+corner pair.
+
+### The metric, and why the obvious one is wrong
+
+Counting **large turns** measures curvature, not roughness — a legitimately
+curved polyline turns a couple of degrees at every vertex. What makes a
+staircase a staircase is that it turns one way and then back the other, so the
+metric is **sign alternation**. Reading the first attempt against a large-turn
+count is what made it look like a 50% improvement (80 → 41 "flips") when the
+underlying error was untouched.
+
+### `test_arc_smoothness.py`
+
+The negative control is **two-sided**, because both ways of getting the cut
+wrong are real and each was written before it was guarded:
+
+- `CURVE_TURN_DEG = 0` — nothing is a curve: 75 reversals, the reported state;
+- `CURVE_TURN_DEG = 180` — everything is: the diameter is left **0.3528**
+  instead of 0.500, reproducing the fix that shipped and was caught the same day.
+
+Two harness faults were caught writing it, both worth knowing: `entry_contour`
+takes **radius**, and passing diameters made a 0.9 allowance measure 0.45; and
+the control's deviation threshold, written as an absolute from the mis-scaled
+run, is now a **ratio**.
+
+### Still open
+
+- Only the **contour offsetters** take the curve normal. The runtime O-code
+  scan in `lathe_level_pass` still offsets each record perpendicular by a
+  scalar — that is the same gap addendum 2 records, and it is unaffected either
+  way by this change.
+- `CURVE_TURN_DEG` is a module constant. If a future profile carries arcs
+  below R0.5, its mesh step passes 16° and approaches the cut; the derivation
+  above is the thing to re-run, not the number to nudge.

@@ -1700,6 +1700,95 @@ def stock_pair(polyline_feature):
     return off_x, _v('param_f_off_z')
 
 
+# The turn, in degrees, at or below which a vertex is taken to be INTERIOR TO A
+# CURVE rather than a corner between two surfaces.
+#
+# Derived, not guessed: _densify_arc holds each sub-chord's sagitta under
+# MESH_MAX_SAG, which gives 2*acos(1 - sag/R) per chord - 3.2 degrees on an
+# R12.66 arc, 11.4 on R1, 16.2 on R0.5. So every arc this system draws arrives
+# as turns under about 16, and a real corner between two surfaces is 30 or
+# more. 20 sits between them with room either side.
+#
+# MIS-CLASSIFYING IS SAFE IN BOTH DIRECTIONS, which is why a cut this blunt is
+# tolerable. Call a curve vertex a corner and it keeps today's behaviour there.
+# Call a shallow corner a curve and the two surfaces' allowances get blended -
+# but a shallow corner is one where the normals are nearly equal, so their
+# allowances are nearly equal too, and the blend changes almost nothing. The
+# damage only grows with the angle, and by then the vertex is firmly a corner.
+CURVE_TURN_DEG = 20.0
+
+
+def curve_offsets(pts, side, nose_r, off_x, off_z):
+    """Per segment, the two offset endpoints and the larger of its allowances.
+
+    An allowance that depends on the surface normal is CONSTANT along a chord
+    and jumps at every vertex, so the offset of a chorded arc is a staircase.
+    Measured on a 40 chord arc with a radial 0.508 and an axial 2.000: 80
+    direction reversals, and 0.35660 mm from the same contour built at 8x the
+    sampling, against 0.00019 mm for the isotropic case.
+
+    The offset of a smooth curve is `p + d(n)*n` evaluated with the CURVE'S OWN
+    normal. On a chorded arc that normal is the bisector of the two chords
+    meeting at a vertex - so at a vertex INTERIOR TO A CURVE both sides offset
+    along that bisector and land on the SAME point, and the result is a
+    polyline on the true offset curve rather than a staircase around it.
+
+    At a CORNER each surface keeps its own normal and its own allowance.
+    Bisecting everywhere was tried and is wrong: it bleeds a wall's axial
+    allowance into the diameter beside it, and the diameter then carried 0.3744
+    where 0.500 was asked for. test_stock_to_leave caught it. THE ALLOWANCE
+    BELONGS TO THE SURFACE; only a vertex that is not a corner has no surface
+    of its own to belong to.
+
+    With off_x == off_z every allowance is the same number, every offset is
+    parallel to its chord and the corners are the ones they always were, so the
+    isotropic path is untouched by construction.
+    """
+    segs = []
+    for (z0, r0), (z1, r1) in zip(pts, pts[1:]):
+        uz, ur = _unit(z1 - z0, r1 - r0)
+        if abs(uz) < EPS and abs(ur) < EPS:
+            segs.append(None)
+            continue
+        nz, nr = ur * side, -uz * side
+        segs.append(((uz, ur), (nz, nr),
+                     nose_r + stock_at_normal(nz, nr, off_x, off_z)))
+
+    def plain(i):
+        (z0, r0), (z1, r1) = pts[i], pts[i + 1]
+        _u, (nz, nr), roll = segs[i]
+        return ((z0 + roll * nz, r0 + roll * nr),
+                (z1 + roll * nz, r1 + roll * nr), roll)
+
+    if abs(off_x - off_z) < EPS:
+        return [plain(i) if segs[i] else None for i in range(len(segs))]
+
+    # a vertex is INTERIOR TO A CURVE when the turn across it is small - see
+    # CURVE_TURN_DEG for why the cut is where it is
+    cut = math.cos(math.radians(CURVE_TURN_DEG))
+    joint = {}
+    for j in range(1, len(pts) - 1):
+        a, b = segs[j - 1], segs[j]
+        if not a or not b:
+            continue
+        if a[0][0] * b[0][0] + a[0][1] * b[0][1] < cut:
+            continue
+        nz, nr = _unit(a[1][0] + b[1][0], a[1][1] + b[1][1])
+        if abs(nz) < EPS and abs(nr) < EPS:
+            continue
+        d = nose_r + stock_at_normal(nz, nr, off_x, off_z)
+        joint[j] = (pts[j][0] + d * nz, pts[j][1] + d * nr)
+
+    out = []
+    for i in range(len(segs)):
+        if not segs[i]:
+            out.append(None)
+            continue
+        a, b, roll = plain(i)
+        out.append((joint.get(i, a), joint.get(i + 1, b), roll))
+    return out
+
+
 def stock_at_normal(nz, nr, off_x, off_z):
     """The allowance a surface with this outward normal is entitled to.
 
@@ -1784,6 +1873,7 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0, extra_z=None):
     pts = [(z, x / DIAMETER_MODE) for z, x in points]
 
     segs = []
+    coffs = curve_offsets(pts, side, nose_r, extra, extra_z)
     for i in range(len(pts) - 1):
         (z0, r0), (z1, r1) = pts[i], pts[i + 1]
         dz, dr = z1 - z0, r1 - r0
@@ -1797,16 +1887,12 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0, extra_z=None):
         # offset to +Z and -Z respectively, each away from its own material.
         # The other rotation gets the cylinder right and both walls backwards.
         nz, nr = ur * side, -uz * side
-        # the allowance at each END of the segment, from the VERTEX normals -
-        # constant along a chord it steps at every vertex, which on an arc is a
-        # staircase. See vertex_rolls.
-        # THE ALLOWANCE BELONGS TO THE SURFACE, not the vertex. Averaging the
-        # normals at a vertex was tried and is wrong: it bleeds a wall's axial
-        # allowance into the diameter beside it, and the diameter then carried
-        # 0.3744 where 0.500 was asked for. test_stock_to_leave caught it.
-        seg_roll = nose_r + stock_at_normal(nz, nr, extra, extra_z)
-        a = (z0 + seg_roll * nz, r0 + seg_roll * nr)
-        b = (z1 + seg_roll * nz, r1 + seg_roll * nr)
+        # The allowance belongs to the SURFACE, so it is the segment's own
+        # everywhere except at a vertex INTERIOR TO A CURVE, where the two
+        # sides offset along the curve's own normal and meet - see
+        # curve_offsets. With one allowance this is the parallel offset it has
+        # always been.
+        a, b, seg_roll = coffs[i]
         segs.append({'v0': (z0, r0), 'v1': (z1, r1), 'u': (uz, ur),
                      'roll': seg_roll, 'a': a, 'b': b,
                      'ud': _unit(b[0] - a[0], b[1] - a[1])})
@@ -1892,6 +1978,20 @@ def _join_offsets(segs, sign, roll, vkey='v'):
         r_cur = cur.get('roll', roll)
         r_nxt = nxt.get('roll', roll)
         r_max = max(r_cur, r_nxt)
+        # A CURVE VERTEX NEEDS NO JOIN AT ALL. When the allowance tapers -
+        # curve_offsets sharing the curve normal at a vertex interior to an arc -
+        # offset ends land on the SAME point, and there is nothing to round or
+        # to trim. Running the corner machinery there anyway is what was left
+        # of the staircase: the arc branch draws about the raw vertex at
+        # r_cur while the ends sit at the AVERAGED roll, so every vertex got a
+        # little wrong-radius arc and the offset sawed 10.25 degrees either
+        # way against 2.21 for a smooth one. Guarded before the cross test so
+        # the near-parallel trim cannot fire on it either.
+        if (abs(cur['b'][0] - nxt['a'][0]) < EPS
+                and abs(cur['b'][1] - nxt['a'][1]) < EPS):
+            out.append(cur['b'])
+            i += 1
+            continue
         (uz0, ur0), (uz1, ur1) = cur['u'], nxt['u']
         cross = (uz0 * ur1 - ur0 * uz1) * sign
         if cross > EPS:
@@ -2225,6 +2325,7 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0,
     z_dir = -1 if rough_dir == 1 else 1
 
     segs = []
+    coffs = curve_offsets(points, z_dir, nose_r, dist, dist_z)
     for i, ((z0, x0), (z1, x1)) in enumerate(zip(points, points[1:])):
         dz, dx = z1 - z0, x1 - x0
         n = math.hypot(dz, dx)
@@ -2232,9 +2333,7 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0,
             continue
         uz, ux = dz / n, dx / n
         nz, nx = z_dir * ux, -z_dir * uz
-        seg_roll = nose_r + stock_at_normal(nz, nx, dist, dist_z)
-        a = (z0 + seg_roll * nz, x0 + seg_roll * nx)
-        b = (z1 + seg_roll * nz, x1 + seg_roll * nx)
+        a, b, seg_roll = coffs[i]
         segs.append({'a': a, 'b': b, 'u': (uz, ux), 'v': (z1, x1),
                      'roll': seg_roll,
                      'ud': _unit(b[0] - a[0], b[1] - a[1])})
