@@ -15,11 +15,31 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `57eea44`.
+Branch: `liveTooling`. Last pushed: `ac61573`.
 
 ---
 
 ## Next — before anything else
+
+- [x] **THE "KLINGY" ARC — FIXED**, 2026-08-10, `ac61573`, `analysis/024`
+  addendum 4. With *Separate Z offset* on, the dashed contours were jagged on
+  the boss's rising arc. `curve_offsets` now offsets along the **curve's own
+  normal** (the bisector of the two chords) at any vertex interior to a curve,
+  while corners keep each surface's own normal and allowance. On testing_15_2:
+  **66 direction reversals → 8**, against 6 for the isotropic case it has to
+  match. `test_arc_smoothness.py`, two-sided negative control.
+  - Two things worth carrying forward. The **metric is sign alternation**, not
+    turn size — counting large turns measures curvature and made a failed
+    attempt look 50% better while the error was untouched. And `entry_contour`
+    takes **radius**: a harness that passed diameters made a 0.9 allowance
+    measure 0.45, and inflated the figures first reported for this bug
+    (0.35660 → **0.02580** at true scale). Corrected in `analysis/024`.
+  - Still open, unaffected either way: `lathe_level_pass`'s runtime scan
+    still offsets each record by a scalar — the same gap addendum 2 records.
+  - `CURVE_TURN_DEG = 20` is derived from the arc mesh step (3.2° at R12.66,
+    16.2° at R0.5). A profile with arcs **below R0.5** would approach the cut;
+    re-run the derivation rather than nudging the number.
+
 
 - [x] **ROUGHING IGNORES THE AXIAL STOCK TO LEAVE — FIXED**, 2026-08-09,
   `analysis/026`. Roughing now stops **2.0000** from the wall where it stopped
