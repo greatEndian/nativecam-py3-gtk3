@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `baf57db`.
+Branch: `liveTooling`. Last pushed: `7760ed5`.
 
 ---
 
@@ -38,10 +38,22 @@ Branch: `liveTooling`. Last pushed: `baf57db`.
     monotonic clamp did not change the failing numbers byte for byte, so that
     plunge comes from elsewhere in the phase-2/section machinery. Reverted —
     shipping a rapid that cuts metal is worse than shipping the missing pass.
-  - **The fix belongs in Python**: the whole set of disjoint intervals per level
-    is a generation-time table, and plunge monotonicity is a *ladder-wide*
-    property no single subroutine call can see. That also retires the resume
-    scan rather than teaching a second scan to agree with the first.
+  - **The Python half is DONE and committed inert**, `7760ed5`:
+    `resume_envelope()` emitted from inside `build_floor_contour_gcode` from the
+    same `env`, so the two tables cannot drift apart. Keyed on the level, so it
+    needs no knowledge of the runtime level sequence. Monotone by construction,
+    54 breakpoints on testing_15_5, window 3000..3140,
+    `test_resume_envelope.py`. `_pl_res_n` is written and nothing reads it, so
+    behaviour is unchanged.
+  - **What is left is ONE step, and it is understood.** With the walker wired,
+    testing_15_5 is fixed (32.1920 → **33.2080**, 14 → 26 passes) and
+    `test_rough_ends` still fails on a rapid through 0.4700 mm of metal.
+    **The missing condition is per-SECTION**: the envelope is global across the
+    contour while levels restart inside each section window, so a global resume
+    can land where a *different* section has not cut yet. Monotone across the
+    ladder is necessary, not sufficient. Either build the envelope per window,
+    or qualify the plunge against the section it belongs to. The walker itself
+    is quoted in full in `7760ed5`'s commit message, ready to lift back.
 
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
