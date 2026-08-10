@@ -108,3 +108,83 @@ scan rather than teaching a second scan to agree with the first.
 Until then the two scans must not be left reading different sources; if the
 Python interval table is not built soon, the honest interim is to make the stop
 scan fall back to the record array whenever the resume scan cannot follow it.
+
+---
+
+## Addendum — done in Python, and the condition that is still missing, 2026-08-10
+
+greatEndian: *"do it in python then"*.
+
+### What was built
+
+`resume_envelope()` in `lathe_sections.py`, emitted **inside
+`build_floor_contour_gcode` from the very same `env`** — which is the whole
+point. The bug was two scans reading two sources; building both tables from one
+list of points is what makes them unable to drift apart. No `.cfg` change and no
+version bump, because that `[AFTER]` exec already runs.
+
+The table answers *where may a level plunge back in*, keyed on the **level
+itself**, so it needs no knowledge of poly_lathe_mill's runtime level sequence —
+the thing `analysis/026` already warns against reproducing.
+
+Two conditions have to hold at a plunge Z, and only one is local:
+
+- the floor has dropped back below the level — per level, the first
+  above-to-below crossing of the floor contour;
+- **every level ABOVE has already cut there** — **ladder-wide**, which no
+  single subroutine call can see. That is why it is a table and not a scan.
+
+Sweeping the levels top-down and never letting a resume move *forward* makes the
+envelope monotone by construction, so a rapid cannot pass through standing
+metal. Breakpoints are the contour's own vertex radii; between two of them the
+answer is linear.
+
+New window `RESUME_BASE/TOP = 3000..3140`, in the gap between the record array
+and the cfg's own CALL scratch at `#3141-#3159`. `cam_map` passes.
+
+**Unsimplified it needed 176 slots against 140 free** and fell back — loudly,
+this time. Collapsing breakpoints that sit on the line between their neighbours
+(exact to 1e-4) takes testing_15_5 from 88 breakpoints to **54**.
+
+### It fixes the reported bug
+
+```
+                        topmost behind-boss level    passes
+before, sectioning OFF        32.1920                  14
+after,  sectioning OFF        33.2080                  26
+after,  sectioning ON         33.1273                  26
+```
+
+### And it still fails test_rough_ends — the same six, and now we know why not
+
+```
+Off  the retreat leaves 0.4700 mm standing in a rapid's way:
+     Z-42.8231 r31.8160 -> Z-42.8231 r22.2311
+```
+
+Z**-42.8231** against Z-42.8230 before: the envelope *is* live and moved the
+program, so this is not an inert change failing to apply. The plunge is
+genuinely unsafe and monotonicity across levels does not save it.
+
+**The condition that is missing is per-SECTION.** The envelope is global across
+the whole contour, while that project's levels restart inside each section
+window — so a resume computed globally can land where a *different* section's
+levels have not cut yet. Monotone across the ladder is necessary and not
+sufficient; the envelope has to be built per window, or the plunge has to be
+qualified against the section it belongs to.
+
+That is a much sharper statement of what is left than this file could make
+before, and it is the reason the walker is not committed.
+
+### State left in the tree
+
+- **Committed and inert**: `resume_envelope()`, its emission, the window, the
+  two globals, and `test_resume_envelope.py`. `_pl_res_n` is written and nothing
+  reads it, so behaviour is unchanged — verified by `test_rough_ends`,
+  `test_all_projects` and `cam_map`.
+- **Not committed**: the walker in `lathe_level_next_start.ngc`. It is a
+  30-line lookup and is quoted in full in the commit message of this change, so
+  it can be lifted back verbatim once the per-section question is answered.
+
+The reported bug is therefore still present. The remaining work is one
+well-understood step, not a search.

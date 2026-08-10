@@ -2655,6 +2655,10 @@ class Preferences(object):
             self.default += ("#<_pl_level_z_end>          = 0.0\n")
             self.default += ("#<_pl_resume_found>         = 0.0\n")
             self.default += ("#<_pl_resume_z>             = 0.0\n")
+            # the resume envelope Python builds beside the floor contour -
+            # see resume_envelope(); 0 means fall back to the record scan
+            self.default += ("#<_pl_res_base>             = 0.0\n")
+            self.default += ("#<_pl_res_n>                = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

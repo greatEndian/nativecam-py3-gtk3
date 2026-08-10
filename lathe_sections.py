@@ -1178,6 +1178,11 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
 
 # The entry-ramp direction table. One (dz, dx) per entry-contour segment,
 # in the free space under the sections table.
+# The roughing RESUME envelope - see resume_envelope(). Below ERAMP, in the
+# space between the record array and the cfg's own CALL scratch at 3141-3159.
+RESUME_BASE = 3000
+RESUME_TOP = 3140
+
 ERAMP_BASE = 3200
 ERAMP_TOP = 3380
 
@@ -2541,7 +2546,94 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     for i, (z, x) in enumerate(env):
         lines.append('#%d = %s' % (FLOORC_BASE + 2 * i, _fmt(z)))
         lines.append('#%d = %s' % (FLOORC_BASE + 2 * i + 1, _fmt(x)))
+
+    # THE RESUME ENVELOPE, built HERE from the very same points. The bug this
+    # exists for was two scans reading two sources: the stop scan moved onto
+    # this contour and lathe_level_next_start kept offsetting the record array
+    # by a scalar, so they disagreed about where the boss is and a level that
+    # stopped in front of it was never resumed behind it - testing_15_5 lost
+    # two passes and took a 1.524 mm bite against a 0.508 depth of cut.
+    # Emitting both tables from one `env` is what makes them unable to drift.
+    renv = resume_envelope(env, 1 if rough_dir == 0 else -1)
+    if renv and RESUME_BASE + 2 * len(renv) <= RESUME_TOP:
+        lines += ['(where a blocked level may plunge back in, per level. Monotone)',
+                  '(by construction: a level never resumes in front of the one)',
+                  '(above it, so the rapid cannot pass through standing metal.)',
+                  '#<_pl_res_base> = %d' % RESUME_BASE,
+                  '#<_pl_res_n>    = %d' % len(renv)]
+        for i, (lev, rz) in enumerate(renv):
+            lines.append('#%d = %s' % (RESUME_BASE + 2 * i, _fmt(lev)))
+            lines.append('#%d = %s' % (RESUME_BASE + 2 * i + 1, _fmt(rz)))
+    elif renv:
+        lines.append('(WARNING - the resume envelope needs %d parameter slots '
+                     'and only %d are free, so the resume scan falls back to '
+                     'the record array.)'
+                     % (2 * len(renv), RESUME_TOP - RESUME_BASE))
     return '\n'.join(lines)
+
+
+def resume_envelope(contour, z_dir=1):
+    """Where each roughing LEVEL may plunge back in, as a function of the level.
+
+    A level blocked by a boss cuts up to it, retracts, and rapids down again
+    behind it. Two things have to be true of that plunge Z, and only one of
+    them is local:
+
+    - the floor has dropped back below the level there - a per-level question,
+      answered by the first above-to-below crossing of the floor contour;
+    - **every level ABOVE has already cut there** - a LADDER-WIDE question that
+      no single subroutine call can see, because each call knows one level.
+
+    The second is why this is a table and not a scan. Following the true
+    contour, the raw crossings are not monotonic: on test_rough_ends level
+    31.1760 crossed at Z-40.7954 while 31.6840 directly above it crossed at
+    Z-40.8518, so a plunge there went through 0.4700 mm of standing metal.
+    Sweeping the levels from the top and never letting a resume move FORWARD
+    fixes both ends at once - the material above is gone by then, and the floor
+    is already below this level, so starting later gouges nothing.
+
+    Returns (level, resume_z) breakpoints, level descending, resume_z monotone.
+    The breakpoints are the contour's own vertex radii: between two of them the
+    first crossing stays on one segment, so the function is linear there and
+    the walker can interpolate. A level ABOVE the first breakpoint is never
+    blocked and has no resume - that is the empty answer, not the deepest one,
+    and reading it as the deepest is a mistake this returns no value for.
+    """
+    levels = sorted({x for _z, x in contour}, reverse=True)
+    out = []
+    back = None
+    for lev in levels:
+        pz, px = contour[0]
+        hit = None
+        for cz, cx in contour[1:]:
+            if px >= lev > cx:
+                hit = (pz + (cz - pz) * (lev - px) / (cx - px)
+                       if abs(cx - px) > EPS else cz)
+                break
+            pz, px = cz, cx
+        if hit is None:
+            continue
+        if back is not None and z_dir * (hit - back) > 0:
+            hit = back
+        back = hit
+        out.append((lev, hit))
+
+    # COLLAPSE what the walker cannot tell apart. The clamp flattens long runs
+    # to one resume_z, and the raw breakpoints are every vertex radius of a
+    # densified arc, so most of them sit on the straight line between their
+    # neighbours. Dropping those is exact to the tolerance below and is not
+    # cosmetic: unsimplified, testing_15_5 needed 176 slots against 140 free
+    # and the whole table fell back to the record scan.
+    keep = []
+    for i, pt in enumerate(out):
+        if 0 < i < len(out) - 1:
+            (l0, z0), (l1, z1) = keep[-1], out[i + 1]
+            if abs(l1 - l0) > EPS:
+                t = (pt[0] - l0) / (l1 - l0)
+                if abs(z0 + t * (z1 - z0) - pt[1]) <= 1e-4:
+                    continue
+        keep.append(pt)
+    return keep
 
 
 def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
