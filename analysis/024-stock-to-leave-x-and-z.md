@@ -209,3 +209,68 @@ and a negative control, given what that scan has cost before.
 
 Recorded at the top of `openPoints.md`. The parameter tooltip has been
 corrected to state the limit rather than promise the opposite.
+
+---
+
+## Addendum 3 — the arc goes "klingy", and a fix that was wrong, 2026-08-10
+
+greatEndian, `photo/klingyArc_0.png`, testing_15_2 with X 0.508 and Z **2.000**:
+the dashed lines are jagged on the boss's rising arc while every other curve
+stays smooth, *"without separated offset its smooth also"*.
+
+### Measured
+
+On a rising arc of 40 chords, counting turns that reverse direction by more
+than 2.9°:
+
+```
+isotropic 0.508     83 pts    0 flips
+isotropic 2.000     81 pts    0 flips
+X 0.508  Z 2.000    83 pts   80 flips
+```
+
+And against the same contour built from an **8× finer** sampling of the arc:
+
+```
+anisotropic   0.35660 mm worst deviation
+isotropic     0.00019 mm
+```
+
+So it is a real geometric error, not a drawing artefact.
+
+### Why
+
+The allowance depends on the surface normal, and **along a straight chord the
+normal is constant** — so all the variation lands at the vertices, and the
+offset of a chorded arc is a staircase: a flat run at one distance, a step, a
+flat run at the next. With the allowance swinging 0.508 → 2.000 across the arc,
+the profile's own chording error is amplified about fourfold.
+
+The limiting factor is the **arc's mesh resolution in the profile**, chosen when
+every offset was constant. A constant offset of a chord is a parallel chord, so
+coarse chording cost nothing; a varying one turns the same chording into a
+visible saw.
+
+### The fix that was wrong, and what caught it
+
+Evaluating the allowance at each **vertex** — averaging the two normals meeting
+there — halved the flips, 80 → 41. It is also wrong, and `test_stock_to_leave`
+said so immediately: **the diameter carried 0.3744 where 0.500 was asked for.**
+Averaging bleeds a wall's axial allowance into the diameter beside it.
+
+**The allowance belongs to the surface, not the vertex**, so the per-segment
+evaluation is right and the staircase is a separate problem — one of resolution,
+not of where the allowance is read. Reverted.
+
+Kept from the attempt: each offset segment now carries its own direction
+(`ud`), used for the corner intersection instead of the chord direction. With a
+constant allowance the two are identical, so nothing moves today; it is correct
+for the day the offset is no longer parallel to its chord.
+
+### Still open — the fix that would work
+
+Densify the ARC when the allowance is anisotropic. The variation is bounded by
+`|off_x − off_z|`, so the chord count needed for a given contour tolerance is
+computable rather than guessed, and it costs nothing when the two are equal.
+That belongs where arcs are meshed, not in the offsetter, and it wants its own
+measurement — the 0.3566 mm above is the number to drive down.

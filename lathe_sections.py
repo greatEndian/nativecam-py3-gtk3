@@ -1797,13 +1797,19 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0, extra_z=None):
         # offset to +Z and -Z respectively, each away from its own material.
         # The other rotation gets the cylinder right and both walls backwards.
         nz, nr = ur * side, -uz * side
-        # the allowance this surface is entitled to, by its own normal - one
-        # number when the stock to leave is isotropic, a blend when it is not
+        # the allowance at each END of the segment, from the VERTEX normals -
+        # constant along a chord it steps at every vertex, which on an arc is a
+        # staircase. See vertex_rolls.
+        # THE ALLOWANCE BELONGS TO THE SURFACE, not the vertex. Averaging the
+        # normals at a vertex was tried and is wrong: it bleeds a wall's axial
+        # allowance into the diameter beside it, and the diameter then carried
+        # 0.3744 where 0.500 was asked for. test_stock_to_leave caught it.
         seg_roll = nose_r + stock_at_normal(nz, nr, extra, extra_z)
+        a = (z0 + seg_roll * nz, r0 + seg_roll * nr)
+        b = (z1 + seg_roll * nz, r1 + seg_roll * nr)
         segs.append({'v0': (z0, r0), 'v1': (z1, r1), 'u': (uz, ur),
-                     'roll': seg_roll,
-                     'a': (z0 + seg_roll * nz, r0 + seg_roll * nr),
-                     'b': (z1 + seg_roll * nz, r1 + seg_roll * nr)})
+                     'roll': seg_roll, 'a': a, 'b': b,
+                     'ud': _unit(b[0] - a[0], b[1] - a[1])})
     if not segs:
         return list(points)
 
@@ -1892,7 +1898,14 @@ def _join_offsets(segs, sign, roll, vkey='v'):
             out.append(cur['b'])
             out.extend(_corner_arc(cur[vkey], cur['b'], nxt['a'], r_cur))
         elif cross < -EPS:
-            hit = _isect(cur['a'], cur['u'], nxt['a'], nxt['u'])
+            # THE OFFSET SEGMENT'S OWN DIRECTION, not the chord's. With a
+            # varying allowance the offset is not parallel to the chord any
+            # more - it tapers - so intersecting on the chord direction
+            # answers a slightly wrong question and the trims alternate,
+            # leaving the staircase halved rather than gone. Identical to 'u'
+            # whenever the allowance is constant.
+            hit = _isect(cur['a'], cur.get('ud', cur['u']),
+                         nxt['a'], nxt.get('ud', nxt['u']))
             if hit is not None and (
                     math.hypot(hit[0] - cur['b'][0], hit[1] - cur['b'][1])
                     > TRIM_REACH * r_max
@@ -2212,7 +2225,7 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0,
     z_dir = -1 if rough_dir == 1 else 1
 
     segs = []
-    for (z0, x0), (z1, x1) in zip(points, points[1:]):
+    for i, ((z0, x0), (z1, x1)) in enumerate(zip(points, points[1:])):
         dz, dx = z1 - z0, x1 - x0
         n = math.hypot(dz, dx)
         if n < EPS:
@@ -2220,9 +2233,11 @@ def entry_contour(points, dist, rough_dir=0, nose_r=0.0, orient=0,
         uz, ux = dz / n, dx / n
         nz, nx = z_dir * ux, -z_dir * uz
         seg_roll = nose_r + stock_at_normal(nz, nx, dist, dist_z)
-        segs.append({'a': (z0 + seg_roll * nz, x0 + seg_roll * nx),
-                     'b': (z1 + seg_roll * nz, x1 + seg_roll * nx),
-                     'u': (uz, ux), 'v': (z1, x1), 'roll': seg_roll})
+        a = (z0 + seg_roll * nz, x0 + seg_roll * nx)
+        b = (z1 + seg_roll * nz, x1 + seg_roll * nx)
+        segs.append({'a': a, 'b': b, 'u': (uz, ux), 'v': (z1, x1),
+                     'roll': seg_roll,
+                     'ud': _unit(b[0] - a[0], b[1] - a[1])})
     if not segs:
         return list(points)
 
