@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `ac61573`.
+Branch: `liveTooling`. Last pushed: `96e91ec`.
 
 ---
 
@@ -90,22 +90,24 @@ Branch: `liveTooling`. Last pushed: `ac61573`.
   greatEndian's call, not a guess.
 
 
-- [ ] **RESTART NATIVECAM DOES NOT COME BACK** — greatEndian 2026-08-04. The
-  menu item added in `141a98b` restarts the process but the panel never
-  reappears in AXIS. **My bug.** The reasoning behind `os.execv` was that
-  keeping the pid keeps AXIS's XEmbed socket valid — that is necessary but not
-  sufficient: after `execv` the new process builds a **new GTK window**, and
-  the socket AXIS holds still references the window the old process created.
-  Nothing re-parents the new one into it. Keeping the pid was never the hard
-  part.
-
-  **To fix**: establish how the panel is embedded before touching it again -
-  whether GladeVCP receives the XID on its command line (in which case
-  `sys.argv` must be re-used verbatim AND the new window re-parented), or
-  whether it plugs itself in some other way. `[GladeVCP-ncam][DEBUG] XID:
-  96468998 (gladevcp:387)` from greatEndian's log is the thread to pull.
-  Until then the item should probably be **removed from the menu** rather than
-  left to fail silently.
+- [~] **RESTART NATIVECAM — CAUSE FOUND AND FIXED, NEEDS A TRY IN AXIS**,
+  2026-08-10, `96e91ec`, `analysis/028`. The `os.execv` reasoning was wrong at
+  both ends. Keeping the pid was **never needed** — `gladevcp -x {XID}` forces
+  an Xlib reparent into AXIS's **Tk frame**, which outlives the process. And
+  keeping the pid is **what broke it**: gladevcp frees its HAL component in a
+  `finally`, execv never unwinds, HAL sees the name owned by a live pid — the
+  same pid — and refuses it, whereupon gladevcp calls **`sys.exit(0)`**. Status
+  0, log only: restarts, never comes back, no error. Measured
+  (`HAL: ERROR: duplicate component name`) and the fix measured too.
+  - Now: fork a detached child that blocks on a pipe, exit cleanly through
+    `gtk.main_quit()` so `halcomp.exit()` runs, child then execs the original
+    argv (still carrying `-x <XID>`).
+  - **greatEndian: please try it in AXIS.** The HAL half is proven here; the
+    reparent cannot be — AXIS will not run in this environment, and reasoning
+    is what produced the broken first version. If the panel still does not
+    come back, look for gladevcp's `XID:` line in the log: it says whether the
+    relaunch got that far. Fallback stays what it was — remove the menu item
+    rather than let it fail silently.
 
 - [x] **LEAD-OUT MISPLACED UNDER COMPENSATION — FIXED**, 2026-08-04,
   `analysis/009`. greatEndian's criterion: *"lead in and lead out can not end
