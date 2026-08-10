@@ -45,6 +45,44 @@ correct unsectioned and four times too long sectioned, and the screenshot had
 Sectioning ticked. Read the settings out of the picture, and measure that case
 first.
 
+## **Plan the whole blast radius first — standing rule**
+
+greatEndian, 2026-08-09: *"before we will touch anything you will go to
+planning mode and investigate what everything in the solution is touched and
+need to be changed by us and create your own each point verification .. to now
+feed it seed by seed like a goose .. its very time consuming"*.
+
+**Before editing anything, enter plan mode and find every place the change
+reaches.** Not the first place — every place. Then write, per point, how it
+will be verified. Only then start.
+
+Earned the hard way on the anisotropic stock to leave, which took **four**
+rounds because each fix was made where the symptom was:
+
+1. wired three of the four consumers, missed that roughing's scan is a scalar;
+2. fixed that scan — nothing changed, because with multi-crossing on a SECOND
+   walk sets the cut target and wins;
+3. built the table from `finish_profile` and silently lost nine roughing
+   levels, because the scan walks the raw record array, not the reachable one;
+4. it needed 226 parameter slots where 200 were free, emitted a WARNING comment
+   and fell back — everything still ran and the measurement was unchanged.
+
+Every one of those was findable by reading before typing. What that costs when
+skipped is a round trip through greatEndian each time.
+
+**What a plan has to contain**, before any edit:
+
+- **Every consumer**, found by grep, not by memory — for a value: who reads it;
+  for a table: who walks it; for a behaviour: what else shares the code path.
+- **Which of them can express the change and which cannot**, with the reason
+  (`G41.1 D` is a single number; a `[VALIDATION]` block cannot see resolved
+  geometry).
+- **The resource** — parameter-window slots, table sizes — measured against the
+  real projects, not assumed.
+- **Per point, its own check**: the number that proves it, and the number that
+  proves the untouched case is still untouched.
+- **What stays as a fallback**, and whether anything tests it.
+
 ## Commands
 
 ```bash

@@ -61,6 +61,82 @@ def table(path, base, top):
     return pts
 
 
+def _overlay_vs_table(tmp):
+    """Worst radius gap between the drawn stop curve and the emitted table.
+
+    Returns (isotropic, anisotropic) in mm, or None when the app will not
+    import. Builds the overlay through the same calls `_preview_rough_comp`
+    makes, so a change there that this file cannot grep still shows up as a
+    number.
+    """
+    import shutil as _sh
+    scratch = os.path.join(tmp, 'app')
+    _sh.copytree(os.path.dirname(INI), scratch, symlinks=True)
+    ini = os.path.join(scratch, os.path.basename(INI))
+    sys.argv = ['ncam.py', '-i', ini, '-c', 'lathe']
+    try:
+        import ncam
+        from lxml import etree
+    except Exception:
+        return None
+    import lathe_sections as L
+    app = ncam.NCam()
+    prj = os.path.join(scratch, 'ncam', 'catalogs', 'lathe', 'projects',
+                       PROJECT)
+    out = []
+    for sep, zoff in ((0, 0.508), (1, 2.0)):
+        xml = app.update_features(etree.fromstring(open(prj).read().encode()))
+        for name, val in (('#param_f_off_sep', str(sep)),
+                          ('#param_f_off_z', '%.10f' % (zoff / 25.4))):
+            n = xml.find(".//feature[@type='polyline']//param[@call='%s']" % name)
+            if n is not None:
+                n.set('value', val)
+        app.treestore_from_xml(xml)
+        gcode = app.to_gcode()
+        feats = []
+
+        def walk(it):
+            while it:
+                feats.append(app.treestore.get_value(it, 0))
+                walk(app.treestore.iter_children(it))
+                it = app.treestore.iter_next(it)
+        walk(app.treestore.get_iter_first())
+        f = [x for x in feats if getattr(x, 'get_attr', None)
+             and x.get_attr('type') == 'polyline'][0]
+
+        # THE PANE'S OWN METHOD, not a copy of it. Reproducing its calls here
+        # would test entry_contour against the table and never notice the pane
+        # being changed back to one allowance - which is the regression this
+        # exists for. _find_feature does the lookup, so the app can be asked
+        # directly.
+        pair = app._preview_rough_comp()
+        if not pair or pair[1] is None:
+            return None
+        drawn = [(z, r / L.DIAMETER_MODE) for z, r in pair[1]]
+
+        vals = {}
+        for ln in gcode.splitlines():
+            m = re.match(r'#(\d+) = (-?[\d.]+)\s*$', ln.strip())
+            if m and STOP_BASE <= int(m.group(1)) < STOP_TOP:
+                vals[int(m.group(1))] = float(m.group(2))
+        tbl, i = [], STOP_BASE
+        while i in vals and i + 1 in vals:
+            tbl.append((vals[i], vals[i + 1]))
+            i += 2
+        if not tbl or not drawn:
+            return None
+        worst = 0.0
+        for z, r in tbl:
+            near = min(abs(z - dz) for dz, _dr in drawn)
+            if near > 0.05:
+                continue
+            best = min(abs(r - dr) for dz, dr in drawn
+                       if abs(z - dz) <= near + 1e-9)
+            worst = max(worst, best)
+        out.append(worst)
+    return tuple(out)
+
+
 def main():
     if not (os.path.isfile(INI) and os.path.isfile(GEN)):
         print('SKIP  demo config or generator not present')
@@ -154,16 +230,41 @@ def main():
               'entry, stop and the pre-finish surface all come from the one '
               'function the G-code tables come from')
         check('and the pre-finish SURFACE carries no nose',
-              'entry_contour(rad, off, rdir, 0.0, 0)' in src,
+              'entry_contour(rad, off, rdir, 0.0, 0, off_z)' in src,
               'a surface does not have a tool offset - the nose belongs in '
               'the path that produces it, not in the shape it leaves')
-        check('and it takes the stop offset from param_f_off alone',
-              "f.get_param('param_f_off')" in src
+        # BOTH ALLOWANCES, through the one helper the builders use. Reading
+        # param_f_off alone is exactly what left the orange dashed stop curve
+        # on the plain profile offset while the program held 2.000 on the
+        # walls - the drawing and the machine disagreeing.
+        check('and both overlays take the pair from stock_pair',
+              src.count('lathe_sections.stock_pair(f)') >= 2
               and "_off('param_pf_off')" not in src,
-              'adding the pre-finish offset draws the stop one allowance out '
-              'from where the levels really stop')
+              'the stop and the pre-finish surface must read the radial AND '
+              'axial allowance, and neither may add the pre-finish offset - '
+              'that would draw them one allowance out from where the levels '
+              'really stop')
         check('entry_contour is importable and returns points',
               bool(L.entry_contour([(0.0, 20.0), (-10.0, 20.0)], 1.0, 0)))
+
+        # AND THE ANISOTROPIC CASE, which is the one that was wrong. The greps
+        # above cannot see a value, only a call; this builds the overlay the
+        # way the pane does and compares it with the #4400 table the program
+        # walks. Sep OFF was the only case ever exercised, which is why the
+        # disagreement survived - the two allowances were equal, so a curve
+        # drawn from either landed in the same place.
+        agree = _overlay_vs_table(d)
+        if agree is None:
+            print('SKIP  the in-process overlay needs GTK')
+        else:
+            iso, ani = agree
+            print('   overlay against the emitted table: '
+                  'isotropic %.4f mm, anisotropic %.4f mm' % (iso, ani))
+            check('the drawn stop curve matches the table, isotropic',
+                  iso < 0.02, 'worst radius difference %.4f mm' % iso)
+            check('   and with a separate axial allowance', ani < 0.02,
+                  'worst radius difference %.4f mm - the drawing and the '
+                  'machine disagree about where roughing stops' % ani)
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

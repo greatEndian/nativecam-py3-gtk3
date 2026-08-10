@@ -1131,14 +1131,20 @@ class NCamPreviewMixin(object):
                 ncam.TOOL_TABLE.get_back_clear())
             if not pts or len(pts) < 2:
                 return None
-            p = f.get_param('param_f_off')
-            off = float(p.get_ngc_value()) if p is not None else 0.0
-            if off <= 0:
+            # BOTH allowances, through the same helper the G-code builders
+            # use. Reading param_f_off alone drew this surface at the radial
+            # value everywhere while the program held the axial one on the
+            # walls - the drawing and the machine disagreeing, which is the
+            # one thing an overlay must never do. stock_pair returns the pair
+            # equal when the switch is off, so the isotropic picture cannot
+            # move.
+            off, off_z = lathe_sections.stock_pair(f)
+            if max(off, off_z) <= 0:
                 return None
             d = f.get_param('param_dir')
             rdir = int(float(d.get_ngc_value())) if d is not None else 0
             rad = [(z, x / lathe_sections.DIAMETER_MODE) for z, x in pts]
-            out = lathe_sections.entry_contour(rad, off, rdir, 0.0, 0)
+            out = lathe_sections.entry_contour(rad, off, rdir, 0.0, 0, off_z)
             if not out or len(out) < 2:
                 return None
             return [(z, r * lathe_sections.DIAMETER_MODE) for z, r in out]
@@ -1196,10 +1202,15 @@ class NCamPreviewMixin(object):
             # build_stop_contour_gcode does not add the pre-finish offset, and
             # adding it here would draw a line one allowance out from the one
             # the levels actually stop on
-            p = f.get_param('param_f_off')
-            soff = float(p.get_ngc_value()) if p is not None else 0.0
-            if soff > 0:
-                sc = lathe_sections.entry_contour(rad, soff, rdir, nr, orn)
+            # and BOTH allowances, the same way build_stop_contour_gcode takes
+            # them - this curve is the drawn twin of that table and has to move
+            # with it. From param_f_off alone it stayed on the plain profile
+            # offset while the program held 2.000 on the walls: greatEndian,
+            # the orange dashed one.
+            soff, soff_z = lathe_sections.stock_pair(f)
+            if max(soff, soff_z) > 0:
+                sc = lathe_sections.entry_contour(rad, soff, rdir, nr, orn,
+                                                  soff_z)
                 stop = _dia(sc) if sc and len(sc) >= 2 else None
             return (entry, stop) if (entry or stop) else None
         except Exception:
