@@ -1967,7 +1967,12 @@ CAM_BASE = 4600
 # results, #5161+ home positions, #5221+ the coordinate-system offsets, #5401+
 # the tool table. Writing a table through them would corrupt live machine state,
 # so a profile that does not fit under this refuses instead.
-CAM_TOP = 5000
+# 4984, not 5000: poly_add_item uses #4984-#4999 as scratch on every machine,
+# so a table allowed to grow past 4984 would be overwritten by the very
+# subroutine that builds the record array. Found by cam_map's collision check;
+# the worst real usage measured is 290 slots, reaching 4890, so nothing had
+# been corrupted - the declared cap was simply wrong and nothing could see it.
+CAM_TOP = 4984
 
 
 def cam_pass_offsets(fin_off, pf_off, fin_passes):

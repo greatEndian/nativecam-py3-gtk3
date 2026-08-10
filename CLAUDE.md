@@ -104,6 +104,11 @@ python3 test_lathe_validation.py   # checks cfg/lathe subroutine calls against .
 python3 test_coord_mapping.py      # turn-mill coordinate mapping math
 python3 test_vkb.py                # virtual keyboard arithmetic parser
 
+# What touches what, across cfg / Python / O-code - run BEFORE planning a change
+python3 cam_map.py                 # six static checks, exit 1 on failure
+python3 cam_map.py --map           # and regenerate CAM-MAP.md
+python3 test_cam_map.py            # each check fails on the bug it exists for
+
 # Motion verification (never point rs274 at a live .var — see Action buckets)
 python3 .claude/skills/lathe-gcode-verify/scripts/check_tangent.py --ini <ini> --ngc <ngc>
 python3 .claude/skills/lathe-gcode-verify/scripts/prove_tip_comp.py --ini <ini> --ngc <ngc> \
@@ -266,6 +271,13 @@ the session files record what HAPPENED. Neither replaces the other.
 ## Development workflow
 
 - `md_files/` holds project docs: `LEARNINGS-LOG.md` (append hard-won lessons there), `DEV-WORKFLOW.md` (phased increment playbook), `LATHE-POLYLINE.md`, `TASKS.md`, `GITHUB-PRACTICES.md`. It is **gitignored** — local working notes, not part of the repo, so never assume a fresh clone has it.
+- **`CAM-MAP.md` and `cam_map.py`** cover what graphify cannot: the chain from a
+  `.cfg` parameter, through a Python builder, into a numbered-parameter window,
+  out to the `.ngc` that walks it. **Run `python3 cam_map.py` before scoping any
+  change** — it answers "what else touches this" in a second, and its six checks
+  catch the class of bug that cost four rounds: a window moved in Python but not
+  in the O-code, a global read with no default, a dangling `order` name, a
+  subroutine called but never defined. Regenerate the map with `--map`.
 - `graphify-out/` (also untracked) holds a knowledge graph of the Python side: `GRAPH_REPORT.md` for orientation, `graph.json` for queries. Refresh with `graphify update .` (AST-only, no LLM cost) after a refactor; it covers `.py` files only, not `.cfg`/`.ngc`.
 - The user typically tests in the AXIS GUI and drops error screenshots into `photo/` — read the newest image there when told "there is an error".
 - Reference material captured from other CAM packages goes in `ref/<feature>/` (gitignored, one feature per folder, with a `NOTES.md` stating what it maps to and how faithfully to follow it). Run `/ref-intake` on it: read the material, restate it as a parameter table plus behaviour in *our* vocabulary, and stop for confirmation before writing code. Implement the behaviour, write our own tooltips, never commit the images.

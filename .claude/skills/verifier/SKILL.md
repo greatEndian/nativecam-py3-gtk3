@@ -18,6 +18,7 @@ flake8 ncam.py pref_edit.py restore_lcnc.py ttt graphics/source/create_icons.py 
 python3 test_lathe_validation.py
 python3 test_coord_mapping.py
 python3 test_vkb.py
+python3 cam_map.py                 # cfg / Python / O-code agree about what touches what
 ```
 
 Then, only if the change touched anything under `lib/lathe/` or `lib/mill/` `.ngc` files or lathe/mill `.cfg` `[CALL]` templates: run `/lathe-gcode-verify` too (static checks here don't catch a tangent discontinuity or a silently-dropped fillet — only an actual `rs274` motion trace does).
