@@ -462,15 +462,37 @@ class NCamAppActionsMixin:
     def action_restart_ncam(self, *_a):
         """Restart the NativeCAM panel without touching LinuxCNC.
 
-        NativeCAM runs as its own process inside a GladeVCP panel, embedded in
-        AXIS over XEmbed - which is why it can be replaced on its own. Killing
-        AXIS to get a fresh panel also stops the machine controller, and there
-        is no reason for a stuck GUI to cost that.
+        NativeCAM runs inside a GladeVCP panel embedded in AXIS - which is why
+        it can be replaced on its own. Killing AXIS to get a fresh panel also
+        stops the machine controller, and there is no reason for a stuck GUI to
+        cost that.
 
-        os.execv REPLACES this process rather than forking: same pid, so the
-        XEmbed socket AXIS is holding stays valid and the panel comes back in
-        the same place. A fork would leave the old process owning the socket
-        and the new one with nowhere to draw.
+        THE FIRST VERSION USED os.execv AND NEVER CAME BACK. The reasoning was
+        that keeping the pid keeps AXIS's embedding valid, so the panel returns
+        in the same place. Both halves of that were wrong, and in opposite
+        directions:
+
+        - Keeping the pid was never needed. `gladevcp.xembed.reparent` does a
+          FORCED Xlib reparent of a Gtk.Plug into AXIS's Tk frame - not a
+          GtkSocket handshake. A Tk frame does not destroy itself when its
+          child window goes away, so the parent XID outlives the process and a
+          fresh one can reparent into it.
+        - Keeping the pid is what BROKE it. gladevcp releases its HAL component
+          in a `finally: halcomp.exit()`, and execv replaces the process image
+          without unwinding, so that never runs. HAL still sees the component
+          owned by a live pid - the SAME pid - and refuses to create it again.
+          gladevcp catches that and calls **sys.exit(0)**: silent, status 0, no
+          panel. Measured directly: `HAL: ERROR: duplicate component name`.
+
+        So the restart must let this process EXIT CLEANLY, and start the
+        replacement only afterwards. A detached child is forked first and
+        blocks reading a pipe whose only other end this process holds; when we
+        exit, every copy of that write end closes, the read returns EOF and the
+        child execs the original command line. No polling, and no pid-reuse
+        race - the pipe cannot report EOF early.
+
+        `sys.argv` is re-used verbatim because it still carries gladevcp's
+        `-x <XID>`, which is what puts the new panel back in AXIS's frame.
 
         The project is saved first, and the restart is abandoned if that fails
         - losing a feature tree to a convenience button would be a poor trade.
@@ -484,18 +506,49 @@ class NCamAppActionsMixin:
         except Exception as e:
             mess_dlg(_('Could not save before restarting:\n%s') % e)
             return
-        # flushed, because execv does not run atexit handlers or flush buffers
         try:
-            sys.stderr.write('[ncam-preview] restarting NativeCAM\n')
+            sys.stderr.write('[ncam] restarting NativeCAM\n')
             sys.stderr.flush()
             sys.stdout.flush()
         except Exception:
             pass
         try:
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            self._spawn_relaunch()
         except Exception as e:
-            # execv only returns on failure - if it worked we are already gone
             mess_dlg(_('Could not restart NativeCAM:\n%s') % e)
+            return
+        # Quitting the main loop is what makes this work: it returns through
+        # gladevcp's `finally: halcomp.exit()`, which frees the HAL name the
+        # replacement needs. Killing the process instead would leave it held.
+        gtk.main_quit()
+
+    def _spawn_relaunch(self):
+        """Fork a detached child that re-runs our command line once we exit.
+
+        The child holds the read end of a pipe and blocks on it. The write end
+        is kept open here and nowhere else - Python 3 makes pipe fds
+        non-inheritable, so no subprocess we later spawn can hold it open - so
+        it closes exactly when this process dies, however it dies. The child
+        then execs and reparents into AXIS's frame.
+        """
+        if getattr(self, '_relaunch_fd', None) is not None:
+            return          # already armed; a second child would be a second panel
+        r, w = os.pipe()
+        pid = os.fork()
+        if pid == 0:                                   # the child
+            try:
+                os.close(w)
+                os.setsid()                            # survive our exit
+                while os.read(r, 1):                   # EOF when we are gone
+                    pass
+                os.close(r)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except Exception:
+                pass
+            os._exit(1)                                # never returns normally
+        os.close(r)
+        # held open deliberately, for as long as this process lives
+        self._relaunch_fd = w
 
     def action_preferences(self, *arg):
         old_quick_access_icon_size = ncam.quick_access_icon_size
