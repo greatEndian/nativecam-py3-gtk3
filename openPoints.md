@@ -15,9 +15,39 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `96e91ec`.
+Branch: `liveTooling`. Last pushed: `baf57db`.
 
 ---
+
+## Next — before anything else
+
+- [ ] **THE FIRST PASS BEHIND THE BOSS IS MISSING** — greatEndian 2026-08-10,
+  `testing_15_5`, sectioning on or off alike. `analysis/029`. Levels **33.2080**
+  and **32.7000** have a front interval and no behind-boss one, so between the
+  last full-length pass at 33.7160 and the first behind-boss pass at 32.1920
+  there is a **1.524 mm bite against a 0.508 depth of cut**.
+  - **Cause found, by bisection**: `6fefc09` put `lathe_level_pass`'s STOP scan
+    on the Python floor contour and left `lathe_level_next_start`'s RESUME scan
+    walking the record array offset by a scalar — that file has no `_pl_flc_*`
+    reference at all. Two scans, two sources, disagreeing by construction.
+    Disabling the floor contour restores the topmost level to 33.2080.
+  - **NOT FIXED, deliberately.** Adding the floor-contour branch to the resume
+    scan restores every missing pass (14 → 26 behind-boss) and breaks
+    `test_rough_ends`: a **rapid plunges through 0.4700 mm of standing metal**,
+    because on the true contour the resume points stop being monotonic. A
+    monotonic clamp did not change the failing numbers byte for byte, so that
+    plunge comes from elsewhere in the phase-2/section machinery. Reverted —
+    shipping a rapid that cuts metal is worse than shipping the missing pass.
+  - **The fix belongs in Python**: the whole set of disjoint intervals per level
+    is a generation-time table, and plunge monotonicity is a *ladder-wide*
+    property no single subroutine call can see. That also retires the resume
+    scan rather than teaching a second scan to agree with the first.
+
+- [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
+  windows, globals, `order` names and subroutine definitions — not *which scan
+  walks which table*. It passed clean through the whole of `analysis/029`.
+  A check that every `_pl_*_base` table has all of its walkers, or none, would
+  have named this in a second.
 
 ## Next — before anything else
 
@@ -843,6 +873,58 @@ validation ones.
   level scan's own perpendicular offset. Python already answers most of these
   questions better, and the roughing defect at the top of this file is the
   first place it has actually cost something. `analysis/023`.
+
+## From the reference CAM screenshots — `POLYLINE-GAPS.md`
+
+`photo/roughing/{tool,geometry,radii,passes,linking}`, 54 screenshots, the whole
+*Profile Roughing* operation, read 2026-08-09. **27 entries.** The file is
+tracked and carries each one in full; these are the ones still open.
+
+**Worth building** — small, self-contained, Python-first, in this order:
+
+- [ ] **16 — Pecking.** Chip breaking has no expression at all. A Python
+  subdivision of an interval we already compute.
+- [ ] **9 — Tangential extension.** Run the cut past the profile along its own
+  direction, front and back.
+- [ ] **1 — Tool clearance FRONT.** We have back only, and the
+  reachable-contour maths already takes a front angle.
+- [ ] **13 — Cut below the inner radius.** Facing and parting to centre leave a
+  pip without it.
+
+**NEEDS A CALL** — these change what the operation promises, so the answer
+decides whether they are work at all:
+
+- [ ] **18 — the wall pass.** Their switch *skips* a cusp cleanup; we have no
+  such move, so we are permanently skipped. Is our pre-finish contour pass the
+  better trade, or do the levels want their own cleanup?
+- [ ] **7 / 11 — Machine Undercuts, Groove Suppression.** Both may be our
+  *Respect tool back angle* and *Re-entrant profile* worded differently. Two
+  tooltips would settle both.
+- [ ] **23 — rapids posted as G1.** Real safety on a control that doglegs.
+  Does yours?
+- [ ] **12 — rest machining.** The only large one — and the preview's
+  `StockField` already simulates remaining material, so it is nearer than it
+  looks.
+
+**Recorded and parked** — real differences, not worth chasing now: Tool
+Orientation as a B axis (2), tailstock M21/M22 (3), negative diameter (4), six
+coolant modes (5), cutting-data presets (6), sharp corners (17), grooving split
+radial/axial (19), canned cycle framing (20), extend to stock (21),
+linearisation tolerance (22), approach/retract datums (24), Z/X clearance
+naming (25), entry clearance datum (26), rapid-to-next-depth (27), radial limits
+as references (14).
+
+- [ ] **The finding that outranks the list: it is a CAD-model package and we are
+  not.** Much of Geometry and Radii — Model front/back, Chuck front, Selection,
+  picked faces, Model OD/ID, *Outermost of…* — exists to point at solid geometry
+  we do not have, because **our profile is the input**. Copying that vocabulary
+  would leave parameters that can never resolve. What survives the translation
+  is pointing at **our own** objects: the Workpiece's stock diameter and face Z.
+  That one idea closes the useful half of gaps **8** and **14** at once, and is
+  the datum-mode work already recorded under the Z limits.
+
+Done from this scan: **15** separate X/Z stock to leave (`analysis/024`),
+**8** the Z limits, front and back (`analysis/025`).
 
 ## Watch list
 
