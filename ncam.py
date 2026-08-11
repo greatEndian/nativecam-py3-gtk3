@@ -2663,6 +2663,9 @@ class Preferences(object):
             # improving the resume cannot move the phase-1/phase-2 boundary
             self.default += ("#<_pl_env_found>            = 0.0\n")
             self.default += ("#<_pl_env_z>                = 0.0\n")
+            # the pre-finish pass's own on/off. Defaults to 1 so a program
+            # generated before the parameter existed behaves as it always did.
+            self.default += ("#<_pl_pf_on>                = 1.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

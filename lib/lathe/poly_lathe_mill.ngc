@@ -854,7 +854,15 @@ o<poly_lathe_mill> sub
 
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)
-        o<prefin> if [#<prefin_off> GT 0]
+        (GATED ON THE SWITCH, NOT ON THE ALLOWANCE. It was prefin_off GT 0,)
+        (so a Pre-finish offset of 0.0 silently skipped the pass while)
+        (PARAM_PF_ON's tooltip promised it ran independent of that value.)
+        (greatEndian wants exactly that case: the switch on and the offset 0.0,)
+        (which puts the pass ON the offset contour - the surface the operator)
+        (measures - instead of one allowance outside it.)
+        (#<_pl_pf_on> is a GLOBAL, defaulted to 1 in create_defaults, so a)
+        (program generated from a template that predates it still runs.)
+        o<prefin> if [#<_pl_pf_on> GT 0]
                 (begin pre-finish)
                 (bracketed the way a feature is, so the preview can tell this)
                 (pass apart from the roughing levels above it and the finish)
