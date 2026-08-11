@@ -912,6 +912,54 @@ validation ones.
   questions better, and the roughing defect at the top of this file is the
   first place it has actually cost something. `analysis/023`.
 
+## Roughing bugs found in AXIS — greatEndian, 2026-08-11
+
+All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`
+unless said otherwise. Reported together; none investigated yet.
+
+**What "Offset" and "Pre-finish offset" are FOR** — greatEndian's own statement,
+recorded because it decides what correct means for the four below: *"Offset is
+prefinish prepare for final finish pass. Prefinish is offset from finish +
+offset to be able to do custom measure to operator to make compensation to
+finish cutting next."* So the pre-finish surface is a **measurable** surface: the
+operator measures it, dials in a compensation, and only then runs the finish
+pass. A roughing or pre-finish pass that lands somewhere other than where the
+offsets say destroys that measurement, which is why these are not cosmetic.
+
+- [ ] **Sectioning ON with a non-zero Z section length ignores the back tool
+  angle, and roughs the WHOLE part length** — including behind the boss segment.
+  The artificial sectioning is cutting where the tool's back angle says it
+  cannot reach. Both halves need checking: whether the section windows are built
+  without consulting the reachable contour at all, and why the run extends
+  behind the boss.
+
+- [ ] **Sectioned roughing passes in FRONT of the boss have mixed, crossing
+  paths, offset randomly from each other.** Sectioning on. The passes are not a
+  clean ladder — they cross one another and sit at inconsistent offsets.
+
+- [ ] **Pre-finish offset = 0.0 is ignored by roughing**, which still leaves
+  something standing off the final contour — visible as the yellow dashed line.
+  With the pre-finish offset zeroed, roughing's floor should sit on
+  `finish offset` alone.
+
+- [ ] **Roughing ignores the separate Z offset and uses the per-side offset
+  instead.** Distinct from the already-recorded stop-table fault: this is
+  roughing following the wrong allowance outright, not stopping in the wrong
+  place at one wall.
+
+- [ ] **Regular offset moved to 1.0 across the part is not followed BEHIND the
+  boss segment** — in front of it, it is fine. Roughing behind the boss starts
+  from the **older offset value**: the 2D view shows the roughing entry sitting
+  *nearer the Z axis than the pre-finish surface*, i.e. the entry is inside the
+  surface it is supposed to stand off. A stale offset being used for the
+  behind-boss region is the obvious suspect, and it may share a cause with the
+  missing first pass above.
+
+- [ ] **The missing first pass behind the boss persists with a different offset
+  applied** — so it is not specific to the offsets that project was saved with.
+  Same item as the one at the top of this file; recorded here because it was
+  re-confirmed under new settings.
+
 ## From the reference CAM screenshots — `POLYLINE-GAPS.md`
 
 `photo/roughing/{tool,geometry,radii,passes,linking}`, 54 screenshots, the whole
