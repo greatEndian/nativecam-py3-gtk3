@@ -941,6 +941,22 @@ offsets say destroys that measurement, which is why these are not cosmetic.
   something standing off the final contour — visible as the yellow dashed line.
   With the pre-finish offset zeroed, roughing's floor should sit on
   `finish offset` alone.
+  - **First look, 2026-08-11 — the G-code path reads correct and the DRAWING
+    does not.** `#3156 = [#param_pf_off * #param_pf_on]` arrives as
+    `#<prefin_off> = #25`, and `poly_lathe_mill:665` sets
+    `#<lvl_d> = fin_off + prefin_off`, so a zero pre-finish offset gives a floor
+    of `fin_off` alone — right. The stop contour likewise uses `stock_pair`,
+    which is the finish offset alone.
+  - But the **yellow dashed line is not built from either offset**:
+    `ncam_preview_ui.py:1196` draws it from
+    `eoff = ncam.TOOL_TABLE.get_rough_cut()` — **one roughing depth of cut** —
+    so it sits the same distance from the profile whatever the offsets are, and
+    zeroing the pre-finish offset cannot move it.
+  - **NEEDS A CALL before fixing**: is the complaint the *drawing* or the
+    *motion*? If the drawing, the entry overlay should be built from the same
+    allowance the levels actually use. If the motion, the numbers above say the
+    fault is elsewhere and this lead is a red herring. Measuring the roughed
+    surface against the final contour with `param_pf_off=0` settles it.
 
 - [ ] **Roughing ignores the separate Z offset and uses the per-side offset
   instead.** Distinct from the already-recorded stop-table fault: this is
