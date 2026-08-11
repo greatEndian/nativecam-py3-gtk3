@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `8fcabae`.
+Branch: `liveTooling`. Last pushed: `1b7db0b`.
 
 ---
 
@@ -63,9 +63,23 @@ Branch: `liveTooling`. Last pushed: `8fcabae`.
     with the axial value at 2.000, and `test_rough_comp` has r24.5720 stopping
     **0.2540** short. Both are about where a level ENDS; the envelope only
     decides where one STARTS.
-  - **Next step**: separate the two questions that one flag answers — *where
-    does this level resume* and *is this the level where phase 1 stops*. The
-    walker is quoted in full in `7760ed5`'s commit message, ready to lift back.
+  - **The flag is SPLIT**, `1b7db0b`. Phase 1 (`o<ph1_chk>`'s true branch, which
+    sets `sect_top_r`/`_pl_ph1_front_cut`) keeps the record scan's answer; only
+    the else branch takes the envelope's. `test_rough_comp` went back to PASS,
+    which is the proof it worked.
+  - **Three of four faults are now solved**: the two scans reading two sources;
+    the rapid landing at the LEAD-IN start with the clamp as a rate; and the one
+    flag answering two questions.
+  - **The fourth is what is left, and it is specific.** `test_stock_to_leave`:
+    the deepest level stops **0.7300** from the Z−70.4 wall with the axial value
+    at 2.000. Not the plunge, not the boundary — **a resumed interval ends
+    against the FLOOR contour instead of the stop table**. 0.7300 is
+    `fin_off + prefin_off`, the number `analysis/024` recorded for a cut that
+    never got the stop table's extension. Overcuts the axial allowance by
+    **1.27 mm**, so not shipped.
+  - **Next step**: make a resumed interval consult the stop table the way a
+    first interval does. One question, one place, 2.0000 against 0.7300. The
+    walker is in `7760ed5`'s commit message and the split in `1b7db0b`'s.
 
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
