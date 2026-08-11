@@ -2659,6 +2659,10 @@ class Preferences(object):
             # see resume_envelope(); 0 means fall back to the record scan
             self.default += ("#<_pl_res_base>             = 0.0\n")
             self.default += ("#<_pl_res_n>                = 0.0\n")
+            # the envelope's own answer, kept apart from the scan's so that
+            # improving the resume cannot move the phase-1/phase-2 boundary
+            self.default += ("#<_pl_env_found>            = 0.0\n")
+            self.default += ("#<_pl_env_z>                = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

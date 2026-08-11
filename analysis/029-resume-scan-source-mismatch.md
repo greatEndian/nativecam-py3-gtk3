@@ -274,3 +274,87 @@ is unchanged — `test_stock_to_leave`, `test_rough_comp`, `test_all_projects`,
 
 **Not wired**: the walker, again — now for a reason that has nothing to do with
 resuming. The envelope itself is finished and proven against both projects.
+
+---
+
+## Addendum 3 — the flag is split, and the third fault it uncovered, 2026-08-11
+
+greatEndian: *"split the flag then"*. Done, and it works — one fault fewer, one
+fault left, and both are now named precisely.
+
+### Where the split goes
+
+`poly_lathe_mill` asks `lathe_level_next_start` one question and uses the answer
+for two. The dividing line is already in the file:
+
+```
+o<ph1_chk> if [[#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]   <- PHASE 1
+        ... sets sect_top_r and _pl_ph1_front_cut               <- the BOUNDARY
+o<ph1_chk> else                                                <- phase 2 / plain
+        ... sets l_fr only                                      <- where an interval STARTS
+```
+
+So the phase-1 branch keeps the record-array scan's answer, untouched, and only
+the else branch takes the envelope's. `lathe_level_next_start` now reports both:
+`_pl_resume_found`/`_pl_resume_z` from the scan as before, and
+`_pl_env_found`/`_pl_env_z` from the table.
+
+### It fixes what it was supposed to fix
+
+```
+testing_15_5   topmost behind-boss   32.1920 -> 33.2080   sectioning OFF
+                                     32.1522 -> 33.1273   sectioning ON
+test_rough_ends                      FAIL -> PASS         the plunge is safe
+test_rough_comp                      PASS                 the boundary held
+```
+
+`test_rough_comp` passing is the proof the split did its job: that was one of the
+two "where a level ENDS" failures, and holding the phase boundary fixed it.
+
+### The third fault, which is none of the previous two
+
+`test_stock_to_leave` still fails, and identically:
+
+```
+the deepest level stops 0.7300 from the Z-70.4 wall with the axial
+value set to 2.000
+```
+
+Not the plunge, not the boundary. **The intervals the envelope creates end
+against the FLOOR contour instead of the stop table.** 0.7300 is about
+`fin_off + prefin_off`, which is exactly the number `analysis/024` addendum 2
+recorded for a cut that never got the stop table's extension — the table that
+is *bounded to extending a cut and never retracting it*. A resumed interval is
+reaching its floor and stopping there instead of being carried out to the
+anisotropic stop contour.
+
+That overcuts the axial allowance by **1.27 mm**. It leaves the part wrong
+rather than crashing the machine, but it is a regression against today's
+2.0000, so it is not shipped.
+
+### Three faults, three causes, none of them the first guess
+
+Worth stating together, because the pattern is the lesson:
+
+1. the resume scan read a different profile from the stop scan — **fixed**, the
+   envelope;
+2. the rapid lands at the LEAD-IN start, not the resume point, and the clamp is
+   a **rate** — **fixed**, `8fcabae`;
+3. one flag answered both "where does this level resume" and "is this where
+   phase 1 stops" — **fixed**, this addendum;
+4. and now: a resumed interval ends on the floor instead of the stop table.
+
+Each was invisible until the one before it was fixed. The per-section theory in
+addendum 2 was wrong; so was the phase-boundary theory as a complete
+explanation. What has held up every time is measuring the actual motion.
+
+### State left in the tree
+
+**Reverted to inert again** — `lib/lathe/poly_lathe_mill.ngc` and
+`lathe_level_next_start.ngc` are back at `8fcabae`. `test_stock_to_leave`,
+`test_rough_comp`, `cam_map` green. The `_pl_env_found`/`_pl_env_z` defaults
+stay in `ncam.py`: they cost nothing and the walker needs them when it returns.
+
+The next step is small and specific: make a resumed interval consult the stop
+table the same way a first interval does. That is one question, in one place,
+with one number to check - 2.0000 against 0.7300.
