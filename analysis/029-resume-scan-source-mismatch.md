@@ -358,3 +358,73 @@ stay in `ncam.py`: they cost nothing and the walker needs them when it returns.
 The next step is small and specific: make a resumed interval consult the stop
 table the same way a first interval does. That is one question, in one place,
 with one number to check - 2.0000 against 0.7300.
+
+---
+
+## Addendum 4 — the stop gate was NOT it, 2026-08-11
+
+greatEndian: *"fix the stop table one then"*. Attempted, failed, reverted, and
+the negative result is worth as much as the fix would have been.
+
+### The hypothesis
+
+`lathe_level_pass` applies the stop table under
+
+```
+o<stp> if [[#<_pl_stop_n> GT 0] AND [#<found>]]
+```
+
+so a pass that meets **no crossing** never consults it and runs to the end of
+its window. That fits the symptom exactly: a resumed interval behind a boss
+finds no crossing either, so it would run past where the axial allowance says it
+must stop — and it was invisible before, because every no-crossing pass used to
+be a first interval reaching the part's end, where the window end *is* the right
+answer.
+
+### The measurement says no
+
+Gate opened to `o<stp> if [#<_pl_stop_n> GT 0]`, with the walker and the split
+wired:
+
+```
+the deepest level stops 0.7300 from the Z-70.4 wall   -- unchanged, to the digit
+```
+
+Byte-identical to the gated version, so the resumed interval is **not** reaching
+that end by skipping the stop block. Something else sets it. Reverted, along
+with the walker and the split; `test_stock_to_leave`, `test_rough_comp` and
+`cam_map` green.
+
+### What this rules out, and what is left to look at
+
+Ruled out: the `found` gate, the phase boundary (addendum 3 fixed that and
+`test_rough_comp` proved it), the plunge (addendum 2), and the source mismatch
+(the envelope). Fault 4 is none of those.
+
+Still to look at, in the order I would try them:
+
+- **`w_to` itself.** The interval's window end is passed in by
+  `poly_lathe_mill`, and a resumed interval gets a *different* `w_to` from a
+  first one. If the stop block clamps against `w_to` and `w_to` is already past
+  the stop contour, opening the gate changes nothing — which is exactly what was
+  observed. This is the first thing to instrument.
+- **`s_reach` and the clamped-candidate rule** (`s_cl`/`s_bcl`): a candidate
+  further than `s_reach` from `z_end` is clamped, and `z_end` for a resumed
+  interval starts somewhere else entirely, so the same candidate can be rejected
+  there and accepted on a first interval.
+- **The floor contour's own end.** It stops at Z-69.6380 — `0.762` from the
+  Z-70.4 wall, which is suspiciously close to the 0.7300 seen. If a resumed
+  interval is ending on the contour's last point rather than on any computed
+  stop, that is the answer and it is in the walk, not the stop block.
+
+The third is the one I would measure first: print the interval's `z_end` before
+and after the `o<stp>` block for that one pass. One number distinguishes all
+three.
+
+### The pattern, stated for the record
+
+Four hypotheses about this fault so far - per-section, phase boundary, the
+`found` gate - and **the first guess has been wrong every single time**. The
+three that were right were all found by reading the emitted motion, never by
+reasoning about the code. That is now a five-round result and it should govern
+how the next attempt starts: instrument the failing pass first, theorise second.
