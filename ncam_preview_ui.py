@@ -1192,10 +1192,23 @@ class NCamPreviewMixin(object):
                 return [(z, r * lathe_sections.DIAMETER_MODE) for z, r in c]
 
             entry = stop = None
+            # the drawn twin of the ENTRY table, so it takes the allowances
+            # exactly as build_entry_contour_gcode does - one depth of cut
+            # above the FLOOR, not above the finished shape. Drawn from the
+            # depth of cut alone it could not move when an offset changed,
+            # which is how the entry ended up drawn inside the pre-finish
+            # surface at an offset of 1.0.
             eoff = ncam.TOOL_TABLE.get_rough_cut()
             if eoff and float(eoff) > 0:
-                e = lathe_sections.entry_contour(rad, float(eoff), rdir, nr,
-                                                 orn)
+                _ex, _ez = lathe_sections.stock_pair(f)
+                _pf = f.get_param('param_pf_off')
+                _pfon = f.get_param('param_pf_on')
+                _pfv = float(_pf.get_ngc_value()) if _pf is not None else 0.0
+                if _pfon is not None and float(_pfon.get_ngc_value()) <= 0:
+                    _pfv = 0.0
+                _e = float(eoff)
+                e = lathe_sections.entry_contour(rad, _ex + _pfv + _e, rdir,
+                                                 nr, orn, _ez + _pfv + _e)
                 entry = _dia(e) if e and len(e) >= 2 else None
 
             # the STOP is the pre-finish contour, which is param_f_off alone -
