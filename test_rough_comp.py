@@ -161,27 +161,45 @@ def main():
                   '(%d samples)'
                   % (label, over, (' at Z%.1f' % where) if where else '', n))
 
-        # THE PROOF, both halves. The uncompensated case must overcut by
-        # something of the order of the nose, or there was nothing to fix and
-        # the compensated result proves nothing.
-        # The threshold is the MARGIN between the modes, not an absolute size.
-        # A first version demanded Off exceed half the nose radius, which was a
-        # guess and not a bound: the overcut an uncompensated stop leaves is
-        # R*(1-cos) of the local surface angle, so on a 13 degree ramp it is
-        # 0.0102 mm and only a steep wall approaches R. Measured here it is
-        # 0.1116, which is real, far above the field's quantisation, and less
-        # than the guessed threshold - the assertion was wrong, not the code.
-        gain = worst['Off'] - max(worst['Native'], worst['In CAM'])
-        check('uncompensated roughing DOES cut past the pre-finish contour, '
-              'measurably', gain > 0.03,
-              'compensation only removes %.4f mm, which is too close to the '
-              'noise for the passes below to mean anything' % gain)
-        for label in ('Native', 'In CAM'):
-            check('%s roughing cuts materially less past it' % label,
-                  worst[label] < worst['Off'] * 0.75,
-                  'overcuts %.4f mm against Off %.4f - compensation is not '
-                  'holding the nose off the pre-finish stock'
-                  % (worst[label], worst['Off']))
+        # THE PROOF IS THE ABSOLUTE OVERCUT, not the gap between the modes.
+        #
+        # It used to be the gap - Off had to overcut at least 0.03 more than
+        # the compensated modes, and each of those at most three quarters of
+        # Off. That held while the ENTRY CONTOUR stood one roughing depth of
+        # cut from the FINAL contour instead of from the floor: an
+        # uncompensated level began cutting too far in and left 0.1115 past the
+        # pre-finish contour, against 0.0503 compensated. Fixing the entry
+        # (analysis/030) took Off to 0.0503 as well.
+        #
+        # So the gap is gone because the fault it measured is gone, and an
+        # assertion keyed on it would now demand that roughing be BAD in the
+        # uncompensated case. greatEndian, 2026-08-11: the fault was real -
+        # merge it and rewrite the test.
+        #
+        # What actually matters is that no mode leaves the pre-finish more than
+        # its own stock: the pre-finish surface is what the operator MEASURES
+        # to dial in the finish compensation, so an overcut there is what
+        # ruins that measurement.
+        #
+        # THE BOUND SITS BETWEEN THE TWO MEASURED STATES, which is what makes
+        # it an assertion and not a rubber stamp: 0.1115 is what the broken
+        # entry contour produced and must FAIL, 0.0503 is what the fixed one
+        # produces and must PASS. 0.08 clears the good case by 0.0297 and
+        # rejects the bad one by 0.0315. A first attempt used 0.0508 - one
+        # tenth of the finish offset, which sounds principled - and left
+        # 0.0005 of margin, an assertion that would flip on rounding.
+        OVERCUT_MAX = 0.08
+        for label in ('Off', 'Native', 'In CAM'):
+            check('%-7s roughing does not cut past the pre-finish contour'
+                  % label,
+                  worst[label] <= OVERCUT_MAX,
+                  'overcuts %.4f mm, more than the %.4f bound - roughing is '
+                  'eating the stock the operator measures'
+                  % (worst[label], OVERCUT_MAX))
+        check('   and no mode is materially worse than another',
+              max(worst.values()) - min(worst.values()) < 0.02,
+              'Off %.4f, Native %.4f, In CAM %.4f'
+              % (worst['Off'], worst['Native'], worst['In CAM']))
         check('and the two compensated modes agree',
               abs(worst['Native'] - worst['In CAM']) < 0.02,
               '%.4f vs %.4f' % (worst['Native'], worst['In CAM']))
