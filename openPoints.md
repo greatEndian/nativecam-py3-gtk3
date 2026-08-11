@@ -912,6 +912,48 @@ validation ones.
   questions better, and the roughing defect at the top of this file is the
   first place it has actually cost something. `analysis/023`.
 
+## Pre-finish pass — where it sits, measured 2026-08-11
+
+greatEndian: with the pre-finish offset at 0.0 the pass *"still has some offset
+and does not sit on the XZ offsetted contour"*, and *"use same compensation
+method as is setuped in polyline — it has to behave in the taste of polyline
+other profiling operation"*.
+
+**Measured first, on testing_15_5 with `param_pf_off=0.0`** — worst distance
+from the pre-finish moves to the offset contour (the `#4400` stop table), leads
+excluded:
+
+```
+comp Off      0.0008 mm  at Z-0.862
+comp Native   0.0047 mm
+comp In CAM   0.0197 mm  (arc chording at Z-29.184)
+```
+
+and on the cylinder at Z−50 the gap is **0.0000**. Changing the pre-finish
+offset from 0.254 to 0.0 does not move the path at all — it never carried that
+allowance; the allowance only ever set **where roughing stops above it**. The
+blue overlay is drawn from `stock_pair` with `nose_r 0`, i.e. the same surface,
+so the drawing agrees with the motion.
+
+- [ ] **So the remaining reading is COMPENSATION, and it is a real one.** With
+  nose comp **Off** the pre-finish path is the offset contour, but the tool tip
+  follows that path and the round nose then leaves the *produced surface*
+  displaced by up to the nose radius on every sloped or curved section. The
+  path is on the contour; the **cut** is not. That is exactly *"still has some
+  offset"*, and it is why greatEndian asks for the polyline's own comp method
+  to apply here as it does to the finish pass.
+- This is the standing **compensation is all-or-nothing** rule reaching the
+  pre-finish pass: `o<prefin>` has three branches — In CAM traces the
+  `cam_load` path, Native traces `_pl_pf_n`, and the third traces the contour
+  **uncompensated**. `build_prefinish_contour_gcode` itself returns `''` unless
+  `param_n_comp == 1`, so the Off path has no compensated contour to trace even
+  if it wanted one.
+- **NEEDS greatEndian's confirmation before building**: is the gap you see
+  between the pre-finish toolpath and the blue drawn surface (then it is the
+  nose, as above), or between the toolpath and where you expect the offset
+  contour to be (then my measurement is missing the case — say which comp mode
+  and I will measure that branch)?
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`
