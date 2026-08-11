@@ -976,9 +976,29 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     surface is"* — is exactly what an entry contour that ignores the allowance
     does once the allowance is large: at an offset of 1.0 the entry sits
     **inside** the pre-finish surface. Two reports, one cause.
-  - Fixing it touches the entry table and the ramp directions built from it, so
-    it wants the blast radius walked first: `build_entry_ramp_gcode`,
-    `entry_ramp_dirs`, the `#<_pl_entry_*>` walkers, and the overlay.
+  - **FIXED on branch `entry-contour-fix` (`349d2ad`) — NEEDS A CALL to merge.**
+    The entry is now `fin + prefin + one depth of cut`, anisotropic on the two
+    allowances like the floor, and the overlay takes them identically. cfg
+    signature unchanged, so no version bump. Blast radius walked: the ENTRY
+    table 4200-4400 → `lathe_level_pass:407`, the ramp table built from the same
+    `env` (directions are surface tangents, so unaffected), and the overlay.
+    Measured on testing_15_5, both tables sampled at Z−50:
+
+    ```
+    pf 0.254    entry X30.3540   stop X29.5720   entry outside stop
+    pf 0.0      entry X30.0933   stop X29.5720   moved in by 0.2607
+    offset 1.0  entry X30.8590   stop X30.0769   entry outside stop
+    ```
+
+    Both symptoms gone. `test_ramps`, `test_rough_overlay`, `test_ladder`,
+    `test_rough_ends`, `test_all_projects`, `test_stock_to_leave` pass.
+  - **THE CALL**: `test_rough_comp` fails. Off overcut goes **0.1115 → 0.0503**,
+    exactly matching Native and In CAM — nothing got worse, uncompensated
+    roughing improved to match compensated — but the test asserts compensation
+    makes a *measurable difference*, and that difference is now gone. Is that
+    the fault being removed (merge, and rewrite the test to assert the absolute
+    overcut instead of the gap), or comp's job being masked (the entry must not
+    carry the allowance when comp is off)? Not guessed.
 
 - [ ] **Roughing ignores the separate Z offset and uses the per-side offset
   instead.** Distinct from the already-recorded stop-table fault: this is
