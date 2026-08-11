@@ -961,6 +961,26 @@ so the drawing agrees with the motion.
   the sim tools carry real noses (`D2.54` → r1.27, `D0.8` → r0.4). So the comp
   method is wired; what is unproven is whether the resulting **surface** lands
   on the offset contour.
+- **RUN 2026-08-11 — inconclusive, and recorded as such.** `prove_tip_comp.py
+  --op raw` against the pre-finish-only program (comp Native, `pf_off=0`,
+  `f_pass=0`), with the `_pl_pf_*` table (nose_r 0, i.e. the offset contour) as
+  the target:
+
+  ```
+  6828 tangent points, uncovered segs []   full coverage
+  worst tangent err 0.000998               within tol
+  max gouge 0.011187                       VERDICT: FAIL - gouge > tol
+  ```
+
+  **Identical for `--side 41` and `--side 42`**, so the run does not
+  discriminate and cannot be read as evidence either way — a single profile
+  line is tangent from both sides, which is exactly the trap the skill notes
+  warn about. 0.0112 mm is also chording-scale on a chorded profile, so it may
+  be the target's own faceting rather than the comp.
+  - To make it discriminate: get `--freeside` right for this geometry (I passed
+    `right` for the whole profile), and drop the tail I fed it —
+    `-35.4180,32.8356 -69.8918,24.8767 -69.8920,35.0000` walks backwards down
+    the end wall and is not a monotone target.
 - **NEXT STEP, and it is the project's own instrument, not a new one**:
   `prove_tip_comp.py` places the nose circle at each compensated control point
   and asserts tangency to a target profile with no gouge. Point it at the
