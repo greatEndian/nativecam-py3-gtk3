@@ -1,6 +1,6 @@
 (Lathe Polyline Milling)
 (CALL data ptr[1], start_radius[2], final_radius[3], compensation[4], show final cut[5], dz[6], dx[7], rot[8], tool eng pct[9], cz[10], cx[11],)
-(rough_dir[12], fin_offset[13], fin_passes[14], fin_dir[15], op[16], li_len[17], li_ang[18], li_feed[19], lo_len[20], lo_ang[21], lo_feed[22], li_rad[23], lo_rad[24], prefin_off[25], x_wall_dir[26], sec_len[27], nose_comp[28], prefin_on[29])
+(rough_dir[12], fin_offset[13], fin_passes[14], fin_dir[15], op[16], li_len[17], li_ang[18], li_feed[19], lo_len[20], lo_ang[21], lo_feed[22], li_rad[23], lo_rad[24], prefin_off[25], x_wall_dir[26], sec_len[27], nose_comp[28])
 (rough_dir / fin_dir : 0 = front to back, 1 = back to front, 2 = both/alternate)
 (fin_offset is per-side/radius material left by roughing, removed by fin_passes finish passes)
 (op : 0 = roughing + finishing, 1 = roughing only - offset stays on the part, 2 = finishing only)
@@ -41,8 +41,6 @@ o<poly_lathe_mill> sub
         #<li_rad>        = #23
         #<lo_rad>        = #24
         #<prefin_off>    = #25
-        (the pre-finish pass's own on/off, separate from its allowance)
-        #<prefin_on>     = #29
         #<xw_dir>        = #26
         #<sec_len>       = #27
         #<nose_comp>     = #28
@@ -856,13 +854,7 @@ o<poly_lathe_mill> sub
 
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)
-        (GATED ON THE SWITCH, NOT ON THE ALLOWANCE. It used to be)
-        (prefin_off GT 0, so a Pre-finish offset of 0.0 silently skipped the)
-        (pass while PARAM_PF_ON's tooltip promised it ran independent of that)
-        (value. greatEndian wants exactly that case: the switch on and the)
-        (offset 0.0, which puts the pass ON the offset contour - the surface)
-        (the operator measures - instead of one allowance outside it.)
-        o<prefin> if [#<prefin_on> GT 0]
+        o<prefin> if [#<prefin_off> GT 0]
                 (begin pre-finish)
                 (bracketed the way a feature is, so the preview can tell this)
                 (pass apart from the roughing levels above it and the finish)

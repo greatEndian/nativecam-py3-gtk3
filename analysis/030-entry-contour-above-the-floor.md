@@ -170,3 +170,66 @@ allowance zeroed, which is correct.
 `test_all_projects` (which exercises the 1.49 migration), `test_rough_comp`,
 `test_stock_to_leave`, `test_ladder`, `test_lathe_validation` (the new arg 29
 matches the signature), `cam_map`, flake8.
+
+---
+
+## Addendum 2 — the pre-finish gate crashed LinuxCNC, and why, 2026-08-11
+
+greatEndian: *"i turn off prefinish pass by radio button and whole linuxcnc with
+native cam crashed"*. `ba3fb0c`, reverted in `cfg` 1.50.
+
+### The cause is the cfg/lib asymmetry, at its worst
+
+`ba3fb0c` did two things that looked like one change:
+
+- `lib/lathe/poly_lathe_mill.ngc` started reading a **29th CALL argument**,
+  `#<prefin_on> = #29`;
+- `cfg/lathe/polyline.cfg` started passing it, behind a version bump to 1.49.
+
+**Subroutines are re-read at runtime; a cfg template is not.** A project already
+open in the GUI still holds the **stored 1.48 template**, which passes 28
+arguments — migration only runs when the project is loaded. So the moment the
+edit landed, the subroutine was reading `#29` from a call that never supplied
+it, and the first regeneration — triggered by toggling the very switch this was
+built for — ran a subroutine reading an undefined parameter.
+
+CLAUDE.md records this asymmetry as having *"silently eaten a change"*. It does
+not always fail silently: when the `.ngc` half is the half that took effect, it
+takes the interpreter down with it.
+
+Not the line-length limit, which was the first suspicion: 233 → 241 characters
+in the cfg and 232 generated, against the 255 bound.
+
+### The rule this earns
+
+**Never add a CALL argument to a subroutine a saved project calls.** The two
+halves cannot land together: one is read at runtime, the other at load. Pass the
+value as a **global** instead — `#<_pl_*>` set in the cfg and defaulted in
+`create_defaults` — because the defaults block is re-emitted on **every**
+generation and so cannot be out of step with the subroutine that reads it.
+
+Every other value this feature needed already went that way. This one did not,
+for no reason beyond it being next to `#3156`.
+
+### The re-implementation, when it is wanted
+
+Unchanged in intent — the pre-finish pass gated on its own switch rather than on
+its allowance, so that an offset of 0.0 puts the pass ON the offset contour
+instead of skipping it. Only the plumbing changes:
+
+- `#<_pl_pf_on> = #param_pf_on` in the cfg, no new CALL argument;
+- `o<prefin> if [#<_pl_pf_on> GT 0]` in `poly_lathe_mill`;
+- `#<_pl_pf_on> = 1.0` in `create_defaults`, so a program generated before the
+  parameter existed still loads;
+- one version bump.
+
+`cam_map`'s C2 check covers the last of those - a `#<_pl_*>` read in `lib/` with
+no default is exactly what it looks for.
+
+### State
+
+Reverted with the version rolled **forward** to 1.50, not back to 1.48: a
+project already migrated to 1.49 stores the 29-argument call, and a cfg claiming
+1.48 would leave that stored template in place against a 28-argument subroutine
+— the same crash by another route. Verified: `test_lathe_validation`, `cam_map`,
+and a generation with the switch off that `rs274` reads clean (405 moves).
