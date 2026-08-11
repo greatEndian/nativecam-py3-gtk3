@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `1b7db0b`.
+Branch: `liveTooling`. Last pushed: `8c6551b`.
 
 ---
 
@@ -976,7 +976,7 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     surface is"* — is exactly what an entry contour that ignores the allowance
     does once the allowance is large: at an offset of 1.0 the entry sits
     **inside** the pre-finish surface. Two reports, one cause.
-  - **FIXED on branch `entry-contour-fix` (`349d2ad`) — NEEDS A CALL to merge.**
+  - **FIXED AND MERGED**, `e27a858` + `8c6551b`, `analysis/030`.
     The entry is now `fin + prefin + one depth of cut`, anisotropic on the two
     allowances like the floor, and the overlay takes them identically. cfg
     signature unchanged, so no version bump. Blast radius walked: the ENTRY
@@ -992,21 +992,19 @@ offsets say destroys that measurement, which is why these are not cosmetic.
 
     Both symptoms gone. `test_ramps`, `test_rough_overlay`, `test_ladder`,
     `test_rough_ends`, `test_all_projects`, `test_stock_to_leave` pass.
-  - **THE CALL**: `test_rough_comp` fails. Off overcut goes **0.1115 → 0.0503**,
-    exactly matching Native and In CAM — nothing got worse, uncompensated
-    roughing improved to match compensated — but the test asserts compensation
-    makes a *measurable difference*, and that difference is now gone. Is that
-    the fault being removed (merge, and rewrite the test to assert the absolute
-    overcut instead of the gap), or comp's job being masked (the entry must not
-    carry the allowance when comp is off)? Not guessed.
+  - `test_rough_comp` was rewritten on greatEndian's call — *"the fault was
+    real"*. Off overcut went **0.1115 → 0.0503**, matching Native and In CAM, so
+    the old gap-based assertion would have demanded roughing be BAD when
+    uncompensated. It now asserts the **absolute** overcut, bounded at 0.08,
+    which sits between the two measured states rather than beside one of them.
 
 - [ ] **Roughing ignores the separate Z offset and uses the per-side offset
   instead.** Distinct from the already-recorded stop-table fault: this is
   roughing following the wrong allowance outright, not stopping in the wrong
   place at one wall.
 
-- [ ] **Regular offset moved to 1.0 across the part is not followed BEHIND the
-  boss segment** — in front of it, it is fine. Roughing behind the boss starts
+- [x] **FIXED, `e27a858`** — ~~Regular offset moved to 1.0 across the part is not
+  followed BEHIND the boss segment~~ — in front of it, it is fine. Roughing behind the boss starts
   from the **older offset value**: the 2D view shows the roughing entry sitting
   *nearer the Z axis than the pre-finish surface*, i.e. the entry is inside the
   surface it is supposed to stand off. A stale offset being used for the
