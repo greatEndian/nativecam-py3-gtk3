@@ -15,7 +15,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `7760ed5`.
+Branch: `liveTooling`. Last pushed: `8fcabae`.
 
 ---
 
@@ -45,15 +45,27 @@ Branch: `liveTooling`. Last pushed: `7760ed5`.
     54 breakpoints on testing_15_5, window 3000..3140,
     `test_resume_envelope.py`. `_pl_res_n` is written and nothing reads it, so
     behaviour is unchanged.
-  - **What is left is ONE step, and it is understood.** With the walker wired,
-    testing_15_5 is fixed (32.1920 → **33.2080**, 14 → 26 passes) and
-    `test_rough_ends` still fails on a rapid through 0.4700 mm of metal.
-    **The missing condition is per-SECTION**: the envelope is global across the
-    contour while levels restart inside each section window, so a global resume
-    can land where a *different* section has not cut yet. Monotone across the
-    ladder is necessary, not sufficient. Either build the envelope per window,
-    or qualify the plunge against the section it belongs to. The walker itself
-    is quoted in full in `7760ed5`'s commit message, ready to lift back.
+  - **The per-section theory was WRONG** — `testing_15_2`, `15_4` and `15_5` all
+    have Sectioning = 1. **It is the LEAD-IN**: the rapid lands where the lead-in
+    starts, 0.7071 mm in front of the resume, where the level above has not cut.
+    The condition is `R(L) + lead_z` behind `R(L_above)`, applied as a **rate** —
+    `lead_z` per `rough_cut` of level descent, since the breakpoints are contour
+    vertices and a fixed step drifted 38 mm. Done, `8fcabae`, cfg **1.48**.
+  - **The envelope is finished and proven.** With the walker wired it fixes both
+    at once: testing_15_5 32.1920 → **33.2080**, and `test_rough_ends` 6
+    failures → **PASS**.
+  - **What now blocks it is a THIRD consumer**, and it has nothing to do with
+    resuming. `lathe_level_next_start`'s answer also drives
+    `_pl_ph1_front_cut` and `sect_top_r` — it is what discovers the
+    phase-1/phase-2 boundary live — so changing which levels find a resume moves
+    that boundary and the deepest levels end elsewhere:
+    `test_stock_to_leave` deepest level stops **0.7300** from the Z−70.4 wall
+    with the axial value at 2.000, and `test_rough_comp` has r24.5720 stopping
+    **0.2540** short. Both are about where a level ENDS; the envelope only
+    decides where one STARTS.
+  - **Next step**: separate the two questions that one flag answers — *where
+    does this level resume* and *is this the level where phase 1 stops*. The
+    walker is quoted in full in `7760ed5`'s commit message, ready to lift back.
 
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
