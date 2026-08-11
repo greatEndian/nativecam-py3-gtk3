@@ -961,7 +961,38 @@ so the drawing agrees with the motion.
   the sim tools carry real noses (`D2.54` → r1.27, `D0.8` → r0.4). So the comp
   method is wired; what is unproven is whether the resulting **surface** lands
   on the offset contour.
-- **RUN 2026-08-11 — inconclusive, and recorded as such.** `prove_tip_comp.py
+- **RUN 2026-08-11, second attempt — Native PROVEN CORRECT; Off not measurable
+  by this instrument.** Free side fixed by running the matrix rather than
+  reasoning it out:
+
+  ```
+  freeside right   gouge  0.011187      <- correct side
+  freeside left    gouge 15.676474      <- absurd, so the check discriminates
+  ```
+
+  With the correct free side, the pre-finish pass under **comp Native**:
+  **6828 tangent points, uncovered segs [], worst tangent err 0.000998, max
+  gouge 0.011187.** That is 1/36 of the r0.4 nose and chording-scale on a
+  chorded target — a missing comp would show something approaching R, or the
+  15.68 above. **So the nose IS compensated on the Native pre-finish pass.**
+- **The comp-OFF run cannot be read at all**, and this is the trap to remember:
+  `prove_tip_comp` measures **compensated** moves, and with comp Off there are
+  no `G41.1/G42.1` moves for it to find. Its "20 tangent points, 37 of 38
+  segments never cut, gouge 0.101" is the instrument finding nothing, NOT the
+  pass tracing a wrong curve. A change to `build_prefinish_contour_gcode` built
+  on that reading was reverted unverified.
+  - What IS known about the Off path, from the distance measurement: it already
+    sits 0.0008 mm from the offset contour. So the path is right and the nose is
+    simply not compensated — which is the same thing the FINISH pass does when
+    the polyline's comp is Off. Whether that counts as the bug depends on
+    whether greatEndian's project had comp Off or Native, and that is the one
+    fact still missing.
+- **ASK BEFORE THE NEXT ATTEMPT**: which Tool nose comp setting is on the
+  polyline where the nose offset is visible? Native is proven correct above, so
+  if it is Native the fault is elsewhere; if it is Off, the question becomes
+  whether an uncompensated pre-finish is acceptable given the finish pass is
+  uncompensated too.
+- **RUN 2026-08-11, first attempt — inconclusive, and recorded as such.** `prove_tip_comp.py
   --op raw` against the pre-finish-only program (comp Native, `pf_off=0`,
   `f_pass=0`), with the `_pl_pf_*` table (nose_r 0, i.e. the offset contour) as
   the target:
