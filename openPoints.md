@@ -998,10 +998,23 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     uncompensated. It now asserts the **absolute** overcut, bounded at 0.08,
     which sits between the two measured states rather than beside one of them.
 
-- [ ] **Roughing ignores the separate Z offset and uses the per-side offset
-  instead.** Distinct from the already-recorded stop-table fault: this is
-  roughing following the wrong allowance outright, not stopping in the wrong
-  place at one wall.
+- [x] **PROBABLY FIXED by `e27a858` — needs greatEndian's eye in AXIS.**
+  ~~Roughing ignores the separate Z offset and uses the per-side offset~~.
+  Measured on testing_15_5 after the entry-contour fix, distances from the
+  Z−70.4 wall:
+
+  ```
+  sep OFF        cuts 0.5080 | floor 0.7620 | ENTRY 1.2700
+  sep ON, Z=2.0  cuts 1.8918 | floor 2.2540 | ENTRY 2.7620
+  ```
+
+  Every surface honours the axial value and each stands outside the next in the
+  right order — `fin`, then `+prefin`, then `+one depth of cut`. Before the fix
+  the ENTRY was at the depth of cut alone, **0.5080 off the wall whatever the
+  axial value said**, which is what "follows the per-side offset" looks like on
+  screen. So this was the same allowance-blind entry as the other two reports.
+  Left ticked but flagged: confirm against the drawing in AXIS, since all three
+  reports were read off the 2D view.
 
 - [x] **FIXED, `e27a858`** — ~~Regular offset moved to 1.0 across the part is not
   followed BEHIND the boss segment~~ — in front of it, it is fine. Roughing behind the boss starts
