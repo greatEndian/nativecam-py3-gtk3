@@ -948,11 +948,25 @@ so the drawing agrees with the motion.
   **uncompensated**. `build_prefinish_contour_gcode` itself returns `''` unless
   `param_n_comp == 1`, so the Off path has no compensated contour to trace even
   if it wanted one.
-- **NEEDS greatEndian's confirmation before building**: is the gap you see
-  between the pre-finish toolpath and the blue drawn surface (then it is the
-  nose, as above), or between the toolpath and where you expect the offset
-  contour to be (then my measurement is missing the case — say which comp mode
-  and I will measure that branch)?
+- **CONFIRMED by greatEndian: it is the tool tip nose radius**, and the
+  pre-finish pass must be compensated with the polyline's own comp method.
+- **THE MEASUREMENT ABOVE CANNOT SEE IT — it is the wrong reference.**
+  `build_stop_contour_gcode` is built **with `nose_r`**, so the `#4400` table is
+  already the tool-CENTRE reference, not the surface. A compensated path lying
+  on it is what correct looks like, so 0.0008 / 0.0047 / 0.0197 answer "is the
+  tip where the table says" and not "does the CUT land on the offset contour".
+  Recorded so the numbers are not read as evidence of correctness.
+- **All four `o<prefin>` branches already pass `#<nose_comp>`** to
+  `lathe_poly_pass` (In CAM hardcodes `[2]`, which is right for that path), and
+  the sim tools carry real noses (`D2.54` → r1.27, `D0.8` → r0.4). So the comp
+  method is wired; what is unproven is whether the resulting **surface** lands
+  on the offset contour.
+- **NEXT STEP, and it is the project's own instrument, not a new one**:
+  `prove_tip_comp.py` places the nose circle at each compensated control point
+  and asserts tangency to a target profile with no gouge. Point it at the
+  **pre-finish** pass with the offset contour as the target, in each comp mode.
+  Correct side must PASS and `--freeside` must FAIL. That answers it directly
+  where a distance-to-table comparison cannot.
 
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
