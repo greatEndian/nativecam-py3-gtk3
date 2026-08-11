@@ -2452,8 +2452,32 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     # into RADIUS before offsetting - see entry_contour. The table is written
     # in radius too, so there is no second conversion on the way out.
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
+
+    # ONE DEPTH OF CUT ABOVE THE FLOOR, not above the finished shape. This was
+    # `entry_off` alone - the roughing depth of cut - so the surface a level
+    # may begin cutting on sat one depth of cut from the FINAL contour whatever
+    # allowance had been asked for. Two of greatEndian's reports are that one
+    # fault: with the pre-finish offset zeroed the yellow entry line did not
+    # move, because it never depended on it; and with the offset at 1.0 the
+    # entry sat NEARER THE Z AXIS THAN THE PRE-FINISH SURFACE - inside the
+    # material it is supposed to stand off - because 1.0 is more than a depth
+    # of cut.
+    #
+    # The floor already stands `fin + prefin` off the profile, so the entry
+    # belongs at `fin + prefin + one depth of cut`. Anisotropic on the two
+    # allowances the same way the floor is, and the depth of cut added to both:
+    # it is one cut's worth of clearance in whatever direction the surface
+    # faces, not a radial-only quantity.
+    fin_off, fin_off_z = stock_pair(polyline_feature)
+    pf = polyline_feature.get_param('param_pf_off')
+    pf_on = polyline_feature.get_param('param_pf_on')
+    pf_off = _to_float(pf.get_ngc_value()) if pf is not None else 0.0
+    if pf_on is not None and _to_float(pf_on.get_ngc_value()) <= 0:
+        pf_off = 0.0
+    _e = _to_float(entry_off)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
-                        _to_float(entry_off), rough_dir, _nr, _or)
+                        fin_off + pf_off + _e, rough_dir, _nr, _or,
+                        fin_off_z + pf_off + _e)
     if len(env) < 2:
         return ''
     top = ENTRY_BASE + 2 * len(env)
