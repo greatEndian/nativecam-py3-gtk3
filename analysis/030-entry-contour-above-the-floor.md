@@ -117,3 +117,56 @@ The other four of greatEndian's 2026-08-11 reports are untouched: sectioning
 with a non-zero Z section length ignoring the back tool angle, sectioned passes
 crossing each other in front of the boss, roughing using the per-side offset
 instead of the separate Z one, and the missing first pass behind the boss.
+
+---
+
+## Addendum — the pre-finish pass is gated on its switch, 2026-08-11
+
+greatEndian: *"prefinish sits in the outside of offset contour/inside roughing
+path … prefinish pass needs radio button on/off and offset should be then 0.0
+and then prefinish pass will sit at offseted contour where we need it the
+most"*.
+
+### The switch did not switch
+
+`PARAM_PF_ON`'s own tooltip promised the pass ran *"independent of the
+Pre-finish offset value below"*. It did not. The cfg collapsed both into one
+number — `#3156 = [#param_pf_off * #param_pf_on]` — and `poly_lathe_mill` gated
+the pass on `o<prefin> if [#<prefin_off> GT 0]`. **An offset of 0.0 silently
+skipped the pass whatever the switch said**, which is exactly the setting
+greatEndian wants.
+
+The dependency was documented as running one way and actually ran both.
+
+### The fix is the gate, and nothing else
+
+`#3160 = #param_pf_on` is passed in its own right as arg 29, and the gate
+becomes `o<prefin> if [#<prefin_on> GT 0]`. `#3156` keeps the product, which is
+right for the *allowance*: a pass that is switched off should leave nothing
+extra for itself, so roughing's floor drops to `fin_off` alone.
+
+Nothing else was needed. The pass already runs at the roughing target, which
+with `prefin_off = 0` is `fin_off` — **the offset contour itself**, the surface
+the operator measures. And `build_prefinish_contour_gcode` was already guarded
+on `stock_pair`, the finish offset, not on the pre-finish one, so it survives a
+zero and builds that contour correctly.
+
+`polyline.cfg` → **1.49**.
+
+### Measured, testing_15_5
+
+```
+switch ON,  offset 0.254    77 pre-finish moves, 454 total
+switch ON,  offset 0.0      77 pre-finish moves, 468 total   <- was 0
+switch OFF, offset 0.254     0 pre-finish moves, 391 total
+```
+
+The switch now controls the pass and the offset only controls where it sits.
+The 468 against 454 is roughing going one allowance deeper with the pre-finish
+allowance zeroed, which is correct.
+
+### Verified
+
+`test_all_projects` (which exercises the 1.49 migration), `test_rough_comp`,
+`test_stock_to_leave`, `test_ladder`, `test_lathe_validation` (the new arg 29
+matches the signature), `cam_map`, flake8.
