@@ -952,11 +952,33 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     `eoff = ncam.TOOL_TABLE.get_rough_cut()` — **one roughing depth of cut** —
     so it sits the same distance from the profile whatever the offsets are, and
     zeroing the pre-finish offset cannot move it.
-  - **NEEDS A CALL before fixing**: is the complaint the *drawing* or the
-    *motion*? If the drawing, the entry overlay should be built from the same
-    allowance the levels actually use. If the motion, the numbers above say the
-    fault is elsewhere and this lead is a red herring. Measuring the roughed
-    surface against the final contour with `param_pf_off=0` settles it.
+  - **SETTLED BY MEASUREMENT, 2026-08-11 — the motion is right, the ENTRY
+    CONTOUR is wrong.** testing_15_5, changing only `param_pf_off`:
+
+    ```
+    pf_off=0.01   50 level cuts, deepest level X=20.0000
+    pf_off=0.0    49 level cuts, deepest level X=19.5080   0.492 deeper
+    ```
+
+    Roughing cuts closer when the pre-finish offset is zeroed, so the levels do
+    honour it. What does not is the **entry contour** — the surface a level may
+    begin cutting on. `build_entry_ramp_gcode` builds it as the profile offset
+    by `entry_off` = **one roughing depth of cut alone**
+    (`lathe_sections.py:2455`), and `ncam_preview_ui.py:1196` draws the yellow
+    dashed twin from `TOOL_TABLE.get_rough_cut()` the same way. Neither adds the
+    finish or pre-finish allowance.
+  - **It should be offset from the FLOOR, not from the final profile** — the
+    floor already stands `fin_off + prefin_off` off the profile, so the entry
+    belongs at `fin_off + prefin_off + rough_cut`. As built it sits one depth of
+    cut from the finished shape whatever the allowances are.
+  - **THIS IS ALSO THE CAUSE OF THE 1.0-OFFSET BUG BELOW.** greatEndian's
+    observation there — *"roughing entry is nearer to Z axis as the prefinish
+    surface is"* — is exactly what an entry contour that ignores the allowance
+    does once the allowance is large: at an offset of 1.0 the entry sits
+    **inside** the pre-finish surface. Two reports, one cause.
+  - Fixing it touches the entry table and the ramp directions built from it, so
+    it wants the blast radius walked first: `build_entry_ramp_gcode`,
+    `entry_ramp_dirs`, the `#<_pl_entry_*>` walkers, and the overlay.
 
 - [ ] **Roughing ignores the separate Z offset and uses the per-side offset
   instead.** Distinct from the already-recorded stop-table fault: this is
