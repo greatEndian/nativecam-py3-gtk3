@@ -2482,7 +2482,8 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 
 
 def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
-                              flank_len=0.0, clearance=0.0, orient=0):
+                              flank_len=0.0, clearance=0.0, orient=0,
+                              rough_cut=0.0):
     """Where a roughing LEVEL stops: the profile offset by the floor allowance.
 
     The subroutine used to work this out itself, offsetting every segment of
@@ -2554,7 +2555,15 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     # stopped in front of it was never resumed behind it - testing_15_5 lost
     # two passes and took a 1.524 mm bite against a 0.508 depth of cut.
     # Emitting both tables from one `env` is what makes them unable to drift.
-    renv = resume_envelope(env, 1 if rough_dir == 0 else -1)
+    li_len = polyline_feature.get_param('param_li_len')
+    li_ang = polyline_feature.get_param('param_li_ang')
+    lead_z = 0.0
+    if li_len is not None:
+        _l = _to_float(li_len.get_ngc_value())
+        _a = _to_float(li_ang.get_ngc_value()) if li_ang is not None else 45.0
+        lead_z = abs(_l * math.cos(math.radians(_a)))
+    renv = resume_envelope(env, 1 if rough_dir == 0 else -1, lead_z,
+                           rough_cut)
     if renv and RESUME_BASE + 2 * len(renv) <= RESUME_TOP:
         lines += ['(where a blocked level may plunge back in, per level. Monotone)',
                   '(by construction: a level never resumes in front of the one)',
@@ -2572,7 +2581,7 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     return '\n'.join(lines)
 
 
-def resume_envelope(contour, z_dir=1):
+def resume_envelope(contour, z_dir=1, lead_z=0.0, rough_cut=0.0):
     """Where each roughing LEVEL may plunge back in, as a function of the level.
 
     A level blocked by a boss cuts up to it, retracts, and rapids down again
@@ -2592,6 +2601,15 @@ def resume_envelope(contour, z_dir=1):
     fixes both ends at once - the material above is gone by then, and the floor
     is already below this level, so starting later gouges nothing.
 
+    `lead_z` is the Z reach of the lead-in, and it is not a detail. The rapid
+    does not land on the resume point - it lands where the LEAD-IN starts,
+    `lead_z` in FRONT of it, and a clamp that only makes the resume points
+    monotone leaves that landing spot unguarded. Measured on testing_15_2: the
+    level resumed at Z-43.5302, monotone and correct, while its 45 degree
+    lead-in began at Z-42.8231 where the level above had not yet cut, and the
+    plunge went through 0.4700 mm of metal. So the condition is
+    `R(L) + lead_z` behind `R(L_above)`, not `R(L)` behind it.
+
     Returns (level, resume_z) breakpoints, level descending, resume_z monotone.
     The breakpoints are the contour's own vertex radii: between two of them the
     first crossing stays on one segment, so the function is linear there and
@@ -2602,6 +2620,7 @@ def resume_envelope(contour, z_dir=1):
     levels = sorted({x for _z, x in contour}, reverse=True)
     out = []
     back = None
+    prev_lev = levels[0] if levels else 0.0
     for lev in levels:
         pz, px = contour[0]
         hit = None
@@ -2613,9 +2632,21 @@ def resume_envelope(contour, z_dir=1):
             pz, px = cz, cx
         if hit is None:
             continue
-        if back is not None and z_dir * (hit - back) > 0:
-            hit = back
+        # Behind the level above by at least the lead-in's own reach, so the
+        # RAPID's landing point is in cut space and not merely the resume
+        # point. IT IS A RATE, not a fixed step: these breakpoints are contour
+        # VERTICES, tens of times closer together than the 0.508 depth of cut,
+        # and subtracting a whole lead_z at each one drifted testing_15_5's
+        # envelope some 38 mm and cost it the very passes this exists to
+        # restore. The condition is lead_z of Z for every rough_cut of level.
+        limit = None
+        if back is not None:
+            span = ((prev_lev - lev) / rough_cut if rough_cut > EPS else 1.0)
+            limit = back - z_dir * lead_z * span
+        if limit is not None and z_dir * (hit - limit) > 0:
+            hit = limit
         back = hit
+        prev_lev = lev
         out.append((lev, hit))
 
     # COLLAPSE what the walker cannot tell apart. The clamp flattens long runs

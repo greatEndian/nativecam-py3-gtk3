@@ -188,3 +188,89 @@ before, and it is the reason the walker is not committed.
 
 The reported bug is therefore still present. The remaining work is one
 well-understood step, not a search.
+
+---
+
+## Addendum 2 — the per-section theory was wrong; it is the LEAD-IN, 2026-08-11
+
+greatEndian: *"do the per section envelope then"*. Building it started with
+checking the premise, and the premise was false.
+
+### Sectioning is not the discriminator
+
+`testing_15_2` and `testing_15_4` — the two projects that fail — both have
+**Sectioning = 1**. So does `testing_15_5`, which the fix repairs. Sectioning is
+on in all three, so it cannot be what separates them.
+
+### What it actually is, read off the motion
+
+```
+   rapid  X 31.8160 Z -42.8231 -> X 22.2311 Z -42.8231    <- the plunge
+   feed   X 22.2311 Z -42.8231 -> X 21.5240 Z -43.5302    <- a 45 deg lead-in
+```
+
+The level resumes at Z**-43.5302** — monotone, correct, exactly what the
+envelope promised. **The rapid does not land there.** It lands where the
+LEAD-IN starts, 0.7071 mm in FRONT of it, and at that Z the level above has not
+cut yet. Monotone resume points guarantee nothing about a point in front of
+them.
+
+So the condition is `R(L) + lead_z` behind `R(L_above)`, not `R(L)` behind it,
+with `lead_z = li_len · cos(li_ang)`.
+
+### And it is a RATE, which cost a round
+
+Subtracting a whole `lead_z` at each breakpoint sent testing_15_5 straight back
+to its broken state — topmost behind-boss level 32.1920 again. The breakpoints
+are contour **vertices**, tens of times closer together than the 0.508 depth of
+cut, so a fixed step per breakpoint accumulated roughly **38 mm** of drift.
+
+The constraint is `lead_z` of Z for every `rough_cut` of level descent:
+
+```
+limit = back - z_dir * lead_z * (prev_lev - lev) / rough_cut
+```
+
+`rough_cut` reaches the builder from `TOOL_TABLE.get_rough_cut()`, so
+`polyline.cfg` goes to **1.48** for the extra argument.
+
+### Measured, with the walker wired
+
+```
+testing_15_5  topmost behind-boss   32.1920 -> 33.2080    the reported bug, fixed
+              sectioning ON         32.1522 -> 33.1273
+test_rough_ends                     6 failures -> PASS    the plunge is safe
+```
+
+**Both at once**, which neither previous attempt managed.
+
+### Why it is still not wired
+
+Two other tests then fail, and they are a different fault:
+
+```
+test_stock_to_leave  the deepest level stops 0.7300 from the Z-70.4 wall
+                     with the axial value set to 2.000  (was 2.0000)
+test_rough_comp      r24.5720 stops at Z-69.6380, 0.2540 short of the wall
+```
+
+Both are about where a level **ENDS**, and the envelope only decides where one
+**STARTS**. The link is that `lathe_level_next_start`'s answer also drives
+`_pl_ph1_front_cut` and `sect_top_r` in `poly_lathe_mill` — it is what
+discovers the phase-1/phase-2 boundary live. Changing which levels find a
+resume therefore moves that boundary, and the deepest levels end somewhere else.
+
+That is a third consumer of this subroutine's output that nothing in the plan
+accounted for: it is not only "where does this level resume", it is also "is
+this the level where phase 1 stops". Those two questions have been answered by
+one flag, and separating them is the next step.
+
+### State left in the tree
+
+**Committed inert**: the lead-aware rate clamp, `rough_cut` plumbed through,
+`polyline.cfg` 1.48. `_pl_res_n` is written and nothing reads it, so behaviour
+is unchanged — `test_stock_to_leave`, `test_rough_comp`, `test_all_projects`,
+`test_resume_envelope`, `cam_map` and flake8 all green.
+
+**Not wired**: the walker, again — now for a reason that has nothing to do with
+resuming. The envelope itself is finished and proven against both projects.
