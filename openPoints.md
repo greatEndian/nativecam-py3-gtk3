@@ -975,6 +975,24 @@ so the drawing agrees with the motion.
   gouge 0.011187.** That is 1/36 of the r0.4 nose and chording-scale on a
   chorded target — a missing comp would show something approaching R, or the
   15.68 above. **So the nose IS compensated on the Native pre-finish pass.**
+- **In CAM is compensated correctly too**, asked for separately and proven the
+  same way:
+
+  ```
+  In CAM, freeside right   85 tangent points, gouge  0.011187, uncovered [2]
+  In CAM, freeside left                       gouge 15.676474
+  ```
+
+  The same **0.011187** as Native, tangent err 0.000977, 37 of 38 segments
+  covered. Fewer tangent points than Native's 6828 because In CAM carries the
+  offset in the PATH rather than in `G41.1`, so there are no compensated arcs to
+  sample densely — the coverage, not the point count, is what matters, and it is
+  there. Segment [2] is a 0.12 mm sliver at the very front, in the lead-in
+  region.
+  - **So both compensated modes are proven: Native and In CAM both put the
+    pre-finish surface on the offset contour to 0.0112 mm**, which is chording,
+    not nose. Only comp **Off** leaves the nose uncompensated, and it does so
+    because the whole operation is uncompensated there.
 - **The comp-OFF run cannot be read at all**, and this is the trap to remember:
   `prove_tip_comp` measures **compensated** moves, and with comp Off there are
   no `G41.1/G42.1` moves for it to find. Its "20 tangent points, 37 of 38
