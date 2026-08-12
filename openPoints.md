@@ -1037,6 +1037,46 @@ so the drawing agrees with the motion.
   Correct side must PASS and `--freeside` must FAIL. That answers it directly
   where a distance-to-table comparison cannot.
 
+## The pre-finish allowance is RADIAL ONLY — greatEndian, 2026-08-12
+
+*"why I have prefinishing offset non 0.0 roughing passes are touching the
+prefinishing contour in the Z direction (at the boss segment) and offset is only
+applied at X direction? prefinish offset has to be constant in the each axis so
+the tool will have some material to cut and not to create chattering"*.
+
+**Right, and confirmed by construction**, not by argument:
+
+| table | governs | allowance it carries |
+|---|---|---|
+| floor contour, `build_floor_contour_gcode` | the level RADII (X) | `fin + prefin` |
+| stop contour, `build_stop_contour_gcode` | where a level ENDS (Z) | **`stock_pair` = `fin` alone** |
+
+So against a boss face, a wall or a shoulder a roughing level is allowed to stop
+**on** the pre-finish surface, and the pre-finish pass arrives there with nothing
+to cut. That is a rubbing pass, and a rubbing pass chatters — a machining
+requirement, not a preference.
+
+- [ ] **FIX: the stop contour must carry `fin + prefin` too.** It must NOT go
+  back to stopping on the roughing FLOOR, which is what that table was built to
+  stop doing — the floor is rounded up to the level grid, so that left a gap of
+  up to a whole depth of cut. `fin + prefin` is the allowance actually asked
+  for, and sits between the two.
+- **Tried 2026-08-12, and it works on the isotropic case**: levels then stop
+  **0.2540** short of the wall, exactly `pf_off`, in all three comp modes.
+  `test_rough_comp`'s *"every roughing level reaches the pre-finish wall"* has
+  to become *"stops the pre-finish allowance short"* — with the bound still
+  rejecting a whole depth of cut, which is the 0.5080 fault it was written for.
+- **REVERTED, because it regresses the ANISOTROPIC case and I did not find
+  why**: `test_stock_to_leave` with the axial value at 2.000 went from stopping
+  **2.0000** off the Z−70.4 wall to **0.7300** — and 0.762 is `fin + prefin`
+  isotropic, so the axial value stops reaching the stop somewhere. Not a table
+  overflow: `_pl_stop_n = 20`, no WARNING emitted. The isotropic expectation in
+  that test also needs updating (0.508 → 0.762) once the anisotropic path works.
+- **Next step**: find where the anisotropic stop loses its axial value when the
+  pre-finish allowance is added — most likely the level SCAN, which still works
+  from the scalar `lvl_d` and is only *extended* by the table, so a larger stop
+  may fall outside the reach the scan allows.
+
 ## The preview overlays are undocumented — greatEndian, 2026-08-12
 
 *"I can not see yellow dashed line description in the help section"*, and he is
