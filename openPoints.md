@@ -1130,6 +1130,43 @@ greatEndian: the first and last roughing passes behind the boss are missing on
   by running out of material**, so its last pass must be shorter than one step —
   with a negative control that fires on the bug, and on which 15_5 still passes.
 
+## The leftover check — measure the metal, not the recipe (2026-08-12)
+
+`test_leftover.py`, greatEndian's idea. Sweeps the real nose along the roughing
+moves with `StockField` and asks whether any metal stands **more than one depth
+of cut** above the surface roughing is meant to leave. It exists because four
+turns were spent pronouncing the ladder correct from its own tables —
+breakpoints, crossings, start Zs — while material was visible in AXIS. **This is
+now the acceptance gate for any roughing change.**
+
+- Excludes, each for a recorded reason: the back-angle shadow (by taking the
+  target from the finish pass's own path, which BRIDGES it — the naive version
+  reported 5.0452 mm on the known-good baseline), near-vertical segments, stock
+  above the first pass, and spikes narrower than the nose.
+- **Negative control fires**: deleting one radius of roughing from the parsed
+  program is detected on both projects (0.6683 mm / 0.6630 mm).
+
+- [x] **THE ANSWER — testing_15_6 has NO leftover metal.** Zero wide regions on
+  both projects in both sectioning states. Roughing removes everything down to
+  its target, so **there is no missing pass behind the boss**.
+- **What is visible instead is the pre-finish band.** The projects are
+  geometrically identical and differ in one parameter — Pre-finish offset
+  **0.254 mm on 15_5 against 1.000 mm on 15_6** — so roughing stops
+  `0.508 + 0.254 = 0.762` from the part on one and `0.508 + 1.000 = 1.508` on the
+  other. **Nearly double the uncut band**, correct and asked for, but against the
+  drawn contours it reads exactly like a missing pass.
+- [ ] **NEEDS greatEndian's eye**: is the gap you see about 1.5 mm wide, and does
+  it shrink to about 0.76 mm if you set Pre-finish offset to 0.01in? If yes this
+  is closed and the setting is the answer. If the gap looks wrong even then, the
+  suspect is the DRAWING — the rough entry path (yellow-green dashed) sits at
+  `Offset + Pre-finish + one depth of cut`, which is **2.016 mm out on 15_6**
+  against 1.270 on 15_5, and that overlay has misled twice already this session.
+- The tool now prints the worst standing figure whether or not it qualifies.
+  Both projects DO have over-threshold points — 0.7219 mm at Z−19.38 on 15_5 —
+  but every one is narrower than the nose: the r0.4 nose cannot reach into the
+  shoulder at Z−19.51, which rises 0.93 mm in 0.04 mm of Z. That is a fillet the
+  pre-finish takes, not a missing pass. Reporting pass/fail alone had hidden it.
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`
