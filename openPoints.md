@@ -1252,7 +1252,23 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     what should stop it is the floor contour scan, per Z, and in mode 1 it does
     not. Look at what the level pass does in a window whose whole Z span lies
     behind an obstruction and finds no crossing — whether "no crossing" is being
-    read as "free to cut the whole window". The candidates are the back-angle shadow (`Respect tool back
+    read as "free to cut the whole window".
+  - **CONFIRMED BY READING, not yet by measurement**: when `found` is 0, `zc`
+    keeps the value `mc_zc` was initialised to — `[#<w_to> - #<z_dir>]`, just
+    past the window end — so `o<zend>` clamps `z_end` to `w_to` and the level
+    cuts the **whole window**. That is the "no crossing means free to cut" path.
+  - **The probe was placed too late to see it.** A `(debug, ...)` after
+    `o<blk> endif` returns only unblocked levels, because a blocked one takes
+    `o<lathe_level_pass> return` at `o<mc_decide>` (line ~371) well before that
+    point. What it did show is that the levels near r21 in window 0 (Z 0 to −1)
+    are legitimate: `found=1`, crossing at Z−19.87, clamped correctly to the
+    window end — that region is the front cylinder and the cut is right.
+  - **Move the probe ABOVE `o<mc_decide>`** and re-run, printing `level`,
+    `w_from`, `w_to`, `mc_wf_state`, `mc_qual_found`. The windows to read are
+    7–9, Z−45 to −70.4, at levels near r21. If those levels come back
+    `mc_wf_state = 0` (not blocked) with `found = 0`, the whole-window cut is
+    the fault and the fix is to treat "no crossing" as "nothing to cut here"
+    rather than "cut it all". The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
