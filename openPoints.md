@@ -1184,9 +1184,27 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     *"roughs all part long, also behind the boss"*, and it explains 202 cuts
     against 49 **with 23% more metal removed** — it is not cutting air, it is
     cutting where the banding would have stopped it.
-  - **FIX**: give mode 1 windows the radius bounds mode 0 derives, so a Z slice
-    still only roughs the band that belongs to it. The Z slicing and the radial
-    banding are independent and should compose, not replace each other.
+  - **THAT FIX WOULD BE WRONG — the full radius range is DELIBERATE.**
+    `build_sections_gcode` says so at the line itself: *"Artificial bounds how
+    long any single cut may be, at every depth, so its pieces deliberately apply
+    over the whole radius range - see this function's own docstring for why it
+    must not be merged"*, and the docstring gives the reason: a Z section length
+    caps **how long a single continuous cut can ever be, for chatter and
+    rigidity**, which only means anything if it applies at every depth. Adding
+    banding would merge the two modes against an explicit warning not to.
+  - **SO THE REAL FAULT IS THE 23%, NOT THE PASS COUNT.** More passes is what
+    slicing is FOR: 202 short passes instead of 49 long ones is the feature
+    working. **Removing 1296.2 mm of cut where 1052.6 does the same job is
+    not** — the same part with the same allowances must yield the same metal
+    however the cut is sliced. That is the number to drive to parity, and the
+    pass count should be left alone.
+  - **Where to look**: mode 1 cuts 23% more, so it is reaching material mode 0
+    excludes. The candidates are the back-angle shadow (`Respect tool back
+    angle` is on in this project) and the stop contour — i.e. whether a mode 1
+    window consults the reachable contour and the stop at all, or only its Z
+    span. **The test to write first** is the invariant, not a fix: *total cut
+    length is independent of `sec_len`*, which would have caught this the day
+    sectioning was built and is the acceptance criterion for the fix.
   - **Not started** — scoped only. It is in `build_sections_gcode`, and the
     verification is the same pair of numbers: pass count and total cut length
     should fall back toward the `sec_len 0` figures, with the Z slicing still
