@@ -81,6 +81,38 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     first interval does. One question, one place, 2.0000 against 0.7300. The
     walker is in `7760ed5`'s commit message and the split in `1b7db0b`'s.
 
+  - **RE-TRIED 2026-08-12 after `3df0a4c`. The 4th blocker IS GONE.** That
+    blocker was the deepest level stopping **0.7300** from the wall instead of
+    2.000, caused by a clamped stop candidate extending the cut — and
+    `3df0a4c`'s *"a clamped candidate may not extend the cut"* removed exactly
+    that mechanism. With the walker and the flag split wired:
+
+    ```
+    test_stock_to_leave   PASS      was the blocker, now clean
+    test_rough_ends       PASS
+    cam_map               PASS
+    ```
+
+  - **But a FIFTH fault appears, and it is a hard stop.** `test_rough_comp`:
+
+    ```
+    Off     overcuts 7.6277 mm past the pre-finish contour
+    Native  overcuts 7.4133 mm
+    In CAM  overcuts 7.4133 mm
+    ```
+
+    against a 0.0800 bound. Roughing eats **7.6 mm** of the surface the operator
+    measures — far worse than the missing pass it fixes, so it is reverted
+    again. Note the size: 7.4–7.6 mm is the same order as the 7.1421 mm the
+    sectioning comparison showed behind the boss, so the two are probably the
+    same phenomenon — resumed intervals cutting deep where the profile drops to
+    r20 — and fixing one may fix both.
+  - **Next**: find why a resumed interval's cut end is 7.6 mm past the
+    pre-finish contour. The stop machinery is now known-good for FIRST intervals
+    (`3df0a4c` proved it on both isotropic and axial cases), so the question is
+    what a resumed interval does differently — the same shape of question the
+    `s_zc/z_end/s_reach` probe answered, and the same probe will answer it.
+
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
   walks which table*. It passed clean through the whole of `analysis/029`.
