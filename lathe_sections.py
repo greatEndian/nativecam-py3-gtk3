@@ -2710,7 +2710,13 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     allowance and the stop is looked up here.
     """
     fin_off, fin_off_z = stock_pair(polyline_feature)
-    if max(fin_off, fin_off_z) <= 0:
+    pf = polyline_feature.get_param('param_pf_off')
+    pf_on = polyline_feature.get_param('param_pf_on')
+    pf_off = _to_float(pf.get_ngc_value()) if pf is not None else 0.0
+    if pf_on is not None and _to_float(pf_on.get_ngc_value()) <= 0:
+        pf_off = 0.0
+    stop_x, stop_z = fin_off + pf_off, fin_off_z + pf_off
+    if max(stop_x, stop_z) <= 0:
         return ''
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
                                clearance)
@@ -2720,7 +2726,7 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
-                        fin_off, rough_dir, _nr, _or, fin_off_z)
+                        stop_x, rough_dir, _nr, _or, stop_z)
     if len(env) < 2:
         return ''
     top = STOP_BASE + 2 * len(env)

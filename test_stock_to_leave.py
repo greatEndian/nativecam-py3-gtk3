@@ -179,14 +179,34 @@ def main():
                             'polyline:param_f_off=0.508',
                             'polyline:param_f_off_sep=1',
                             'polyline:param_f_off_z=2.0'])
-            check('roughing leaves the AXIAL allowance on a wall',
-                  ani is not None and abs(ani - 2.0) < 0.05,
-                  'the deepest level stops %.4f from the Z-70.4 wall with the '
-                  'axial value set to 2.000 - the level scan is using one '
-                  'scalar allowance again' % (ani if ani is not None else -1))
-            check('   and the isotropic case is where it always was',
-                  iso is not None and abs(iso - 0.508) < 0.05,
-                  'stops %.4f, expected 0.508' % (iso if iso is not None else -1))
+            # THE ALLOWANCE ROUGHING LEAVES IS fin + prefin, ON EVERY AXIS.
+            #
+            # These expected 2.000 and 0.508 - the FINISH offset alone - which
+            # encoded a real fault as correct. The stop contour carried
+            # `stock_pair` while the floor contour carried `fin + prefin`, so
+            # the pre-finish allowance existed on the diameters and not on the
+            # walls: a level was allowed to stop ON the pre-finish surface in
+            # Z, and the pre-finish pass reached a boss face or a wall with
+            # nothing to cut. greatEndian, 2026-08-12: "prefinish offset has to
+            # be constant in the each axis so the tool will have some material
+            # to cut and not create chattering" - a rubbing pass chatters and
+            # leaves a worse surface than the one it was sent to improve.
+            #
+            # So both numbers gain the 0.254 pre-finish offset this project
+            # carries, and the ISOTROPIC one is the tighter test of the two:
+            # it is the case where a radial-only allowance looks right.
+            PF = 0.254
+            check('roughing leaves the AXIAL allowance on a wall, plus the '
+                  'pre-finish',
+                  ani is not None and abs(ani - (2.0 + PF)) < 0.05,
+                  'the deepest level stops %.4f from the Z-70.4 wall, expected '
+                  '%.4f - the axial value plus the pre-finish allowance'
+                  % (ani if ani is not None else -1, 2.0 + PF))
+            check('   and the isotropic case leaves it too',
+                  iso is not None and abs(iso - (0.508 + PF)) < 0.05,
+                  'stops %.4f, expected %.4f - a stop on the finish offset '
+                  'alone leaves the pre-finish pass nothing to cut in Z'
+                  % (iso if iso is not None else -1, 0.508 + PF))
 
             base = gen('base', [])
             offb = gen('sep_off', ['polyline:param_f_off_z=0.1'])

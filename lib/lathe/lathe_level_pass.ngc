@@ -568,6 +568,7 @@ o<lathe_level_pass> sub
 	(is left alone and the stop is looked up in a table lathe_sections built)
 	(at generation time. Bounded by w_to, and only ever extended - never)
 	(pulled back - so a level cannot reach further than its window allows.)
+	#<z_end_scan> = #<z_end>
 	o<stp> if [[#<_pl_stop_n> GT 0] AND [#<found>]]
 		#<s_i>    = 0
 		#<s_best> = 0
@@ -688,8 +689,22 @@ o<lathe_level_pass> sub
 			#<s_pz> = #<s_cz>
 			#<s_px> = #<s_cx>
 		o<s_w> endwhile
+		(A CLAMPED CANDIDATE MUST NOT EXTEND THE CUT. A clamp is a guess at)
+		(reach - z_end plus or minus s_reach - not a measured crossing, so it)
+		(may pull a cut IN to a feature the scan could not see, but it may)
+		(never push one PAST where the scan already stopped.)
+		(Measured on testing_15_2 with the axial allowance at 2.000, once the)
+		(stop contour carries the pre-finish allowance and so coincides with)
+		(the floor: the scan correctly ended at Z-68.146, 2.254 from the wall,)
+		(and a clamped candidate with no real crossing behind it - bcl=1 -)
+		(dragged it to Z-69.670, exactly z_end minus the 1.524 reach, cutting)
+		(to 0.730 from a wall told to keep 2.254.)
 		o<s_ok> if [#<s_have>]
-			#<z_end> = #<s_best>
+			o<s_push> if [[#<s_bcl> GT 0] AND [[#<z_dir> * [#<s_best> - #<z_end_scan>]] LT 0]]
+				(clamped, and it would cut further than the scan - ignore it)
+			o<s_push> else
+				#<z_end> = #<s_best>
+			o<s_push> endif
 		o<s_ok> endif
 	o<stp> endif
 

@@ -227,12 +227,40 @@ def main():
             lv = [(m.a[0], m.b[2]) for m in rgh
                   if abs(m.b[0] - m.a[0]) < 1e-6 and m.b[2] < m.a[2] - 1e-6]
             back = [(r, z) for r, z in lv if z < wall + 2.0]
-            short = [(r, z) for r, z in back if z - wall > 0.01]
-            check('%-7s every roughing level reaches the pre-finish wall'
-                  % label, not short,
-                  'r%.4f stops at Z%.4f, %.4f short of the wall at Z%.4f'
-                  % (short[0][0], short[0][1], short[0][1] - wall, wall)
-                  if short else '')
+            # A LEVEL MUST STOP THE PRE-FINISH ALLOWANCE SHORT OF THE WALL,
+            # not ON it, which is what this asserted before.
+            #
+            # The stop contour carried the finish offset alone, so the Z end of
+            # a level landed exactly on the pre-finish surface while the FLOOR
+            # contour, which sets the radii, carried `fin + prefin`. The
+            # allowance existed in X and not in Z, and against a boss face the
+            # pre-finish pass arrived with nothing to cut. greatEndian,
+            # 2026-08-12: "prefinish offset has to be constant in the each axis
+            # so the tool will have some material to cut and not create
+            # chattering."
+            #
+            # What this check was written for is UNCHANGED and still caught: a
+            # level stopping a whole DEPTH OF CUT short, which the nose shifting
+            # the stop contour's open end once produced - 0.5080 on
+            # photo/leadOutIssue_1.png. So the bound is the pre-finish allowance
+            # plus a margin, and it still rejects a depth of cut. The second
+            # check is the new half: nothing may cut INTO that allowance.
+            pf_allow = 0.254
+            band = pf_allow + 0.06
+            short = [(r, z) for r, z in back if z - wall > band]
+            over = [(r, z) for r, z in back if z - wall < pf_allow - 0.06]
+            check('%-7s every roughing level stops the pre-finish allowance '
+                  'short of the wall' % label, not short,
+                  'r%.4f stops at Z%.4f, %.4f short of the wall at Z%.4f - '
+                  'more than the %.4f allowance, so a level is ending early'
+                  % (short[0][0], short[0][1], short[0][1] - wall, wall,
+                     pf_allow) if short else '')
+            check('   %-7s and none of them cuts INTO that allowance' % label,
+                  not over,
+                  'r%.4f reaches Z%.4f, only %.4f from the wall - the '
+                  'pre-finish pass has nothing to cut there'
+                  % (over[0][0], over[0][1], over[0][1] - wall)
+                  if over else '')
 
         # AND EVERY PASS BEHIND THE BOSS ARRIVES ALONG THE PROFILE ANGLE.
         # greatEndian: "the last pass lead in behind the boss segment has wrong
