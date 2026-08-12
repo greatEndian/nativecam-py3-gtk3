@@ -143,13 +143,30 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     The same guard is in the `wffl` O-code probe, so its 20.762 reading carries
     the same caveat — it was still enough to show the block test working, but
     neither probe can see a wall.
-  - **So the fix is about the contour's END, not the scan.** Either the floor
-    contour must carry its closing wall so a level meets a rise there, or the
-    resumed interval must be clipped to where the stop contour allows. The first
-    is Python and a table; the second is another runtime rule. Given
-    `build_floor_contour_gcode` already ends at Z−69.638 while the stop contour
-    reaches the wall, the two tables disagreeing at their ends is the thing to
-    look at first.
+  - **THAT CONCLUSION WAS WRONG TOO — the contour ALREADY carries its closing
+    wall.** The last points of the floor contour, unfiltered:
+
+    ```
+    Z -69.6380  X 20.7620
+    Z -69.6380  X 35.1657     <- the wall, present as a vertical segment
+    ```
+
+    So "the floor contour lacks its end wall" is false, and the edit it implied
+    was not made. The reading came from the probe's blindness to vertical
+    segments returning the wall's FOOT.
+  - **And the scan does see it.** `o<mcf_w>`'s crossing test is
+    `fc_px < l_eff <= fc_cx`, which needs no dz and fires on that segment
+    (20.762 < 21.017 <= 35.1657), giving a crossing at Z−69.638. The level is
+    stopped at the wall's foot, which is correct.
+  - **So the 7.6 mm is still unexplained, and BOTH measurements of it are
+    suspect** — mine for the vertical-segment guard, and `test_rough_comp`'s
+    because it reports its worst point at the same wall. **Before any further
+    fix, establish what the correct tool position at Z−69.638 actually is**: a
+    level at r21 stopping at the foot of a wall that rises to r35 is either
+    right (it cut up to the wall) or wrong (it should have stopped short by the
+    allowance), and the two readings of "overcut" disagree because they measure
+    distance to a contour that is vertical there. Settle the geometry first;
+    every number taken at that wall so far is unreliable.
   - **Superseded next probe**: ask `test_rough_comp` WHERE its worst overcut is — it
     already computes the point (it prints `at Z0.3` for the small cases) — then
     read the floor contour's radius at that Z and compare with the level. That
