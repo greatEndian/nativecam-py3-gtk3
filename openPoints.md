@@ -1142,12 +1142,28 @@ operator measures it, dials in a compensation, and only then runs the finish
 pass. A roughing or pre-finish pass that lands somewhere other than where the
 offsets say destroys that measurement, which is why these are not cosmetic.
 
-- [ ] **Sectioning ON with a non-zero Z section length ignores the back tool
-  angle, and roughs the WHOLE part length** — including behind the boss segment.
-  The artificial sectioning is cutting where the tool's back angle says it
-  cannot reach. Both halves need checking: whether the section windows are built
-  without consulting the reachable contour at all, and why the run extends
-  behind the boss.
+- [ ] **Sectioning ON with a non-zero Z section length roughs FOUR TIMES the
+  passes.** Measured on testing_15_5, changing only `param_sec_len`:
+
+  ```
+  sec_len  0.0    49 level cuts   1052.6 mm cut   14 behind the boss
+  sec_len 10.0   202 level cuts   1296.2 mm cut   82 behind the boss
+  ```
+
+  **4.1x the passes for 1.23x the metal**, which is the *"roughs all part long"*
+  greatEndian reports. Extra passes that remove almost nothing means the
+  artificial sections are overlapping and re-cutting ground already covered —
+  and that is very likely the same fault as the crossed, randomly-offset passes
+  in the item below, seen from the other side.
+  - **The back-angle half is NOT confirmed.** *Respect tool back angle* is `1`
+    in that project, so it is asked for. A first probe read `flank_n=0` and
+    `sect_n=0`, but those used the wrong global names — the sections table emits
+    `_pl_sect_count`/`_pl_sect_mode` — so both zeros are meaningless and prove
+    nothing either way. Re-probe with the real names before concluding anything
+    about the back angle.
+  - **Next**: dump the section windows actually produced at `sec_len 10` and
+    check them for overlap. If consecutive windows share span, the re-cutting is
+    explained and the fix is where the windows are built, not in the level pass.
 
 - [ ] **Sectioned roughing passes in FRONT of the boss have mixed, crossing
   paths, offset randomly from each other.** Sectioning on. The passes are not a
