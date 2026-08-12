@@ -1167,6 +1167,57 @@ now the acceptance gate for any roughing change.**
   shoulder at Z−19.51, which rises 0.93 mm in 0.04 mm of Z. That is a fillet the
   pre-finish takes, not a missing pass. Reporting pass/fail alone had hidden it.
 
+## The first pass after the boss — FIXED, 2026-08-12
+
+greatEndian reported it three times on `testing_15_6.xml`, latterly with
+`photo/firstPassMissingBehindBoss.png`. Two agents and the coordinator each
+concluded from the tables that nothing was missing. All three were wrong.
+
+- [x] **FIXED**, `analysis/036`. `lathe_level_pass`'s stop table accepted a
+  **falling** crossing as a place to extend a cut to. A falling crossing is
+  where the level LEAVES blocked territory, so extending to it sweeps straight
+  through the blockage. Measured: level 34.063647 was correctly stopped by the
+  scan at Z−31.209182 on the dome's rising flank, then extended **3.3816 mm**
+  to Z−34.590818, cutting through the dome and losing its whole behind-dome
+  interval — the step across the dome was **0.9363 = 2 × the 0.4682 ladder
+  step**, and the next level down took double depth.
+  - `s_reach` could not stop it: it is `3 × doc` = 1.524 mm, but its slope term
+    reaches ~4.5 mm on the dome's shallow flank. **The right bound is direction,
+    not distance** — the crossing must now ENTER blocked territory, the same
+    convention `o<mcf_w>` already uses for `dirup`. One line in
+    `lib/lathe/lathe_level_pass.ngc`; no Python, cfg or parameter change.
+  - **Why every test passed**: the level cut *through* the dome, gouging at most
+    0.1005 mm into a floor allowance standing 1.508 mm above the part. The part
+    was never touched, so `test_rough_comp` saw no overcut and `test_leftover`
+    saw no metal standing — the next level down removed it.
+  - After: levels behind the dome are 34.5318, **34.0636**, 33.5965 with regular
+    0.4682/0.4671 steps. `testing_15_5` unchanged at 33.2080 / 33.1273.
+
+- [x] **`test_x_continuity.py`** — greatEndian's own check: compare each level's
+  X with the next and flag any step that is not one depth of cut. Shipped with
+  two corrections the measurements forced:
+  - **one-sided**, because `Space passes from = Final contour` anchors the
+    ladder and makes the top step of a region a legitimate remainder (0.4682,
+    0.4671 against a 0.5080 doc). Only a step that EXCEEDS the doc is a fault.
+  - **positional**. Matching each pass with the next one down whose Z span
+    overlaps it could not see this bug — the full-length pass overlaps 34.0636
+    *in front of* the dome, so the gap *behind* it was never examined, and it
+    reported 0.0000 on a program with a missing pass. It now walks Z and
+    compares the levels cutting at each station.
+  - Validated both ways: FAILs with the fix reverted (`X34.5318 -> X33.5955 gap
+    0.9363 at Z-37.5000`), passes with it applied, negative control fires.
+
+- [ ] **Noted, not fixed**: the front interval of the first blocked level is
+  emitted **twice** — identical moves, `34.0636 0.0000 -> -31.2092` here.
+  Pre-existing, follows whichever level is first blocked, costs an air-cutting
+  repeat rather than any wrong metal.
+
+- **The lesson.** Three checks in a row looked at the passes that EXIST and
+  found them regular. A missing pass is only visible if you ask which levels are
+  ABSENT — dumping the whole ladder sorted by X, front and behind intervals side
+  by side, showed it in one line. Prefer a measurement that enumerates what
+  should be there over one that inspects what is.
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`

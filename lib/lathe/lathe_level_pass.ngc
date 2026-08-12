@@ -595,7 +595,22 @@ o<lathe_level_pass> sub
 					#<s_fz> = #<s_pz>
 				o<s_fl2> endif
 			o<s_fl> endif
-			o<s_cross> if [[[#<s_px> - #<l_eff>] * [#<s_cx> - #<l_eff>]] LT 0]
+			(ONLY A CROSSING THAT ENTERS BLOCKED TERRITORY MAY STOP A CUT.)
+			(This was a bare sign change, so it also accepted the crossing where)
+			(the contour falls back BELOW the level - the point at which the level)
+			(LEAVES a blockage. Extending a cut to that point means sweeping)
+			(straight through the material in between, which is the very thing the)
+			(reach bound above exists to prevent; the slope term simply lets it)
+			(through on a shallow flank.)
+			(Measured on testing_15_6, a dome peaking at X34.1641: level 34.063647)
+			(was correctly stopped by the scan at Z-31.209182 on the rising flank,)
+			(then extended 3.3816 mm to Z-34.590818 - the FALLING crossing - so it)
+			(cut through the dome and its whole behind-the-dome interval was lost,)
+			(leaving the next level down to take double depth there. greatEndian)
+			(reported it three times as the first pass after the boss missing.)
+			(Same convention as the multi-crossing walk's dirup in o<mcf_w>:)
+			(previous point below the level, current point at or above it.)
+			o<s_cross> if [[#<s_px> LT #<l_eff>] AND [#<s_cx> GE #<l_eff>]]
 				#<s_z> = [#<s_pz> + [#<s_cz> - #<s_pz>] * [#<l_eff> - #<s_px>] / [#<s_cx> - #<s_px>]]
 				(only a crossing further along the cut than the scan found,)
 				(and still inside the window - the nearest such)
