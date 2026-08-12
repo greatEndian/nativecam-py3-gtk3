@@ -107,8 +107,30 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     sectioning comparison showed behind the boss, so the two are probably the
     same phenomenon — resumed intervals cutting deep where the profile drops to
     r20 — and fixing one may fix both.
-  - **Next**: find why a resumed interval's cut end is 7.6 mm past the
-    pre-finish contour. The stop machinery is now known-good for FIRST intervals
+  - **PROBED 2026-08-12 — the resumed interval's STOP is not the fault.** With
+    the walker wired, on testing_15_2:
+
+    ```
+    SP lvl=29.889397 wf=-49.304342 wt=-70.400000 scan=-69.638000 have=0 bcl=0
+    ```
+
+    `wf=-49.304` is a resumed interval; the scan ends at **Z−69.638**, which is
+    0.762 from the Z−70.4 wall and correct; `have=0` means the stop table
+    offered no candidate at all, so the stop block does nothing and `z_end`
+    stays where the scan put it. Nothing about that end is 7.6 mm wrong.
+  - **So the overcut is RADIAL, not axial.** `test_rough_comp` measures the
+    worst distance past the pre-finish CONTOUR anywhere, not the standoff at the
+    wall — so a 7.6 mm figure means a level is cutting 7.6 mm inside that
+    surface somewhere along its span, while ending in the right place. The
+    resumed interval above runs r29.889 from Z−49.3 to −69.638; if the profile
+    rises above r29.889 anywhere in that span, the level is inside the part for
+    part of its run and the scan did not stop it.
+  - **Next probe**: ask `test_rough_comp` WHERE its worst overcut is — it
+    already computes the point (it prints `at Z0.3` for the small cases) — then
+    read the floor contour's radius at that Z and compare with the level. That
+    is the same one-point question the `wffl` probe answered for the block test,
+    and it says immediately whether the scan is missing a rise or the level
+    should never have been admitted. The stop machinery is now known-good for FIRST intervals
     (`3df0a4c` proved it on both isotropic and axial cases), so the question is
     what a resumed interval does differently — the same shape of question the
     `s_zc/z_end/s_reach` probe answered, and the same probe will answer it.
