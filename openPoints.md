@@ -1161,9 +1161,36 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     `_pl_sect_count`/`_pl_sect_mode` — so both zeros are meaningless and prove
     nothing either way. Re-probe with the real names before concluding anything
     about the back angle.
-  - **Next**: dump the section windows actually produced at `sec_len 10` and
-    check them for overlap. If consecutive windows share span, the re-cutting is
-    explained and the fix is where the windows are built, not in the level pass.
+  - **DUMPED 2026-08-12 — there is NO overlap. The windows carry no RADIUS
+    bound.** `_pl_sect_mode` differs between the two:
+
+    ```
+    sec_len 10.0  mode=1, 10 windows, contiguous in Z, no overlap:
+        Z  0.0000 ->  -1.0000    r 0.0000 .. 1000000.0000
+        Z -1.0000 -> -10.5000    r 0.0000 .. 1000000.0000    <- FULL radius range
+        ... every window the same
+
+    sec_len 0.0   mode=0, 8 windows, banded BY RADIUS:
+        Z  0.0000 -> -70.4000    r 65.3182 .. 1000000.0000
+        Z  0.0000 -> -32.5000    r 40.0000 ..   65.3182
+        Z -32.5000 -> -70.4000   r 40.0000 ..   65.3182
+    ```
+
+    In mode 0 a window is a Z span **within a radius band**, so two windows may
+    share a Z span legitimately — a naive overlap check flags those as false
+    positives, and mine did. In **mode 1 every window spans `0 .. 1e6`**, so each
+    Z slice is roughed from the stock OD downward whatever is actually there,
+    while mode 0's banding confines each window to its own band. That is the
+    *"roughs all part long, also behind the boss"*, and it explains 202 cuts
+    against 49 **with 23% more metal removed** — it is not cutting air, it is
+    cutting where the banding would have stopped it.
+  - **FIX**: give mode 1 windows the radius bounds mode 0 derives, so a Z slice
+    still only roughs the band that belongs to it. The Z slicing and the radial
+    banding are independent and should compose, not replace each other.
+  - **Not started** — scoped only. It is in `build_sections_gcode`, and the
+    verification is the same pair of numbers: pass count and total cut length
+    should fall back toward the `sec_len 0` figures, with the Z slicing still
+    visible as more, shorter passes rather than more metal.
 
 - [ ] **Sectioned roughing passes in FRONT of the boss have mixed, crossing
   paths, offset randomly from each other.** Sectioning on. The passes are not a
