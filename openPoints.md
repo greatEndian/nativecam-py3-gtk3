@@ -1211,7 +1211,32 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     — an over-cut, not a strategy difference, and the part is not the same part.
     The +23% in cut length overstated it because some of that travel is empty;
     **14.6% is the real number** and it is the one to drive to zero.
-  - **Where to look**: mode 1 is reaching material mode 0 excludes. The candidates are the back-angle shadow (`Respect tool back
+  - **LOCALISED, 2026-08-12.** Per-column comparison of the two stock fields:
+
+    ```
+    279 of 780 columns differ, ALL behind the boss (Z-45 .. -70)
+    Z-52.150   sec_len 0 leaves r28.1439   sec_len 10 leaves r21.0018
+                                           7.1421 mm deeper
+    ```
+
+    So a slice behind the boss is roughed down to roughly the depth the FRONT of
+    the part reaches — into the taper, not into stock.
+  - **The data for the fix is computed and thrown away.** In
+    `build_sections_gcode`, `split_by_length` returns each piece's own minimum
+    radius and the next line discards it:
+    `ordered = [(z_from, z_to) for z_from, z_to, _min_x in pieces]`, after which
+    `windows = [(z_from, z_to, 0.0, BAND_ALL) ...]` gives every slice `r_lo = 0`.
+  - **BUT PASSING IT THROUGH CHANGES NOTHING** — tried, and the volume figures
+    came back identical to the digit, so the O-code's mode-1 path does not bound
+    its depth by the window's `r_lo`. Reverted rather than left as a comment
+    claiming a fix it does not make.
+  - **The fix is in `poly_lathe_mill:534`**, the `o<mode_chk> if [#<_pl_sect_mode>
+    EQ 1]` branch, which sets `#<lvl_start> = #<start_radius>` for every window
+    — *"every window always starts completely fresh at the full start_radius"*.
+    That is right for the START of the ladder and is what the design intends;
+    what is missing is the ladder's **END**, which must be that window's own
+    `#<w_rlo>` rather than the global floor. Both halves need doing together:
+    the Python line above, and a depth bound in this branch. The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
