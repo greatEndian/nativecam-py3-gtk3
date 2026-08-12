@@ -125,7 +125,32 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     resumed interval above runs r29.889 from Z−49.3 to −69.638; if the profile
     rises above r29.889 anywhere in that span, the level is inside the part for
     part of its run and the scan did not stop it.
-  - **Next probe**: ask `test_rough_comp` WHERE its worst overcut is — it
+  - **PROBED 2026-08-12 — the overcut is at the contour's OPEN END:**
+
+    ```
+    worst overcut 8.9840 mm at Z-69.6380
+      tool X 21.0160   stop contour X 30.0000   floor contour X 20.7620
+    ```
+
+    Z−69.638 is the **last point of the floor contour**. The resumed level runs
+    to the end of the table and stops there, but the end WALL is at that Z and
+    the stop contour reads 30.0 — so the level finishes about 9 mm inside the
+    wall. The scan cannot stop it because the table it walks ends exactly there;
+    there is no rise left in the data to cross.
+  - **A CAUTION ON BOTH PROBES: vertical segments are skipped.** The
+    interpolator guards with `abs(zb - za) > 1e-9` and an end wall has
+    `zb == za`, so it returns the wall's FOOT (20.7620) rather than its face.
+    The same guard is in the `wffl` O-code probe, so its 20.762 reading carries
+    the same caveat — it was still enough to show the block test working, but
+    neither probe can see a wall.
+  - **So the fix is about the contour's END, not the scan.** Either the floor
+    contour must carry its closing wall so a level meets a rise there, or the
+    resumed interval must be clipped to where the stop contour allows. The first
+    is Python and a table; the second is another runtime rule. Given
+    `build_floor_contour_gcode` already ends at Z−69.638 while the stop contour
+    reaches the wall, the two tables disagreeing at their ends is the thing to
+    look at first.
+  - **Superseded next probe**: ask `test_rough_comp` WHERE its worst overcut is — it
     already computes the point (it prints `at Z0.3` for the small cases) — then
     read the floor contour's radius at that Z and compare with the level. That
     is the same one-point question the `wffl` probe answered for the block test,
