@@ -2547,7 +2547,8 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     # finish_profile instead changed which surface roughing stops against and
     # cost testing_15_2 nine of its 29 levels - the only thing that may change
     # here is the ALLOWANCE.
-    pts = resolve_points(polyline_feature)
+    pts, _soft = finish_profile(polyline_feature, back_deg, nose_r,
+                                flank_len, clearance)
     if not pts or len(pts) < 2:
         return ''
     d = polyline_feature.get_param('param_dir')

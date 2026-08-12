@@ -759,10 +759,19 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl> if [#<_level_blocked>]
                                                         o<mx_chk> if [#<_pl_multi_cross> GT 0]
                                                                 o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>]
-                                                                o<more_blk> if [#<_pl_resume_found> EQ 0]
+                                                                (where an interval STARTS comes from the envelope; whether phase 1)
+                                                                (stops here is answered by the scan above and is left alone)
+                                                                o<pick_more_blk> if [#<_pl_res_n> GT 1]
+                                                                	#<r_found> = #<_pl_env_found>
+                                                                	#<r_z>     = #<_pl_env_z>
+                                                                o<pick_more_blk> else
+                                                                	#<r_found> = #<_pl_resume_found>
+                                                                	#<r_z>     = #<_pl_resume_z>
+                                                                o<pick_more_blk> endif
+                                                                o<more_blk> if [#<r_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<more_blk> else
-                                                                        #<l_fr> = #<_pl_resume_z>
+                                                                        #<l_fr> = #<r_z>
                                                                 o<more_blk> endif
                                                         o<mx_chk> else
                                                                 (multi-crossing off: exact existing behavior -)
@@ -774,10 +783,19 @@ o<poly_lathe_mill> sub
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mx_chk2> if [#<_pl_multi_cross> GT 0]
                                                                 o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
-                                                                o<more> if [#<_pl_resume_found> EQ 0]
+                                                                (where an interval STARTS comes from the envelope; whether phase 1)
+                                                                (stops here is answered by the scan above and is left alone)
+                                                                o<pick_more> if [#<_pl_res_n> GT 1]
+                                                                	#<r_found> = #<_pl_env_found>
+                                                                	#<r_z>     = #<_pl_env_z>
+                                                                o<pick_more> else
+                                                                	#<r_found> = #<_pl_resume_found>
+                                                                	#<r_z>     = #<_pl_resume_z>
+                                                                o<pick_more> endif
+                                                                o<more> if [#<r_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<more> else
-                                                                        #<l_fr> = #<_pl_resume_z>
+                                                                        #<l_fr> = #<r_z>
                                                                 o<more> endif
                                                         o<mx_chk2> else
                                                                 o<wh_lvl> break

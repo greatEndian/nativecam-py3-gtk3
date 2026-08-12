@@ -119,4 +119,38 @@ o<lathe_level_next_start> sub
 		o<inwin> endif
 	o<wclip> endif
 
+	(THE ENVELOPE'S OWN ANSWER, reported separately from the scan's, so that)
+	(improving WHERE a level resumes cannot move WHETHER phase 1 stops here.)
+	#<_pl_env_found> = 0
+	#<_pl_env_z> = 0
+	o<renv> if [#<_pl_res_n> GT 1]
+		#<re_top> = #[#<_pl_res_base>]
+		o<re_above> if [#<level> LE [#<re_top> + 0.000001]]
+			#<re_i> = 0
+			#<re_z> = #[#<_pl_res_base> + [#<_pl_res_n> - 1] * 2 + 1]
+			o<re_w> while [#<re_i> LT [#<_pl_res_n> - 1]]
+				#<re_l0> = #[#<_pl_res_base> + #<re_i> * 2]
+				#<re_l1> = #[#<_pl_res_base> + [#<re_i> + 1] * 2]
+				o<re_hit> if [[#<level> LE [#<re_l0> + 0.000001]] AND [#<level> GE [#<re_l1> - 0.000001]]]
+					#<re_z0> = #[#<_pl_res_base> + #<re_i> * 2 + 1]
+					#<re_z1> = #[#<_pl_res_base> + [#<re_i> + 1] * 2 + 1]
+					o<re_lin> if [ABS[#<re_l1> - #<re_l0>] GT 0.000001]
+						#<re_z> = [#<re_z0> + [#<re_z1> - #<re_z0>] * [#<level> - #<re_l0>] / [#<re_l1> - #<re_l0>]]
+					o<re_lin> else
+						#<re_z> = #<re_z0>
+					o<re_lin> endif
+					#<re_i> = #<_pl_res_n>
+				o<re_hit> else
+					#<re_i> = [#<re_i> + 1]
+				o<re_hit> endif
+			o<re_w> endwhile
+			o<re_past> if [[#<z_dir> * [#<re_z> - #<search_from>]] LT [-#<resume_margin>]]
+				o<re_win> if [[#<z_dir> * [#<re_z> - #<w_to>]] GE 0]
+					#<_pl_env_found> = 1
+					#<_pl_env_z> = #<re_z>
+				o<re_win> endif
+			o<re_past> endif
+		o<re_above> endif
+	o<renv> endif
+
 o<lathe_level_next_start> endsub

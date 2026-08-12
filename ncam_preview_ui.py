@@ -1211,16 +1211,23 @@ class NCamPreviewMixin(object):
                                                  nr, orn, _ez + _pfv + _e)
                 entry = _dia(e) if e and len(e) >= 2 else None
 
-            # the STOP is the pre-finish contour, which is param_f_off alone -
-            # build_stop_contour_gcode does not add the pre-finish offset, and
-            # adding it here would draw a line one allowance out from the one
-            # the levels actually stop on
-            # and BOTH allowances, the same way build_stop_contour_gcode takes
-            # them - this curve is the drawn twin of that table and has to move
-            # with it. From param_f_off alone it stayed on the plain profile
-            # offset while the program held 2.000 on the walls: greatEndian,
-            # the orange dashed one.
+            # The STOP curve is the drawn twin of build_stop_contour_gcode and
+            # takes exactly what that table takes: BOTH allowances, and the
+            # PRE-FINISH one too. It used to take `stock_pair` alone, which was
+            # right until the stop contour gained `fin + prefin` so that the
+            # pre-finish pass has material to cut on a wall as well as on a
+            # diameter - after that the drawing sat 0.2540 inside the line the
+            # levels actually stop on, and test_rough_overlay measured exactly
+            # that. A drawing that disagrees with the table is worse than no
+            # drawing: it is what sent several rounds of this investigation
+            # after faults that were only ever on screen.
             soff, soff_z = lathe_sections.stock_pair(f)
+            _spf = f.get_param('param_pf_off')
+            _spfon = f.get_param('param_pf_on')
+            _spfv = float(_spf.get_ngc_value()) if _spf is not None else 0.0
+            if _spfon is not None and float(_spfon.get_ngc_value()) <= 0:
+                _spfv = 0.0
+            soff, soff_z = soff + _spfv, soff_z + _spfv
             if max(soff, soff_z) > 0:
                 sc = lathe_sections.entry_contour(rad, soff, rdir, nr, orn,
                                                   soff_z)
