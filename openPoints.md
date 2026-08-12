@@ -158,8 +158,26 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     `fc_px < l_eff <= fc_cx`, which needs no dz and fires on that segment
     (20.762 < 21.017 <= 35.1657), giving a crossing at Z−69.638. The level is
     stopped at the wall's foot, which is correct.
-  - **So the 7.6 mm is still unexplained, and BOTH measurements of it are
-    suspect** — mine for the vertical-segment guard, and `test_rough_comp`'s
+  - **CORRECTION: `test_rough_comp`'s measurement is NOT suspect — it already
+    guards this case.** `radius_span` skips near-vertical segments on purpose,
+    with the reason recorded in its own docstring: *"there is no single radius
+    at that Z, and comparing a swept surface against the outer one there reports
+    the whole height of the wall as an overcut. Measured: 4.7405 mm at Z−69.4 on
+    testing_15_2, in every mode including Off, which is the end wall and not a
+    fault."* So the shipped test already excludes wall artifacts, and no
+    interpolator fix is needed in it. The only blind probe was a throwaway one,
+    which is not shipped.
+  - **THEREFORE THE 7.6 mm IS REAL.** It is measured by the metric that
+    deliberately excludes the wall, so wiring the walker genuinely makes roughing
+    eat 7.6 mm of the pre-finish stock, and the walker stays out. My own probe's
+    8.9840 mm at Z−69.6380 was the wall artifact and should be ignored; the
+    test's number is the one to work from, and its worst point is reported
+    separately.
+  - **Next**: read the Z that `test_rough_comp` itself prints for the worst
+    overcut WITH the walker wired — it prints `at Z...` beside the figure — and
+    work from that point, not from the wall.
+  - Superseded reading, kept so the wrong turn is visible: both measurements
+    were called suspect — mine for the vertical-segment guard, and `test_rough_comp`'s
     because it reports its worst point at the same wall. **Before any further
     fix, establish what the correct tool position at Z−69.638 actually is**: a
     level at r21 stopping at the foot of a wall that rises to r35 is either
