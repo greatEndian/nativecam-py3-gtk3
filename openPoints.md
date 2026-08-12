@@ -1263,12 +1263,33 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     point. What it did show is that the levels near r21 in window 0 (Z 0 to −1)
     are legitimate: `found=1`, crossing at Z−19.87, clamped correctly to the
     window end — that region is the front cylinder and the cut is right.
-  - **Move the probe ABOVE `o<mc_decide>`** and re-run, printing `level`,
-    `w_from`, `w_to`, `mc_wf_state`, `mc_qual_found`. The windows to read are
-    7–9, Z−45 to −70.4, at levels near r21. If those levels come back
-    `mc_wf_state = 0` (not blocked) with `found = 0`, the whole-window cut is
-    the fault and the fix is to treat "no crossing" as "nothing to cut here"
-    rather than "cut it all". The candidates are the back-angle shadow (`Respect tool back
+  - **FOUND, 2026-08-12.** Probe above `o<mc_decide>`, sec_len 10:
+
+    ```
+    lvl=21.016  wf=-45.000000  wt=-53.466667  wfstate=1     blocked, correct
+    lvl=21.016  wf=-53.466667  wt=-61.933333  wfstate=0     NOT blocked
+    lvl=21.016  wf=-61.933333  wt=-70.400000  wfstate=0     NOT blocked
+    ```
+
+    Windows 8 and 9 lie behind the boss where the profile tapers r28 → r25, so
+    a level at r21.016 is well inside the part and `mc_wf_state` must be 1 — as
+    it correctly is for the same level in window 7. Being 0, the level passes
+    the block test and cuts the whole window, which is the r21 over-cut the
+    stock field measured.
+  - **The cause is in the `o<mc_flc>` state walk.** `mc_state` starts from the
+    contour's FIRST point (`o<mcf_st> if [#<fc_px> GE #<l_eff>]`) and is then
+    updated only by crossings at-or-before `w_from`. For a level that lies below
+    the whole contour in this region there are no crossings behind the boss at
+    all, so the answer rests entirely on the initial value and on crossings near
+    the FRONT of the part — which is how a level deep inside the taper comes out
+    "not blocked" in a window 50 mm away from them.
+  - **Fix**: the block test must be a question about the floor **at `w_from`**,
+    not a state accumulated from the front of the contour. Evaluating the floor
+    contour's radius at `w_from` directly and comparing it with `l_eff` answers
+    it in one step, with no walk and no initial-value dependence — and it is a
+    Python-computable table lookup, not a scan.
+  - Gate: volume back to **148367.8 mm3** and `test_section_length.py` green with
+    the pass count still rising. The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
