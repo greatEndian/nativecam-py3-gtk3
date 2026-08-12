@@ -21,179 +21,33 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
 
 ## Next — before anything else
 
-- [ ] **THE FIRST PASS BEHIND THE BOSS IS MISSING** — greatEndian 2026-08-10,
-  `testing_15_5`, sectioning on or off alike. `analysis/029`. Levels **33.2080**
-  and **32.7000** have a front interval and no behind-boss one, so between the
-  last full-length pass at 33.7160 and the first behind-boss pass at 32.1920
-  there is a **1.524 mm bite against a 0.508 depth of cut**.
-  - **Cause found, by bisection**: `6fefc09` put `lathe_level_pass`'s STOP scan
-    on the Python floor contour and left `lathe_level_next_start`'s RESUME scan
-    walking the record array offset by a scalar — that file has no `_pl_flc_*`
-    reference at all. Two scans, two sources, disagreeing by construction.
-    Disabling the floor contour restores the topmost level to 33.2080.
-  - **NOT FIXED, deliberately.** Adding the floor-contour branch to the resume
-    scan restores every missing pass (14 → 26 behind-boss) and breaks
-    `test_rough_ends`: a **rapid plunges through 0.4700 mm of standing metal**,
-    because on the true contour the resume points stop being monotonic. A
-    monotonic clamp did not change the failing numbers byte for byte, so that
-    plunge comes from elsewhere in the phase-2/section machinery. Reverted —
-    shipping a rapid that cuts metal is worse than shipping the missing pass.
-  - **The Python half is DONE and committed inert**, `7760ed5`:
-    `resume_envelope()` emitted from inside `build_floor_contour_gcode` from the
-    same `env`, so the two tables cannot drift apart. Keyed on the level, so it
-    needs no knowledge of the runtime level sequence. Monotone by construction,
-    54 breakpoints on testing_15_5, window 3000..3140,
-    `test_resume_envelope.py`. `_pl_res_n` is written and nothing reads it, so
-    behaviour is unchanged.
-  - **The per-section theory was WRONG** — `testing_15_2`, `15_4` and `15_5` all
-    have Sectioning = 1. **It is the LEAD-IN**: the rapid lands where the lead-in
-    starts, 0.7071 mm in front of the resume, where the level above has not cut.
-    The condition is `R(L) + lead_z` behind `R(L_above)`, applied as a **rate** —
-    `lead_z` per `rough_cut` of level descent, since the breakpoints are contour
-    vertices and a fixed step drifted 38 mm. Done, `8fcabae`, cfg **1.48**.
-  - **The envelope is finished and proven.** With the walker wired it fixes both
-    at once: testing_15_5 32.1920 → **33.2080**, and `test_rough_ends` 6
-    failures → **PASS**.
-  - **What now blocks it is a THIRD consumer**, and it has nothing to do with
-    resuming. `lathe_level_next_start`'s answer also drives
-    `_pl_ph1_front_cut` and `sect_top_r` — it is what discovers the
-    phase-1/phase-2 boundary live — so changing which levels find a resume moves
-    that boundary and the deepest levels end elsewhere:
-    `test_stock_to_leave` deepest level stops **0.7300** from the Z−70.4 wall
-    with the axial value at 2.000, and `test_rough_comp` has r24.5720 stopping
-    **0.2540** short. Both are about where a level ENDS; the envelope only
-    decides where one STARTS.
-  - **The flag is SPLIT**, `1b7db0b`. Phase 1 (`o<ph1_chk>`'s true branch, which
-    sets `sect_top_r`/`_pl_ph1_front_cut`) keeps the record scan's answer; only
-    the else branch takes the envelope's. `test_rough_comp` went back to PASS,
-    which is the proof it worked.
-  - **Three of four faults are now solved**: the two scans reading two sources;
-    the rapid landing at the LEAD-IN start with the clamp as a rate; and the one
-    flag answering two questions.
-  - **The fourth is what is left, and it is specific.** `test_stock_to_leave`:
-    the deepest level stops **0.7300** from the Z−70.4 wall with the axial value
-    at 2.000. Not the plunge, not the boundary — **a resumed interval ends
-    against the FLOOR contour instead of the stop table**. 0.7300 is
-    `fin_off + prefin_off`, the number `analysis/024` recorded for a cut that
-    never got the stop table's extension. Overcuts the axial allowance by
-    **1.27 mm**, so not shipped.
-  - **Next step**: make a resumed interval consult the stop table the way a
-    first interval does. One question, one place, 2.0000 against 0.7300. The
-    walker is in `7760ed5`'s commit message and the split in `1b7db0b`'s.
+- [x] **THE FIRST PASS BEHIND THE BOSS IS MISSING — FIXED**, 2026-08-12,
+  `5790e01`, `analysis/032`. The resume-envelope walker and the flag split are
+  wired and the suite is green.
 
-  - **RE-TRIED 2026-08-12 after `3df0a4c`. The 4th blocker IS GONE.** That
-    blocker was the deepest level stopping **0.7300** from the wall instead of
-    2.000, caused by a clamped stop candidate extending the cut — and
-    `3df0a4c`'s *"a clamped candidate may not extend the cut"* removed exactly
-    that mechanism. With the walker and the flag split wired:
+  **Root cause of the last fault**: `build_floor_contour_gcode` was built from
+  `resolve_points` — the RAW polyline — while `build_stop_contour_gcode` and
+  `build_entry_contour_gcode` beside it use `finish_profile`, the **reachable**
+  contour. The raw shape contains an undercut the back angle cannot reach, so
+  the floor contour collapsed to a **24 mm flat at r20.762** where the machined
+  surface tapers r33 → r24.24, and roughing dived into material it must not
+  enter.
 
-    ```
-    test_stock_to_leave   PASS      was the blocker, now clean
-    test_rough_ends       PASS
-    cam_map               PASS
-    ```
+  ```
+  test_rough_comp overcut  Off  7.6277 -> 0.0503 mm   (bound 0.0800)
+  topmost behind-boss      off  32.1920 -> 33.2080
+                           on   32.1522 -> 33.1273
+  ```
 
-  - **But a FIFTH fault appears, and it is a hard stop.** `test_rough_comp`:
+  **A stale warning was the whole blocker.** The docstring said building it from
+  `finish_profile` "cost testing_15_2 nine of its 29 levels". Re-measured, that
+  is no longer true — the fault it described was fixed by intervening work, and
+  the warning outlived it. **Re-measure a warning before obeying it.**
 
-    ```
-    Off     overcuts 7.6277 mm past the pre-finish contour
-    Native  overcuts 7.4133 mm
-    In CAM  overcuts 7.4133 mm
-    ```
-
-    against a 0.0800 bound. Roughing eats **7.6 mm** of the surface the operator
-    measures — far worse than the missing pass it fixes, so it is reverted
-    again. Note the size: 7.4–7.6 mm is the same order as the 7.1421 mm the
-    sectioning comparison showed behind the boss, so the two are probably the
-    same phenomenon — resumed intervals cutting deep where the profile drops to
-    r20 — and fixing one may fix both.
-  - **PROBED 2026-08-12 — the resumed interval's STOP is not the fault.** With
-    the walker wired, on testing_15_2:
-
-    ```
-    SP lvl=29.889397 wf=-49.304342 wt=-70.400000 scan=-69.638000 have=0 bcl=0
-    ```
-
-    `wf=-49.304` is a resumed interval; the scan ends at **Z−69.638**, which is
-    0.762 from the Z−70.4 wall and correct; `have=0` means the stop table
-    offered no candidate at all, so the stop block does nothing and `z_end`
-    stays where the scan put it. Nothing about that end is 7.6 mm wrong.
-  - **So the overcut is RADIAL, not axial.** `test_rough_comp` measures the
-    worst distance past the pre-finish CONTOUR anywhere, not the standoff at the
-    wall — so a 7.6 mm figure means a level is cutting 7.6 mm inside that
-    surface somewhere along its span, while ending in the right place. The
-    resumed interval above runs r29.889 from Z−49.3 to −69.638; if the profile
-    rises above r29.889 anywhere in that span, the level is inside the part for
-    part of its run and the scan did not stop it.
-  - **PROBED 2026-08-12 — the overcut is at the contour's OPEN END:**
-
-    ```
-    worst overcut 8.9840 mm at Z-69.6380
-      tool X 21.0160   stop contour X 30.0000   floor contour X 20.7620
-    ```
-
-    Z−69.638 is the **last point of the floor contour**. The resumed level runs
-    to the end of the table and stops there, but the end WALL is at that Z and
-    the stop contour reads 30.0 — so the level finishes about 9 mm inside the
-    wall. The scan cannot stop it because the table it walks ends exactly there;
-    there is no rise left in the data to cross.
-  - **A CAUTION ON BOTH PROBES: vertical segments are skipped.** The
-    interpolator guards with `abs(zb - za) > 1e-9` and an end wall has
-    `zb == za`, so it returns the wall's FOOT (20.7620) rather than its face.
-    The same guard is in the `wffl` O-code probe, so its 20.762 reading carries
-    the same caveat — it was still enough to show the block test working, but
-    neither probe can see a wall.
-  - **THAT CONCLUSION WAS WRONG TOO — the contour ALREADY carries its closing
-    wall.** The last points of the floor contour, unfiltered:
-
-    ```
-    Z -69.6380  X 20.7620
-    Z -69.6380  X 35.1657     <- the wall, present as a vertical segment
-    ```
-
-    So "the floor contour lacks its end wall" is false, and the edit it implied
-    was not made. The reading came from the probe's blindness to vertical
-    segments returning the wall's FOOT.
-  - **And the scan does see it.** `o<mcf_w>`'s crossing test is
-    `fc_px < l_eff <= fc_cx`, which needs no dz and fires on that segment
-    (20.762 < 21.017 <= 35.1657), giving a crossing at Z−69.638. The level is
-    stopped at the wall's foot, which is correct.
-  - **CORRECTION: `test_rough_comp`'s measurement is NOT suspect — it already
-    guards this case.** `radius_span` skips near-vertical segments on purpose,
-    with the reason recorded in its own docstring: *"there is no single radius
-    at that Z, and comparing a swept surface against the outer one there reports
-    the whole height of the wall as an overcut. Measured: 4.7405 mm at Z−69.4 on
-    testing_15_2, in every mode including Off, which is the end wall and not a
-    fault."* So the shipped test already excludes wall artifacts, and no
-    interpolator fix is needed in it. The only blind probe was a throwaway one,
-    which is not shipped.
-  - **THEREFORE THE 7.6 mm IS REAL.** It is measured by the metric that
-    deliberately excludes the wall, so wiring the walker genuinely makes roughing
-    eat 7.6 mm of the pre-finish stock, and the walker stays out. My own probe's
-    8.9840 mm at Z−69.6380 was the wall artifact and should be ignored; the
-    test's number is the one to work from, and its worst point is reported
-    separately.
-  - **Next**: read the Z that `test_rough_comp` itself prints for the worst
-    overcut WITH the walker wired — it prints `at Z...` beside the figure — and
-    work from that point, not from the wall.
-  - Superseded reading, kept so the wrong turn is visible: both measurements
-    were called suspect — mine for the vertical-segment guard, and `test_rough_comp`'s
-    because it reports its worst point at the same wall. **Before any further
-    fix, establish what the correct tool position at Z−69.638 actually is**: a
-    level at r21 stopping at the foot of a wall that rises to r35 is either
-    right (it cut up to the wall) or wrong (it should have stopped short by the
-    allowance), and the two readings of "overcut" disagree because they measure
-    distance to a contour that is vertical there. Settle the geometry first;
-    every number taken at that wall so far is unreliable.
-  - **Superseded next probe**: ask `test_rough_comp` WHERE its worst overcut is — it
-    already computes the point (it prints `at Z0.3` for the small cases) — then
-    read the floor contour's radius at that Z and compare with the level. That
-    is the same one-point question the `wffl` probe answered for the block test,
-    and it says immediately whether the scan is missing a rise or the level
-    should never have been admitted. The stop machinery is now known-good for FIRST intervals
-    (`3df0a4c` proved it on both isotropic and axial cases), so the question is
-    what a resumed interval does differently — the same shape of question the
-    `s_zc/z_end/s_reach` probe answered, and the same probe will answer it.
+  Also fixed on the way, pre-existing: `test_rough_overlay` was red from
+  `3df0a4c`, which gave the stop contour `fin + prefin` without moving the drawn
+  twin — the overlay sat 0.2540, exactly `pf_off`, inside the line the levels
+  stop on.
 
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
