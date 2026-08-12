@@ -1096,6 +1096,40 @@ tooltip, no `md_files/` entry for any of the four overlays.
   at Z−50 against a 0.508 depth of cut. That is a cut depth, not an allowance,
   and greatEndian read it as a leftover offset precisely because nothing says so.
 
+## Behind-boss ladder truncated on testing_15_6 — FIXED 2026-08-12
+
+greatEndian: the first and last roughing passes behind the boss are missing on
+`testing_15_6.xml`, while `testing_15_5.xml` is right. `analysis/034`.
+
+- [x] **Only the LAST passes were missing; the first was never absent.** 15_6's
+  floor contour peaks at X34.1641, so level 34.2240 clears the boss and runs full
+  length while 33.7160 splits — correct. The truncated tail made the whole ladder
+  look wrong.
+- [x] **The two projects are geometrically IDENTICAL** — raw and reachable
+  profiles match point for point. They differ only in the **pre-finish offset**,
+  0.254 mm against 1.000 mm, which is all it took to expose the fault.
+- [x] **Root cause**: `resume_envelope`'s crossing test is strict at a segment's
+  lower end (`px >= lev > cx`), so a descending segment never yields a breakpoint
+  at its OWN bottom. Behind a boss the back-angle shadow makes the last descent
+  ONE long taper with nothing after it, so the envelope stopped partway down —
+  lowest breakpoint 27.2313 against a taper ending at 26.2368. The two levels
+  between fell outside the table, took the walker's out-of-range fallback, and
+  were judged inside the part. **15_5 escaped only by luck**, its lowest
+  breakpoint sitting near its own taper end.
+- [x] **Fixed** by extending the envelope to the bottom of the last descent that
+  lies behind the current last breakpoint, under the same monotone lead-in clamp.
+  Python only — no `.ngc`, `.cfg` or parameter change.
+
+  ```
+  testing_15_6   r27.1120 len 3.3911 and r26.6040 len 1.1908 restored
+                 44 -> 46 level cuts
+  testing_15_5   unchanged, 49 level cuts, topmost 33.2080 / 33.1273
+  ```
+
+- [x] `test_behind_boss_ladder.py` asserts the general invariant — **a ladder ends
+  by running out of material**, so its last pass must be shorter than one step —
+  with a negative control that fires on the bug, and on which 15_5 still passes.
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`

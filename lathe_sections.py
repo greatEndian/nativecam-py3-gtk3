@@ -2674,6 +2674,41 @@ def resume_envelope(contour, z_dir=1, lead_z=0.0, rough_cut=0.0):
         prev_lev = lev
         out.append((lev, hit))
 
+    # THE ENVELOPE MUST REACH THE BOTTOM OF THE LAST DESCENT. The crossing test
+    # above is strict at a segment's lower end - `px >= lev > cx` - so a
+    # descending segment never yields a breakpoint at its OWN bottom; it can
+    # only get one from a LATER segment that descends past it. Where the last
+    # descent is a long taper, which the back-angle shadow behind a boss always
+    # is, nothing comes after it and the envelope stops partway down.
+    #
+    # Measured on testing_15_6: that taper is ONE segment, Z-36.1330 X33.7997
+    # to Z-68.8918 X26.2368. The envelope's lowest breakpoint was 27.2313 - a
+    # vertex radius from elsewhere on the profile, whose crossing lands on the
+    # taper at Z-64.5839 - and the two levels below it, 27.1120 and 26.6040,
+    # fell outside the table. The walker's out-of-range fallback returns the
+    # LAST breakpoint's Z, where the floor is 27.2313, so both levels were
+    # judged inside the part and cut nothing: greatEndian's missing last passes
+    # behind the boss. testing_15_5 escaped only by luck - its lowest
+    # breakpoint, 25.5146, happens to sit near its own taper end at 25.2989.
+    #
+    # Only descents that end BEHIND the last breakpoint count: a deeper descent
+    # in front of it is a different feature and would put the resume in front.
+    if out:
+        deep = None
+        pz, px = contour[0]
+        for cz, cx in contour[1:]:
+            if px > cx + EPS and z_dir * (cz - out[-1][1]) < 0:
+                if deep is None or cx < deep[0]:
+                    deep = (cx, cz)
+            pz, px = cz, cx
+        if deep is not None and out[-1][0] > deep[0] + EPS:
+            lev, hit = deep
+            span = ((prev_lev - lev) / rough_cut if rough_cut > EPS else 1.0)
+            limit = back - z_dir * lead_z * span
+            if z_dir * (hit - limit) > 0:
+                hit = limit
+            out.append((lev, hit))
+
     # COLLAPSE what the walker cannot tell apart. The clamp flattens long runs
     # to one resume_z, and the raw breakpoints are every vertex radius of a
     # densified arc, so most of them sit on the straight line between their
