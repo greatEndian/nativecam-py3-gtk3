@@ -1037,6 +1037,36 @@ so the drawing agrees with the motion.
   Correct side must PASS and `--freeside` must FAIL. That answers it directly
   where a distance-to-table comparison cannot.
 
+## The preview overlays are undocumented — greatEndian, 2026-08-12
+
+*"I can not see yellow dashed line description in the help section"*, and he is
+right: `grep` for `rough entry` across the whole tree returns **one** file,
+`ncam_preview_ui.py`, which is the legend swatch itself. No help text, no
+tooltip, no `md_files/` entry for any of the four overlays.
+
+- [ ] **Document the four overlays**, in the help section and not only as a
+  colour swatch. What each one IS, and — the part that actually confuses —
+  whether it is a *surface*, a *toolpath*, or a *construction reference*:
+
+  | legend | colour | what it really is |
+  |---|---|---|
+  | rough entry path | yellow-green dashed | `#<_pl_entry_*>` — where a roughing level may BEGIN cutting. A construction contour at `fin + prefin + one depth of cut`, walked by `lathe_level_pass:407` and the source of the ramp-direction table. **Not a path the tool follows.** |
+  | rough stop path | orange dashed | `#<_pl_stop_*>` — where a level must STOP. Also a construction contour, and built WITH the nose, so it is a tool-CENTRE reference |
+  | pre-finish surface | solid | the offset contour, `stock_pair`, nose 0 — a real surface |
+  | comp path | teal dashed | the compensated finish toolpath |
+
+- [ ] **The dashed/solid convention mislabels two of them.** The code's own
+  comment says *"SURFACES are solid, TOOL PATHS are dashed"*, but `rgh_entry`
+  and `rgh_stop` are neither — they are reference contours, and calling them
+  "path" in the legend invites exactly the reading that they are where the tool
+  goes. Renaming them "rough entry limit" / "rough stop limit", or giving
+  references their own dash pattern, would say what they are.
+- [ ] **The entry line's constant gap needs stating wherever it is documented**:
+  it is `fin + prefin + ONE DEPTH OF CUT`, so it never collapses onto the offset
+  contour even at a pre-finish offset of 0.0 — measured 0.5213 on testing_15_5
+  at Z−50 against a 0.508 depth of cut. That is a cut depth, not an allowance,
+  and greatEndian read it as a leftover offset precisely because nothing says so.
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`
