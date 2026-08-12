@@ -1315,8 +1315,35 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     Wiring `min_x` and computing the per-piece floor both yield **40.0** for the
     windows behind the boss — the same value the code already had — so neither
     could change anything. That is consistent, not mysterious.
-  - **The third — the point-wise `mc_wf_state` — is NOT explained**, because by
-    arithmetic it must block the level. Before re-applying it, put the
+  - **THE THIRD IS NOW EXPLAINED TOO, AND IT INVERTS THE DIAGNOSIS.** The debug
+    was run with the fix in place:
+
+    ```
+    lvl=21.016000  wf=-53.466667  wfstate=0  wffl=20.762000  leff=21.017000
+    lvl=20.516000  wf=-53.466667  wfstate=1  wffl=20.762000  leff=20.517000
+    ```
+
+    **The floor at Z−53.47 is r20.762**, not the r28.6 predicted. So level
+    21.016 sits ABOVE the floor and is legitimately unblocked, and the next
+    level down is correctly blocked. **The block test was right all along** and
+    the fix changed nothing because there was nothing to change.
+  - **Where the r28.6 came from — a caution worth keeping.** An earlier dump of
+    the floor contour printed only points with `X > 32.0`, and consecutive
+    printed points were then read as if adjacent. They were not. The profile
+    genuinely reaches **d40 (r20)** behind the boss, exactly as the raw point
+    dump said. Never interpolate across a FILTERED point list.
+  - **SO THE FAULT IS PROBABLY ON THE OTHER SIDE.** If the part is at r20 behind
+    the boss, then roughing down to r21 there is correct, and it is **mode 0
+    leaving r28.14** that is wrong — material standing where it should have been
+    cut. That is very likely the SAME defect as *"the missing first pass behind
+    the boss segment"* already at the top of this file, which is unfixed and has
+    its resume-envelope work sitting inert.
+  - **Consequence for the gate**: 148367.8 mm3 may be the WRONG target. If mode 0
+    under-cuts, `sec_len 10`'s 170017.1 could be nearer the truth, and
+    `test_section_length` would then be asserting parity with a broken baseline.
+    Settle which side is right before treating either number as correct — the
+    reachable contour and the finish pass say what the part should be, not a
+    comparison of two roughing strategies against each other. Before re-applying it, put the
     `(debug, ...)` back above `o<mc_decide>` **with the fix in place** and read
     `wfstate` for `lvl=21.016 wf=-53.466667`. If it is still 0 the inserted code
     is not executing; if it is 1 and the volume still does not move, the block
