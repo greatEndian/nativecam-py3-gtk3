@@ -1298,7 +1298,30 @@ offsets say destroys that measurement, which is why these are not cosmetic.
   - **Volume came back identical to the digit, as it did for the two previous
     changes.** Three distinct behavioural edits producing byte-identical volume
     is far more likely one broken measurement than three genuine no-ops.
-  - **ESTABLISH THE PROBE BEFORE ANY MORE EDITS.** `vol.py` must be shown to
+  - **PROBE VALIDATED 2026-08-12 — it responds, so the "no effect" results were
+    REAL.** Control on testing_15_5, sec_len 0:
+
+    ```
+    f_off 0.508 (baseline)    volume 205537.8   moves 312
+    f_off 3.000               volume 206601.6   moves 266   both move
+    sectioning OFF            volume 205537.8   moves 306   volume held, moves changed
+    ```
+
+    Changing the finish offset moves volume and move count together, so the
+    measurement is live. The third line is the invariant holding on its own:
+    sectioning on and off at `sec_len 0` remove **identical** metal with
+    different move counts, which is exactly what a strategy change should do.
+  - **So the three edits genuinely did nothing, and two of them are explained.**
+    Wiring `min_x` and computing the per-piece floor both yield **40.0** for the
+    windows behind the boss — the same value the code already had — so neither
+    could change anything. That is consistent, not mysterious.
+  - **The third — the point-wise `mc_wf_state` — is NOT explained**, because by
+    arithmetic it must block the level. Before re-applying it, put the
+    `(debug, ...)` back above `o<mc_decide>` **with the fix in place** and read
+    `wfstate` for `lvl=21.016 wf=-53.466667`. If it is still 0 the inserted code
+    is not executing; if it is 1 and the volume still does not move, the block
+    test is not what admits that cut and the search moves on.
+  - **ESTABLISH ANY NEW PROBE THE SAME WAY.** `vol.py` must be shown to
     respond to a change that certainly alters the program — e.g. halve the depth
     of cut, or set `param_sectioning=0` — and if the number does not move, it is
     not re-generating and every "no effect" conclusion drawn from it this
