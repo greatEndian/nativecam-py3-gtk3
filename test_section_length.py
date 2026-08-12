@@ -43,6 +43,7 @@ boss, a direction and a judgement about what "behind" means. "Does it remove the
 same metal" needs none of those, holds on every project and every section
 length, and would have caught this the day sectioning was built.
 """
+import math
 import os
 import shutil
 import subprocess
@@ -55,6 +56,7 @@ sys.path.insert(0, HERE)
 INI = os.path.join(HERE, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECT = 'testing_15_5.xml'
+NOSE_R = 0.4
 FAILED = []
 
 
@@ -65,8 +67,15 @@ def check(name, cond, detail=''):
         FAILED.append(name)
 
 
-def run(sec_len):
-    """-> (level cut count, total length of cutting moves) or None."""
+# The stock field the removed volume is measured in. FIXED, not derived from
+# the moves: two programs that cut differently span different Z and X, and a
+# field sized from each run's own moves measures them in different boxes, which
+# is not a comparison at all. r40 clears the r35.17 stock on this project.
+FIELD_Z0, FIELD_Z1, FIELD_OUTER, FIELD_COLS = -74.0, 4.0, 40.0, 1560
+
+
+def run(sec_len, extra=()):
+    """-> (level cut count, cutting length, removed volume) or None."""
     import ncam_preview as P
     d = tempfile.mkdtemp(prefix='seclen_')
     try:
@@ -75,6 +84,8 @@ def run(sec_len):
                '--out', out, '--config-copy',
                '--set', 'polyline:param_sectioning=1',
                '--set', 'polyline:param_sec_len=%s' % sec_len]
+        for kv in extra:
+            cmd += ['--set', kv]
         subprocess.run(cmd, capture_output=True, text=True)
         if not os.path.isfile(out):
             return None
@@ -83,12 +94,24 @@ def run(sec_len):
             return None
         mv = [m for m in tp.moves if m.op == 'Lathe Polyline'
               and m.kind != 'rapid']
-        # a LEVEL cut: a feed at one radius along Z. The lead-ins, ramps and
-        # retreats are strategy too and are deliberately left out - what is
-        # being compared is the metal the level passes take off.
+        if not mv:
+            return None
+
+        # THE METAL, simulated the way the preview does it - the part that
+        # must not change. Every cutting move is swept through a radial stock
+        # field and what is left is the part.
+        sf = P.StockField(FIELD_Z0, FIELD_Z1, 0.0, FIELD_OUTER,
+                          columns=FIELD_COLS)
+        for m in mv:
+            sf.cut_move(m.a, m.b, NOSE_R)
+        volume = math.pi * sf.dz * sum(FIELD_OUTER * FIELD_OUTER - o * o
+                                       for o in sf.outer)
+
+        # a LEVEL cut: a feed at one radius along Z. Reported, not asserted
+        # tightly - see the note in main().
         lv = [m for m in mv if abs(m.b[0] - m.a[0]) < 1e-6
               and abs(m.b[2] - m.a[2]) > 1e-6]
-        return len(lv), sum(abs(m.b[2] - m.a[2]) for m in lv)
+        return len(lv), sum(abs(m.b[2] - m.a[2]) for m in lv), volume
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -106,8 +129,21 @@ def main():
           base is not None)
     if base is None:
         sys.exit(1)
-    n0, cut0 = base
-    print('      sec_len  0.0   %3d level cuts   %8.1f mm of cut' % (n0, cut0))
+    n0, cut0, vol0 = base
+    print('      sec_len  0.0   %3d passes  %8.1f mm of cut  %10.1f mm3 removed'
+          % (n0, cut0, vol0))
+
+    # THE PROBE MUST BE SHOWN TO RESPOND, or "the volume did not change" proves
+    # nothing. A finish offset of 3.0 leaves visibly more metal on the part.
+    ctl = run('0.0', ('polyline:param_f_off=3.0',))
+    check('CONTROL: the volume measure responds to a real change',
+          ctl is not None and abs(ctl[2] - vol0) > 500.0,
+          'a finish offset of 3.0 changed the removed volume by only %.1f mm3 '
+          '- the measurement is not live and nothing below means anything'
+          % (abs(ctl[2] - vol0) if ctl else -1))
+    if ctl:
+        print('      CONTROL f_off 3.0        %8.1f mm of cut  %10.1f mm3'
+              % (ctl[1], ctl[2]))
 
     for sec_len in ('10.0', '20.0'):
         r = run(sec_len)
@@ -115,19 +151,39 @@ def main():
               r is not None)
         if r is None:
             continue
-        n, cut = r
-        print('      sec_len %-5s  %3d level cuts   %8.1f mm of cut'
-              % (sec_len, n, cut))
+        n, cut, vol = r
+        d_vol = abs(vol - vol0) / vol0 if vol0 else 0.0
+        d_cut = (cut - cut0) / cut0 if cut0 else 0.0
+        print('      sec_len %-5s  %3d passes  %8.1f mm of cut  %10.1f mm3 '
+              '(%+.2f%% metal, %+.1f%% travel)'
+              % (sec_len, n, cut, vol, 100.0 * d_vol, 100.0 * d_cut))
 
-        # THE INVARIANT. 2% covers the ends of the extra pieces - a sliced cut
-        # has more lead-ins and each starts a hair earlier - without covering
-        # anything that could be called a different amount of material.
-        drift = abs(cut - cut0) / cut0 if cut0 else 0.0
-        check('   sec_len %s does the SAME LENGTH of cutting as no '
-              'sectioning' % sec_len, drift < 0.02,
-              '%.1f mm against %.1f, %.1f%% more - slicing a cut changes how '
-              'it is cut, not how far the tool has to travel cutting'
-              % (cut, cut0, 100.0 * drift))
+        # THE INVARIANT IS THE METAL, NOT THE TRAVEL.
+        #
+        # This asserted cutting LENGTH to 2% and failed at 7.0% and 5.7%, which
+        # looked like a fault and was chased as one. It is not. Measured with
+        # the field above, the removed volume is 205550.4 mm3 at every section
+        # length tested - identical to a tenth of a cubic millimetre - while the
+        # travel falls 7.0% at sec_len 10 and 5.7% at 20. The sliced program
+        # takes off exactly the same metal with LESS cutting travel, because a
+        # piece stops at its own boundary instead of sweeping ground a
+        # neighbouring piece has already cleared.
+        #
+        # Travel is a strategy property and slicing is allowed to change it -
+        # that is what slicing is FOR. The part is not allowed to change. So
+        # the metal is asserted tightly and the travel only loosely, as a smoke
+        # check that it has not exploded.
+        check('   sec_len %s removes the SAME METAL as no sectioning'
+              % sec_len, d_vol < 0.005,
+              '%.1f mm3 against %.1f, %.2f%% apart - slicing a cut may change '
+              'how it is cut, never what is left'
+              % (vol, vol0, 100.0 * d_vol))
+
+        check('   sec_len %s does not wildly change the cutting travel'
+              % sec_len, abs(d_cut) < 0.25,
+              '%.1f mm against %.1f, %+.1f%% - a strategy change of this size '
+              'wants explaining even though travel is not the invariant'
+              % (cut, cut0, 100.0 * d_cut))
 
         # and the feature IS doing its job - asserted so a "fix" that simply
         # stops sectioning cannot pass this file
@@ -142,7 +198,7 @@ def main():
         for f in FAILED:
             print('   -', f)
         sys.exit(1)
-    print('A section length changes how the cut is made, not how far it cuts.')
+    print('A section length changes how the cut is made, not what is left.')
 
 
 if __name__ == '__main__':

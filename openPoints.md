@@ -1110,8 +1110,26 @@ operator measures it, dials in a compensation, and only then runs the finish
 pass. A roughing or pre-finish pass that lands somewhere other than where the
 offsets say destroys that measurement, which is why these are not cosmetic.
 
-- [ ] **Sectioning ON with a non-zero Z section length roughs FOUR TIMES the
-  passes.** Measured on testing_15_5, changing only `param_sec_len`:
+- [x] **CLOSED 2026-08-12 — it was the TEST, not the code.** `analysis/033`.
+  The removed **volume** is **205550.4 mm3 at every section length**, identical
+  to a tenth of a cubic millimetre, while a control at `f_off 3.0` moves it — so
+  the measure is live and the equality is a result. The sliced program takes off
+  exactly the same metal with **less** cutting travel (−7.0% at sec_len 10,
+  −5.7% at 20), because a piece stops at its own boundary instead of sweeping
+  ground a neighbouring piece already cleared. That is what slicing is for.
+  `test_section_length` had asserted travel, which is a strategy property, and
+  so encoded a legitimate improvement as a fault. It now asserts volume to 0.5%,
+  travel only loosely, the pass count still rising, and carries a CONTROL run so
+  it cannot go vacuous. **No production code changed.**
+  - The earlier 23.1%/20.1% *was* real and was fixed by `5790e01` — the floor
+    contour built from the raw polyline instead of the reachable profile.
+  - Also corrected: the throwaway volume probe sized its stock field from each
+    run's own moves, measuring two different programs in two different boxes.
+    The field is pinned in the test now.
+  - Original report below, kept for the record.
+
+- [x] ~~**Sectioning ON with a non-zero Z section length roughs FOUR TIMES the
+  passes.**~~ Measured on testing_15_5, changing only `param_sec_len`:
 
   ```
   sec_len  0.0    49 level cuts   1052.6 mm cut   14 behind the boss
