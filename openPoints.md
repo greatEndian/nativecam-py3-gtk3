@@ -1072,10 +1072,31 @@ requirement, not a preference.
   isotropic, so the axial value stops reaching the stop somewhere. Not a table
   overflow: `_pl_stop_n = 20`, no WARNING emitted. The isotropic expectation in
   that test also needs updating (0.508 → 0.762) once the anisotropic path works.
-- **Next step**: find where the anisotropic stop loses its axial value when the
-  pre-finish allowance is added — most likely the level SCAN, which still works
-  from the scalar `lvl_d` and is only *extended* by the table, so a larger stop
-  may fall outside the reach the scan allows.
+- **Investigated 2026-08-12, and the obvious cause is REFUTED by its own
+  arithmetic.** The suspect was `s_reach`, the clamp on how far the stop table
+  may extend a cut past the scan's own end — `#<s_reach> = [3.0 *
+  #<_rough_cut>]` in `lathe_level_pass`, which is scaled to the depth of cut and
+  knows nothing about the allowance. On testing_15_2:
+
+  ```
+  _rough_cut = 0.508                    s_reach = 3 x 0.508 = 1.524
+  scan z_end, scalar lvl_d = 0.762      0.762 from the Z-70.4 wall
+  stop candidate BEFORE, fin_z = 2.000  |delta| = 1.238  < 1.524   accepted
+  stop candidate AFTER,  + pf  = 2.254  |delta| = 1.492  < 1.524   should pass too
+  ```
+
+  1.492 clears the bound by 0.032, and the slope term `1.5 * rough_cut *
+  dz/dx` only ever RAISES `s_reach`. So the clamp should not fire, and the
+  0.7300 measured has another cause. Recorded rather than acted on, because
+  four hypotheses about this area have now been wrong and this one is refuted
+  on paper before costing a round.
+- **The instrument to run first**, before any further edit: emit the candidate
+  `#<s_zc>`, the scan's `#<z_end>`, `#<s_reach>` and the resulting `#<s_cl>` as
+  comments from `lathe_level_pass` for the level nearest the Z−70.4 wall, then
+  generate testing_15_2 with `f_off_sep=1, f_off_z=2.0` and read them. Four
+  numbers say immediately whether the clamp fired, whether the candidate was
+  where Python put it, and whether `z_end` is where this arithmetic assumes.
+  Everything above is inference from the source; none of it is measured.
 
 ## The preview overlays are undocumented — greatEndian, 2026-08-12
 
