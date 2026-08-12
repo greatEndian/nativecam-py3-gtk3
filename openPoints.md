@@ -1198,8 +1198,20 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     not** — the same part with the same allowances must yield the same metal
     however the cut is sliced. That is the number to drive to parity, and the
     pass count should be left alone.
-  - **Where to look**: mode 1 cuts 23% more, so it is reaching material mode 0
-    excludes. The candidates are the back-angle shadow (`Respect tool back
+  - **VOLUME MEASURED with `StockField`, 2026-08-12 — the part comes out
+    DIFFERENT, and greatEndian's back-angle report is confirmed:**
+
+    ```
+    sec_len  0.0   removed 148367.8 mm3             cut length 1052.6
+    sec_len 10.0   removed 170017.1 mm3   +14.59%   cut length 1296.2
+    sec_len 20.0   removed 166663.9 mm3   +12.33%   cut length 1263.9
+    ```
+
+    So it is **not** empty travel. A section length removes **14.6% more metal**
+    — an over-cut, not a strategy difference, and the part is not the same part.
+    The +23% in cut length overstated it because some of that travel is empty;
+    **14.6% is the real number** and it is the one to drive to zero.
+  - **Where to look**: mode 1 is reaching material mode 0 excludes. The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
