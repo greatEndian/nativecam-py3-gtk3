@@ -1288,8 +1288,23 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     contour's radius at `w_from` directly and comparing it with `l_eff` answers
     it in one step, with no walk and no initial-value dependence — and it is a
     Python-computable table lookup, not a scan.
-  - Gate: volume back to **148367.8 mm3** and `test_section_length.py` green with
-    the pass count still rising. The candidates are the back-angle shadow (`Respect tool back
+  - **THE FIX WAS APPLIED AND THE VOLUME DID NOT MOVE — and the probe is now
+    the suspect, not the fix.** The point-wise block test was written into
+    `o<mc_flc>`: interpolate the floor contour's radius at `w_from`, take the
+    max where a re-entrant contour crosses it twice, set `mc_wf_state` from
+    that. By arithmetic it must block the offending level — the floor at
+    Z−53.47 interpolates to about **r28.6** against `l_eff` 21.016 — and
+    `_pl_multi_cross` is 1, so the branch is entered.
+  - **Volume came back identical to the digit, as it did for the two previous
+    changes.** Three distinct behavioural edits producing byte-identical volume
+    is far more likely one broken measurement than three genuine no-ops.
+  - **ESTABLISH THE PROBE BEFORE ANY MORE EDITS.** `vol.py` must be shown to
+    respond to a change that certainly alters the program — e.g. halve the depth
+    of cut, or set `param_sectioning=0` — and if the number does not move, it is
+    not re-generating and every "no effect" conclusion drawn from it this
+    session is void, including the two reverts above.
+  - Gate, once the probe is trusted: volume back to **148367.8 mm3** and
+    `test_section_length.py` green with the pass count still rising. The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
