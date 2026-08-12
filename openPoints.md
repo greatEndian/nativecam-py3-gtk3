@@ -1230,13 +1230,29 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     came back identical to the digit, so the O-code's mode-1 path does not bound
     its depth by the window's `r_lo`. Reverted rather than left as a comment
     claiming a fix it does not make.
-  - **The fix is in `poly_lathe_mill:534`**, the `o<mode_chk> if [#<_pl_sect_mode>
-    EQ 1]` branch, which sets `#<lvl_start> = #<start_radius>` for every window
-    — *"every window always starts completely fresh at the full start_radius"*.
-    That is right for the START of the ladder and is what the design intends;
-    what is missing is the ladder's **END**, which must be that window's own
-    `#<w_rlo>` rather than the global floor. Both halves need doing together:
-    the Python line above, and a depth bound in this branch. The candidates are the back-angle shadow (`Respect tool back
+  - **THE WINDOW FLOOR IS NOT THE FIX — that theory is dead.** The profile was
+    dumped between Z−45 and −70.4 and it genuinely reaches **d40.000** there:
+
+    ```
+    -45.000,40.000      -70.400,40.000
+    ```
+
+    So `split_by_length`'s `min_x` of 40.0 was **correct**, and so was the
+    per-piece computation that reproduced it. An earlier deduction that the
+    minimum "should be about d48.2" came from the floor contour's simplified
+    long chord, which hides the intermediate geometry — a reminder that the
+    contour tables are simplified and must not be used to infer the profile.
+  - **Nor is it `poly_lathe_mill:534`.** Line **623** already bounds
+    `current_radius` by `w_rlo`/`w_rhi`, so the O-code enforces the band it is
+    given. Nothing in `lib/` needs to change for a bound.
+  - **THE REAL FAULT: mode 1 cuts BELOW THE FLOOR CONTOUR.** At Z−52 the floor
+    sits near r29.6, so a level at r21.0018 is inside the part — mode 0 stops
+    at r28.1439, mode 1 cuts straight through the taper. The band permits it in
+    both modes (d40 = r20 is a legitimate floor *somewhere* in that section);
+    what should stop it is the floor contour scan, per Z, and in mode 1 it does
+    not. Look at what the level pass does in a window whose whole Z span lies
+    behind an obstruction and finds no crossing — whether "no crossing" is being
+    read as "free to cut the whole window". The candidates are the back-angle shadow (`Respect tool back
     angle` is on in this project) and the stop contour — i.e. whether a mode 1
     window consults the reachable contour and the stop at all, or only its Z
     span. **The test to write first** is the invariant, not a fix: *total cut
