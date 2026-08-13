@@ -1022,7 +1022,42 @@ o<lathe_level_pass> sub
 	o<pa_cut> endif
 
 
-	G1 Z#<z_end_cut>
+	(CHIP BREAKING. Without pecking this is one continuous cut, which is what)
+	(it has always been and still is when _pl_peck_len is 0 - the else branch)
+	(below is the original line, unchanged, so pecking off is a provable)
+	(no-op.)
+	(The peck points cannot be a Python table: the interval END is decided by)
+	(the scan at runtime, so generation time does not know how long this cut)
+	(is. What Python would compute is a repeating rule with no geometry in it)
+	(- cut this far, back off that far - so the subroutine walks the rule and)
+	(no shape is worked out here.)
+	(THE RETRACT IS ALONG THE CUT, straight back the way the tool came, into)
+	(the groove it has just made. That is the reference package's own wording)
+	(and it is the safe direction: backing out radially would leave the)
+	(compensated path and re-enter it, and re-entry is where gouges come from.)
+	o<peck> if [[#<_pl_peck_len> GT 0.0001] AND [#<_pl_peck_ret> GT 0.0001]]
+		#<pk_dir> = 1
+		o<pk_sgn> if [#<z_end_cut> LT #<z_start>]
+			#<pk_dir> = -1
+		o<pk_sgn> endif
+		#<pk_left> = ABS[#<z_end_cut> - #<z_start>]
+		#<pk_at>   = #<z_start>
+		o<pk_w> while [#<pk_left> GT [#<_pl_peck_len> + 0.0001]]
+			#<pk_at>   = [#<pk_at> + #<pk_dir> * #<_pl_peck_len>]
+			#<pk_left> = [#<pk_left> - #<_pl_peck_len>]
+			G1 Z#<pk_at>
+			(back along the path, never past where this cut began)
+			#<pk_bk> = [#<pk_at> - #<pk_dir> * #<_pl_peck_ret>]
+			o<pk_clamp> if [[#<pk_dir> * [#<pk_bk> - #<z_start>]] LT 0]
+				#<pk_bk> = #<z_start>
+			o<pk_clamp> endif
+			G1 Z#<pk_bk>
+			G1 Z#<pk_at>
+		o<pk_w> endwhile
+		G1 Z#<z_end_cut>
+	o<peck> else
+		G1 Z#<z_end_cut>
+	o<peck> endif
 
 
 	(retreat lead-out: back toward the window start, rising away from the cut)

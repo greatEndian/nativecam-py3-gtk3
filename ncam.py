@@ -2666,6 +2666,9 @@ class Preferences(object):
             # the pre-finish pass's own on/off. Defaults to 1 so a program
             # generated before the parameter existed behaves as it always did.
             self.default += ("#<_pl_pf_on>                = 1.0\n")
+            # chip breaking on the roughing levels; 0 = one continuous cut
+            self.default += ("#<_pl_peck_len>             = 0.0\n")
+            self.default += ("#<_pl_peck_ret>             = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

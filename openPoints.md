@@ -1577,8 +1577,16 @@ tracked and carries each one in full; these are the ones still open.
 
 **Worth building** — small, self-contained, Python-first, in this order:
 
-- [ ] **16 — Pecking.** Chip breaking has no expression at all. A Python
-  subdivision of an interval we already compute.
+- [x] **16 — Pecking — DONE**, 2026-08-13, polyline.cfg **1.52**. *Peck length*
+  and *Peck retract* on the roughing levels; 0 = off and provably a no-op.
+  The retract goes **along the cut**, back into the groove just made, because
+  backing out radially would leave the compensated path and re-enter it.
+  Measured on testing_15_5 at 10/1: the cut reaches the identical Z−69.6380 on
+  the identical radii, and the extra travel is **exactly 170.0 mm = 170
+  retracts of 1.0**, so nothing goes anywhere unaccounted for.
+  `test_peck.py`. Runtime rather than a Python table, deliberately: the
+  interval END is decided by the scan at runtime, so the rule is walked and no
+  geometry is computed in the `.ngc`.
 - [ ] **9 — Tangential extension.** Run the cut past the profile along its own
   direction, front and back.
 - [ ] **1 — Tool clearance FRONT.** We have back only, and the
