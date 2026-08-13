@@ -794,6 +794,17 @@ class Tools(object):
         """
         return self.get_tool_back_angle(getattr(self, 'saved_tool', 0))
 
+    def get_front_angle(self):
+        """Front angle of the last tool selected in a Tool Change.
+
+        The mirror of get_back_angle, for the LEADING flank's shadow. Same
+        route and same caveat: it answers 0 until a Tool Change has actually
+        RUN, because that is what sets saved_tool. A survey that reads 0 here
+        has not generated yet - which is how a front-flank survey once came
+        back clean and wrong.
+        """
+        return self.get_tool_front_angle(getattr(self, 'saved_tool', 0))
+
     def save_flank_len(self, value):
         """Remember the flank length of the tool loaded from here on.
 

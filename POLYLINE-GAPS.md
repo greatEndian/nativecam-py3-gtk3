@@ -146,6 +146,15 @@ Holder.
 
 - **Status 2026-08-13** — the WARNING half is built and measured, but NOT wired: `lathe_front_flank.py`, inert, nothing imports it. On the demo projects it reports spans up to **14.42 mm of radius** (testing_15_5) on parts that machine correctly, so the angle convention or the side mirror may be wrong. It discriminates - a plain rising taper, a cylinder and an unusable angle all report nothing - so it is not a blanket artifact. `analysis/040` names the single physical check that settles it. The toolpath half stays blocked on that answer.
 
+- **STATUS 2026-08-13 — the WARNING half is DONE**, `analysis/041`. greatEndian
+  confirmed the limitation is real and the `90 - I - clearance` convention
+  right, and that the reference package leaves the same regions. The maths is in
+  `lathe_sections` beside the back-angle machinery it mirrors; the existing
+  reachable-contour warning now names FRONT and BACK separately. No toolpath
+  moved - byte-identical, and asserted structurally. The TOOLPATH half remains
+  open and lands on `finish_profile`, so it is a decision about risk rather than
+  a task.
+
 #### 2. Tool Orientation — a programmable B axis
 
 - **What it is** — *"Use this option if your lathe turret has a programmable B

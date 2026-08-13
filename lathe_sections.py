@@ -1728,6 +1728,52 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
     return keep
 
 
+def mirror_dir(rough_dir):
+    """The roughing direction that shadows the OTHER side of every peak.
+
+    `flank_sides` maps 0 -> (1,), 1 -> (-1,), 2 -> (1, -1). The LEADING flank
+    is shadowed by whatever the trailing flank is not, so swapping 0 and 1
+    flips the side, while 2 - which already takes both - stays as it is.
+    """
+    if rough_dir == 0:
+        return 1
+    if rough_dir == 1:
+        return 0
+    return 2
+
+
+def front_flank_envelope(points, front_deg, rough_dir=0, flank_len=0.0,
+                         clearance=0.0):
+    """What the tool's LEADING flank can reach - the mirror of the trailing one.
+
+    THE PHYSICS. An insert's TRAILING flank limits surfaces that RISE as the
+    tool travels: drive past a boss and the sections behind it are the ones the
+    back of the insert can no longer get into. That is `flank_envelope`, and
+    everything roughing scans against is built from it.
+
+    The LEADING flank has its own clearance and limits the opposite thing -
+    surfaces that FALL AWAY in front of the tool: a steep face, the near wall
+    of a groove, an undercut on the approach side. Same wedge, other end of the
+    nose, other side of every peak.
+
+    SO THERE IS ALMOST NO NEW MATHS HERE, deliberately. The dilation is the
+    same dilation; only the angle and the shadowed side differ, and
+    `flank_sides` already turns a roughing direction into a side. Re-deriving
+    the wedge would have meant a second, untested copy of geometry that took
+    this project five stacked faults to get right - see analysis/032.
+
+    THE ANGLE CONVENTION. The tool table's I and J are absolute edge
+    directions, not clearances: the sim tools carry `T2 I15 J75`, and
+    `flank_slope(75)` is tan(15 degrees), which is what a J75 insert ramps at.
+    The front edge is read the same way, so the ramp is `90 - I - clearance`.
+    greatEndian confirmed both the reading and the limitation against the
+    reference package on 2026-08-13, which is what let this leave
+    lathe_front_flank.py and come in here beside the function it mirrors.
+    """
+    return flank_envelope(points, front_deg, mirror_dir(rough_dir),
+                          flank_len, clearance)
+
+
 def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
                       clearance=0.0):
     """Literal G-code building the reachable envelope as a record array, or ''.
@@ -3069,17 +3115,15 @@ def _close_run(run, nxt):
     return hull
 
 
-def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
-                      clearance=0.0):
-    """[(z_from, z_to, worst_radius_gap)] where the part cannot be made.
+def spans_between(hard, soft, tol=0.01):
+    """Runs of Z where `soft` stands proud of `hard` by more than `tol`.
 
-    What the validation message reports, and what the preview colours.
+    Shared by both flanks. It was inline in `unreachable_spans` until the
+    LEADING flank needed the identical walk - the same 400 steps, the same
+    units, the same halving of the diameter difference to give a RADIUS gap.
+    Two copies of this would have been two things to keep in step, and the
+    front and back cases have to be comparable to be reported together.
     """
-    hard = resolve_points(polyline_feature)
-    soft, is_soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len,
-                                   clearance)
-    if not is_soft:
-        return []
     zs = sorted({z for z, _x in hard} | {z for z, _x in soft})
     if len(zs) < 2:
         return []
@@ -3101,6 +3145,55 @@ def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
     if cur is not None:
         spans.append(tuple(cur))
     return spans
+
+
+def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
+                      clearance=0.0):
+    """[(z_from, z_to, worst_radius_gap)] the TRAILING flank cannot make.
+
+    What the validation message reports, and what the preview colours.
+    """
+    hard = resolve_points(polyline_feature)
+    soft, is_soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len,
+                                   clearance)
+    if not is_soft:
+        return []
+    return spans_between(hard, soft, tol)
+
+
+def front_unreachable_spans(polyline_feature, front_deg, tol=0.01,
+                            flank_len=0.0, clearance=0.0):
+    """[(z_from, z_to, worst_radius_gap)] the LEADING flank cannot make.
+
+    The mirror of `unreachable_spans`, and reported beside it - greatEndian
+    confirmed on 2026-08-13 that the limitation is real and that the reference
+    package leaves the same regions, so these numbers describe the part rather
+    than a modelling artefact.
+
+    Built from `front_flank_envelope` directly rather than from
+    `finish_profile`, because that one applies the BACK angle on the way past
+    and would mix the two flanks into one answer. An empty list means the
+    leading flank reaches everything, which must be the answer on a profile
+    with no steep front-facing wall or the warning would cry wolf on every part.
+    """
+    # A MISSING ANGLE IS UNKNOWN, NOT ZERO. `get_tool_front_angle` answers 0.0
+    # for a tool table with no I column at all, and 0 degrees is not a tool -
+    # it is the absence of a measurement. Warning on it would be inventing a
+    # limitation out of a blank field, and with a back clearance of 2 the ramp
+    # comes out at tan(88), which dilates hugely and reports metres of nothing:
+    # measured on testing_3 and testing_4, both 0/0 tools, 1.32 and 1.10 mm of
+    # entirely fictional unreachable radius. `finish_profile` already refuses
+    # the same way for the trailing flank, and the two must agree.
+    if front_deg is None or front_deg <= 0:
+        return []
+    hard = resolve_points(polyline_feature)
+    if not hard or len(hard) < 2:
+        return []
+    d = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    env = front_flank_envelope(hard, front_deg, rough_dir, flank_len,
+                               clearance)
+    return spans_between(hard, env, tol)
 
 
 def _profile_x_at(z, points):

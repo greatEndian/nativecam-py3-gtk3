@@ -1231,26 +1231,33 @@ concluded from the tables that nothing was missing. All three were wrong.
   by side, showed it in one line. Prefer a measurement that enumerates what
   should be there over one that inspects what is.
 
-## Gap 1, front tool clearance — measured, NOT wired, 2026-08-13
+## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
-The warning half is built: `lathe_front_flank.py` mirrors the back-angle wedge
-(same `flank_envelope`, front angle, shadowed side flipped). It is **inert** —
-nothing imports it, asserted by `test_front_flank`, so no toolpath moved.
+greatEndian settled the question that blocked it: *"yes the limitation is
+real"*, *"angle convention is right .. same path generation I see in the CAM
+software"*. So the detection describes the part, and the reference package
+leaves the same regions.
 
-- [ ] **NEEDS A PHYSICAL CHECK before it can be wired.** On testing_15_5 it
-  reports **14.42 mm of radius** unreachable over Z−70.2..−19.5, on a part that
-  machines correctly. Either the limitation is real and has never been warned
-  about, or the angle convention (`90 − I`) is inverted, or the side mirror is
-  wrong — code cannot tell them apart. It is **not** a blanket artifact: a plain
-  rising taper, a cylinder and an unusable angle all report nothing.
-  - **The check**: with the tool that cuts testing_15_5 (orient 2, `I15 J75`),
-    can the LEADING edge get into Z−70.2 to −19.5? If yes the model is wrong and
-    wants fixing; if no the limitation is real, the warning should be wired, and
-    the toolpath half becomes worth its risk.
-  - Survey of every demo project and the reasoning: `analysis/040`.
-  - Wiring, when the answer is in, is one block in `polyline.cfg`'s
-    `[VALIDATION]` beside the existing back-angle warning, at `msg_inv(..., 2)`
-    — severity 2, since severity 1 blocks headless runs.
+**Done** (`analysis/041`): the maths moved into `lathe_sections` beside the
+back-angle machinery it mirrors, `spans_between` is now shared by both flanks,
+and the existing reachable-contour warning reports FRONT and BACK
+distinguishably. `polyline.cfg` 1.56. Motion byte-identical — hashed before and
+after on testing_15_2/15_5/15_6 — and `test_front_flank` asserts structurally
+that the front functions are reachable from `[VALIDATION]` and nowhere else.
+
+Also killed a false alarm on the way: a tool table with **no** angle column
+answers 0.0, and 0 degrees is not a tool. With the default 2° back clearance
+that made the ramp `tan(88°)` and invented 1.32 mm and 1.10 mm of unreachable
+radius on testing_3 and testing_4. `finish_profile` already refuses the trailing
+flank the same way; the two now agree.
+
+- [ ] **The TOOLPATH half is still open, and is a decision, not a task.** The
+  warning now says which regions the leading flank cannot make; keeping the path
+  out of them means changing `finish_profile`, the choke point every contour,
+  section window, ladder and table derives from. For scale, the back clearance
+  moves 198 of 323 moves on testing_15_2, and getting the back-angle version of
+  this right cost five stacked faults (`analysis/032`). Worth doing only once
+  the warning has been read on real parts and says it is worth it.
 
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
