@@ -1632,18 +1632,21 @@ decides whether they are work at all:
 - [ ] **18 — the wall pass.** Their switch *skips* a cusp cleanup; we have no
   such move, so we are permanently skipped. Is our pre-finish contour pass the
   better trade, or do the levels want their own cleanup?
-- [ ] **7 / 11 — Machine Undercuts, Groove Suppression.** Both may be our
-  *Respect tool back angle* and *Re-entrant profile* worded differently. Two
-  tooltips would settle both.
-- [x] **23 — High feedrate mode — DONE**, 2026-08-13, polyline.cfg **1.58**,
-  `analysis/044`. Six modes plus a rate; default *Preserve all* is
-  byte-identical. **The dogleg reason does not apply here and the tooltip says
-  so**: measured 148 positioning moves on testing_15_5, 99 radial, 49 axial,
-  **0 moving both axes**, so three of the six choices are the same thing on this
-  output. The risk was the MODAL FEED, not the geometry - a converted move
-  leaves `F` set and the level cut has a path that inherits it - so `hf_move`
-  restores the caller's feed, verified by counting high-feed moves against
-  converted ones: 99/99, 49/49, 148/148, no leak.
+- [~] **7 / 11 — Machine Undercuts, Groove Suppression — MEASURED, part built**,
+  2026-08-13, `analysis/046`. greatEndian's X-comparison rule is now
+  `reentrant_spans()`, validated and cross-checked: on testing_15_5 it reports
+  `Z−34.4..−69.6, 8.12 mm deep`, and **16 roughing passes lie inside that span**
+  — it agrees with the behind-the-boss machinery. `PARAM_MULTI_X` is renamed
+  *"Machine undercuts / grooves (always on)"* and its tooltip now maps our
+  behaviour onto the reference's vocabulary. cfg 1.59.
+  - **What is genuinely missing is only the CHOICE not to machine a pocket**, and
+    it is NOT safe as a roughing-only switch: the finish pass follows the record
+    array, not `finish_profile`, so a pocket skipped by roughing and pre-finish
+    would still be traced at finishing depth into unroughed material — worse
+    than machining it. **NEEDS A CALL**: at a suppressed pocket, should the
+    finish pass skip it too, or trace across its mouth? The detector is ready
+    either way.
+
 - [ ] **12 — rest machining.** The only large one — and the preview's
   `StockField` already simulates remaining material, so it is nearer than it
   looks.

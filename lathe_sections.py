@@ -3182,6 +3182,51 @@ def spans_between(hard, soft, tol=0.01):
     return spans
 
 
+def reentrant_spans(points, tol=0.01):
+    """[(z_from, z_to, depth)] where the profile doubles back under itself.
+
+    greatEndian's rule, 2026-08-13: *"Xlevel of segment -1 is less than Xactive
+    or Xsegment -2"* - walking in cut order, a region is re-entrant where an
+    EARLIER segment's radius lies below the running maximum, i.e. the profile
+    has come back up and what lies between is a pocket reachable only from
+    outside. A groove, a neck, the far side of a boss.
+
+    This is the same knowledge the behind-the-boss machinery already acts on,
+    said as a property of the profile rather than as a scan state. Cross-checked
+    against it: on testing_15_5 this reports Z-34.4..-69.6, and that is exactly
+    the span whose roughing arrives as disjoint intervals.
+
+    A PROPERTY, NOT A WARNING. Every one of the 15_x and 9_x demo projects has a
+    pocket, because that is what those parts are - so reporting "this profile is
+    re-entrant" to an operator would fire on nearly every job and teach them to
+    ignore it. It is exposed for code that needs to know WHERE the pockets are;
+    what an operator needs to be told is whether the tool can REACH, and the two
+    flank warnings already say that.
+    """
+    if not points or len(points) < 3:
+        return []
+    run_max = points[0][1]
+    out, open_at, floor = [], None, None
+    for z, x in points[1:]:
+        if x < run_max - tol:
+            if open_at is None:
+                open_at, floor = z, x
+            floor = min(floor, x)
+        else:
+            if open_at is not None:
+                out.append((open_at, z, run_max - floor))
+                open_at = None
+            run_max = max(run_max, x)
+    # A DIP THAT NEVER COMES BACK UP IS NOT A POCKET. It is the end of the part
+    # getting smaller, cut from outside like anything else. greatEndian's rule
+    # needs an ACTIVE segment standing above the earlier one - without the
+    # profile rising again there is nothing enclosing it, and nothing for a
+    # disjoint interval to be disjoint from. The first version closed the
+    # trailing span here and reported a plain step-down as a groove; the
+    # falling-profile control caught it.
+    return out
+
+
 def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
                       clearance=0.0):
     """[(z_from, z_to, worst_radius_gap)] the TRAILING flank cannot make.
