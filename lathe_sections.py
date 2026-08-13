@@ -58,6 +58,51 @@ def resolve_points_untrimmed(polyline_feature):
     return resolve_points(polyline_feature, trim=False)
 
 
+def extend_tangent(points, front=0.0, back=0.0):
+    """Run the profile on past its own ends, along its own direction.
+
+    Gap 9. The reference package: *"Creates a tangential extension of the
+    geometry from the Front limit"* - the end segment continued along its own
+    tangent, front and back each with their own length.
+
+    ALONG THE TANGENT, not along Z, which is what the reference does and the
+    only reading that means anything on a taper: extending a 30 degree lead-in
+    "by 2 mm" in Z would move the radius 1.15 mm as well and change the shape.
+    Along its own direction the segment simply gets longer.
+
+    Applied AFTER the Z limits, so the extension grows from the trimmed end -
+    "from the Front limit", in the reference's words - rather than from a
+    drawn end the limit has already cut off.
+
+    A profile of fewer than two points, or a zero-length end segment, has no
+    tangent to extend along and is returned untouched.
+    """
+    if not points or len(points) < 2:
+        return points
+
+    # A LENGTH IS A LENGTH IN THE Z/RADIUS PLANE. These points carry X as a
+    # DIAMETER - this module says so at the top - so taking the tangent in
+    # (z, x) as given makes the radial half of it twice its true size: the
+    # direction comes out wrong on every taper, and a 3.0 extension of a
+    # vertical wall moved the surface 1.5. Measured on testing_15_5 before
+    # this: the floor contour's last point went 35.1657 -> 36.6657 in radius
+    # for an extension of 3.0. Convert in, extend, convert back.
+    def _run_on(p_from, p_to, dist):
+        uz, ur = _unit(p_to[0] - p_from[0],
+                       (p_to[1] - p_from[1]) / DIAMETER_MODE)
+        if abs(uz) <= EPS and abs(ur) <= EPS:
+            return p_to
+        return (p_to[0] + uz * dist,
+                p_to[1] + ur * dist * DIAMETER_MODE)
+
+    pts = list(points)
+    if front > EPS:
+        pts[0] = _run_on(pts[1], pts[0], front)
+    if back > EPS:
+        pts[-1] = _run_on(pts[-2], pts[-1], back)
+    return pts
+
+
 def trim_to_front_z(points, f_z):
     """The profile clipped at a FRONT limit, keeping the part behind it.
 
@@ -241,6 +286,21 @@ def resolve_points(polyline_feature, vertices=None, trim=True):
     ez = _lim('param_e_z_on', 'param_e_z')
     if ez is not None:
         pts = trim_to_end_z(pts, ez)
+
+    # and then run on past the ends, along the profile's own direction - see
+    # extend_tangent. AFTER the trims, so the extension grows from the limit
+    # rather than from a drawn end the limit has already removed. Here rather
+    # than in any one builder, for the same reason the trims are here: the
+    # contours, the section windows, the floor ladder and the entry and stop
+    # tables are all derived from these points, so they can only agree with
+    # each other if the profile they read has already been extended.
+    def _ext(name):
+        p = polyline_feature.get_param(name)
+        return _to_float(p.get_ngc_value()) if p is not None else 0.0
+
+    fr, bk = _ext('param_ext_fr'), _ext('param_ext_bk')
+    if fr > EPS or bk > EPS:
+        pts = extend_tangent(pts, fr, bk)
     return pts
 
 

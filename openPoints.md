@@ -1592,8 +1592,21 @@ tracked and carries each one in full; these are the ones still open.
   `test_peck.py`. Runtime rather than a Python table, deliberately: the
   interval END is decided by the scan at runtime, so the rule is walked and no
   geometry is computed in the `.ngc`.
-- [ ] **9 — Tangential extension.** Run the cut past the profile along its own
-  direction, front and back.
+- [x] **9 — Tangential extension — DONE**, 2026-08-13, polyline.cfg **1.54**.
+  *Front* and *Back tangential extension*: run the cut on past the drawn
+  profile along the direction of its own end segment. Applied in
+  `resolve_points` after the Z limits — so it grows "from the Front limit" as
+  the reference words it, and every contour, window and table inherits it —
+  and `_pl_begin_z` carries the front extension so roughing STARTS there too,
+  which is the trap `analysis/025` recorded for the front limit.
+  - **Along the tangent, not along Z.** On a wall those disagree completely:
+    along Z it would do nothing, along the tangent it runs up the wall.
+  - **A bug the end-to-end check caught**: `resolve_points` carries X as a
+    DIAMETER, so taking the tangent in (z, x) as given made the radial half
+    twice its true size — a 3.0 extension moved the surface 1.5. Fixed to the
+    Z/radius plane and asserted there. Verified: front +3.0000 in Z at the
+    front-most cutting move, back +3.0000 in radius up the end wall, neither
+    touching the other end. `test_extension.py`.
 - [ ] **1 — Tool clearance FRONT.** We have back only, and the
   reachable-contour maths already takes a front angle.
 - [ ] **13 — Cut below the inner radius.** Facing and parting to centre leave a
