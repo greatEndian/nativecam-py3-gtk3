@@ -1709,6 +1709,29 @@ as references (14).
 Done from this scan: **15** separate X/Z stock to leave (`analysis/024`),
 **8** the Z limits, front and back (`analysis/025`).
 
+## Bounds do not migrate — found 2026-08-13
+
+- [ ] **A cfg cannot CHANGE a parameter's minimum or maximum on an existing
+  project.** `update_features` copies the saved bounds back over the cfg's:
+
+  ```
+  cfg declares   min 0.01    max 10.0
+  saved project  min -45.0   max 45.0
+  after migration min -45.0  max 45.0     the stale bound wins
+  ```
+
+  Found narrowing the back angle clearance (`analysis/043`): the new range
+  reaches newly added features only, so on every existing project the operator
+  can still type −45. The comment above those lines already argues the cfg
+  should win — *"a saved copy is just a snapshot of what the cfg said when the
+  project was saved"* — but the guard added only covers the cfg DROPPING a
+  bound, not changing one.
+  - The fix is one line, letting the cfg win, and it touches **every bound of
+    every parameter of every migrating feature** — so it needs its own task and
+    its own measurement across the demo projects, not a quiet edit.
+  - Separately: **nothing clamps a stored VALUE on load**, so a project holding
+    an out-of-range value keeps cutting with it until that field is edited.
+
 ## Watch list
 
 - [ ] The AXIS crash fixed in `be094c2` was diagnosed by reasoning, not
