@@ -1607,10 +1607,21 @@ tracked and carries each one in full; these are the ones still open.
     Z/radius plane and asserted there. Verified: front +3.0000 in Z at the
     front-most cutting move, back +3.0000 in radius up the end wall, neither
     touching the other end. `test_extension.py`.
-- [ ] **1 — Tool clearance FRONT.** We have back only, and the
-  reachable-contour maths already takes a front angle.
-- [ ] **13 — Cut below the inner radius.** Facing and parting to centre leave a
-  pip without it.
+- [ ] **1 — Tool clearance FRONT — NEEDS A CALL, and it is bigger than the
+  spec claimed.** `analysis/037`. The gap notes said the front-angle wiring
+  already existed in `lathe_sections`; **it does not** — there is no front
+  angle there at all, only `back_deg`. The tool table's front angle is used
+  solely to DRAW the tool. So this means adding a front-flank constraint to
+  `flank_envelope`, which lands on `finish_profile` and therefore on every
+  contour, table, ladder and window — the five-fault blast radius of
+  `analysis/032`.
+  - **The question that decides the size**: should it change the TOOLPATH, or
+    only the reachable-contour warning? Back clearance today changes the path
+    (198 of 323 moves on testing_15_2). Warning-only touches
+    `unreachable_spans` alone and is small; changing the path re-enters the
+    choke point deliberately. Not guessed.
+  - Also coupled to gaps **7/11** (undercuts, groove suppression), which need
+    the same front flank and are themselves awaiting a decision.
 
 **NEEDS A CALL** — these change what the operation promises, so the answer
 decides whether they are work at all:

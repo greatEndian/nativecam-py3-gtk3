@@ -126,9 +126,15 @@ Holder.
 - **Why it is a gap** — we have the back clearance only. The front flank is
   used in the reachable-contour maths (`front_deg` in `lathe_sections`) but
   there is no user angle added to it, so nothing relieves the leading edge.
-- **What it would touch** — a `PARAM_FRONT_CLEAR` on `tool-change.cfg` next to
-  `back_clear`; `finish_profile`/`unreachable_spans` already take a front angle,
-  so the wiring exists.
+- **What it would touch — CORRECTED 2026-08-13, the wiring does NOT exist.**
+  There is no `front_deg` in `lathe_sections` and no front angle of any kind:
+  `flank_slope`, `flank_envelope`, `finish_profile` and `unreachable_spans`
+  take `back_deg` ONLY. The tool table's front angle (`tool[6]`, read by
+  `get_tool_front_angle`) is used solely by `tool_wedge` to DRAW the tool.
+  So this is not a parameter beside `back_clear`: it is a new front-flank
+  constraint in `flank_envelope` — which lands on `finish_profile`, the choke
+  point every contour and table derives from — and then a clearance on it.
+  See `analysis/037`.
 - **Open question** — does greatEndian want it to change the toolpath, or only
   the reachable-contour warning? Back clearance today changes the path (198 of
   323 moves on testing_15_2).
@@ -329,9 +335,13 @@ Diameter, **Outermost of…**, **Innermost of…** — with the stated rule
 - **Why it is a gap** — parting and facing to centre need the nose to travel
   past the axis, or a pip is left. Same family as *Turn In Negative Diameter*
   (gap 4).
-- **What it would touch** — the polyline's X limit handling; small on its own.
-- **Open question** — is this wanted for facing, for parting, or both? We have
-  no parting operation yet.
+- **DONE 2026-08-13** — `analysis/038`, facing.cfg **1.25**. *Cut below inner
+  radius* on FACING, not the polyline: the polyline's End diameter is a
+  turning region's final diameter and running a turning pass past the axis is
+  not a thing. Measured: the face reaches X0.0000, X-1.0000, X-2.0000 for 0,
+  1 and 2, and at 0 the whole program hashes identical.
+- **Open question, answered** — facing, because there is no parting operation.
+  Parting inherits `#<_fc_below_ir>` when it is built.
 
 #### 14. Radial limits as REFERENCES rather than numbers
 

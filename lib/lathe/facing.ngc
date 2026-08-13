@@ -4,6 +4,27 @@ o<facing> sub
 
 	#<begin_x>   = [#1 / 2 * #<_diameter_mode>]
 	#<end_x>     = [#2 / 2 * #<_diameter_mode>]
+
+	(CUT BELOW THE INNER RADIUS. Facing to centre with a round nose leaves a)
+	(pip: the nose is a circle, so when its centre reaches the axis the edge)
+	(has not yet swept the last of the material and a small cone stands. This)
+	(runs the face on past End diameter in the direction it was already)
+	(cutting, which removes it.)
+	(Applied HERE, where end_x is read, so everything downstream inherits it)
+	(at once - the roughing passes, the finish pass, the lead-out fillet and)
+	(the tip-comp vector all work from end_x and would otherwise disagree.)
+	(The direction is taken from the ORIGINAL #1 and #2, not from the extended)
+	(value: a distance large enough to carry end_x past begin_x would flip the)
+	(test at o<f_dx> below and invert the whole operation.)
+	(_fc_below_ir is a radial length; end_x is in machine X units, so it is)
+	(scaled by _diameter_mode the same way #2 is above.)
+	o<bir> if [#<_fc_below_ir> GT 0.000001]
+		#<bir_dir> = -1
+		o<bir_d> if [#2 GT #1]
+			#<bir_dir> = 1
+		o<bir_d> endif
+		#<end_x> = [#<end_x> + #<bir_dir> * #<_fc_below_ir> * #<_diameter_mode>]
+	o<bir> endif
 	#<begin_z>   = #3
 	#<end_z>     = #4
 
