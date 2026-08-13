@@ -1030,7 +1030,43 @@ class NCamPreviewMixin(object):
         else:
             parent.add(paned)
         paned.show_all()
+        # half and half, once the panel has a real size - see _format_panes_once
+        self._fmt_handler = paned.connect('size-allocate',
+                                          self._format_panes_once)
         return paned
+
+    def _format_panes_once(self, widget, allocation):
+        """Put both splits at half, once at startup, then get out of the way.
+
+        A Paned position cannot be set as a FRACTION before the panel has been
+        allocated: at construction every allocation is 1x1, so half of it is
+        meaningless. That is why `tv_w_adj` could only ever be an absolute pixel
+        count - ncam.py applies it long before any of this has a width.
+
+        So this waits for the first allocation big enough to be real, sets the
+        preview to half the height and the tree/parameter split to half the
+        width, and then DISCONNECTS. One shot: dragging afterwards sticks, and
+        changing the Treeview width preference still works, because by then
+        nothing here is listening.
+
+        The `if position != want` guards are not decoration - setting a position
+        from inside size-allocate re-enters this handler, and the same trap is
+        already documented for the dual-view panes in ncam_ui_chrome.
+        """
+        h = allocation.height
+        w = self.feature_Hpane.get_allocated_width()
+        if h < 200 or w < 200:
+            return                  # not laid out yet; a real allocation follows
+        want_v = h // 2
+        if widget.get_position() != want_v:
+            widget.set_position(want_v)
+        want_h = w // 2
+        if self.feature_Hpane.get_position() != want_h:
+            self.feature_Hpane.set_position(want_h)
+        handler = getattr(self, '_fmt_handler', None)
+        if handler is not None:
+            widget.disconnect(handler)
+            self._fmt_handler = None
 
     def _preview_soft_profile(self):
         """The reachable contour, or None when the drawn one is reachable."""
