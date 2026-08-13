@@ -80,6 +80,32 @@ def run(sets):
         shutil.rmtree(d, ignore_errors=True)
 
 
+def dwells(sets):
+    """How many DWELLs the interpreter actually performs, or None.
+
+    Counted from canon output, not from the file: the G4 is inside
+    lathe_level_pass, which is never inlined into the generated program.
+    """
+    d = tempfile.mkdtemp(prefix='peckdw_')
+    try:
+        out = os.path.join(d, 'o.ngc')
+        cmd = [sys.executable, GEN, '--ini', INI, '--project', PROJECT,
+               '--out', out, '--config-copy']
+        for kv in sets:
+            cmd += ['--set', kv]
+        subprocess.run(cmd, capture_output=True, text=True)
+        if not os.path.isfile(out):
+            return None
+        r = subprocess.run(['rs274', '-g', '-b', '-i', INI, out],
+                           capture_output=True, text=True,
+                           cwd=os.path.dirname(INI), timeout=300)
+        return sum(1 for ln in r.stdout.splitlines() if 'DWELL' in ln.upper())
+    except Exception:
+        return None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def main():
     if not (os.path.isfile(INI) and os.path.isfile(GEN)):
         print('SKIP  demo config or generator not present')
@@ -151,6 +177,41 @@ def main():
           '%s level moves against %s at peck %.0f'
           % (coarse['level_moves'] if coarse else '?', on['level_moves'],
              PECK))
+
+    # --- the dwell -------------------------------------------------------
+    # It must add TIME and no motion: same moves, same travel, same reach.
+    # And it must happen once per peck, which is counted from the interpreter's
+    # own canon output rather than the file - the G4 lives in the SUBROUTINE,
+    # so grepping the generated program finds nothing and proves nothing.
+    dw = run(['polyline:param_peck_len=%s' % PECK,
+              'polyline:param_peck_ret=%s' % RET,
+              'polyline:param_peck_dwell=0.4'])
+    check('a dwell moves nothing at all',
+          dw is not None and dw['level_moves'] == on['level_moves']
+          and abs(dw['travel'] - on['travel']) < 1e-6
+          and dw['deepest'] == on['deepest'],
+          'the dwell changed the path, which it must never do')
+
+    idle2 = run(['polyline:param_peck_dwell=0.4'])
+    check('   and a dwell with no peck length changes nothing either',
+          idle2 is not None
+          and idle2['level_moves'] == off['level_moves']
+          and abs(idle2['travel'] - off['travel']) < 1e-6)
+
+    n_dw = dwells(['polyline:param_peck_len=%s' % PECK,
+                   'polyline:param_peck_ret=%s' % RET,
+                   'polyline:param_peck_dwell=0.4'])
+    n_base = dwells(['polyline:param_peck_len=%s' % PECK,
+                     'polyline:param_peck_ret=%s' % RET])
+    if n_dw is None or n_base is None:
+        print('SKIP  dwell count needs rs274')
+    else:
+        pecks = int(round((on['travel'] - off['travel']) / (2.0 * RET)))
+        check('   and it dwells exactly once per peck',
+              n_dw - n_base == pecks,
+              '%d dwells for %d pecks (%d in the program without a dwell)'
+              % (n_dw - n_base, pecks, n_base))
+        print('      %d dwells for %d pecks' % (n_dw - n_base, pecks))
 
     print()
     if FAILED:

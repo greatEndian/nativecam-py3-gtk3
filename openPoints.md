@@ -1584,6 +1584,11 @@ tracked and carries each one in full; these are the ones still open.
   Measured on testing_15_5 at 10/1: the cut reaches the identical Z−69.6380 on
   the identical radii, and the extra travel is **exactly 170.0 mm = 170
   retracts of 1.0**, so nothing goes anywhere unaccounted for.
+  **Peck dwell** added the same day: seconds held AT THE RETRACTED POINT, where
+  the chip is already broken and free, so the pause lets it fall clear rather
+  than be dragged back into the next cut. Verified from the interpreter's own
+  canon output — **85 dwells for 85 pecks**, exactly one each — and asserted to
+  move nothing: same moves, same travel, same reach.
   `test_peck.py`. Runtime rather than a Python table, deliberately: the
   interval END is decided by the scan at runtime, so the rule is walked and no
   geometry is computed in the `.ngc`.

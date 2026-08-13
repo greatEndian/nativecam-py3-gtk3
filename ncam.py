@@ -2669,6 +2669,7 @@ class Preferences(object):
             # chip breaking on the roughing levels; 0 = one continuous cut
             self.default += ("#<_pl_peck_len>             = 0.0\n")
             self.default += ("#<_pl_peck_ret>             = 0.0\n")
+            self.default += ("#<_pl_peck_dwell>           = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

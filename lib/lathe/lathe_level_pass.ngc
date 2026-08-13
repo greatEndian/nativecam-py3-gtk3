@@ -1052,6 +1052,12 @@ o<lathe_level_pass> sub
 				#<pk_bk> = #<z_start>
 			o<pk_clamp> endif
 			G1 Z#<pk_bk>
+			(wait AT THE RETRACTED POINT, where the chip is already broken)
+			(and free - a pause here lets it fall clear instead of being)
+			(dragged back into the next cut. Nothing moves during it.)
+			o<pk_dw> if [#<_pl_peck_dwell> GT 0.0001]
+				G4 P#<_pl_peck_dwell>
+			o<pk_dw> endif
 			G1 Z#<pk_at>
 		o<pk_w> endwhile
 		G1 Z#<z_end_cut>
