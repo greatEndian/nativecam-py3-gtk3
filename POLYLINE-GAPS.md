@@ -144,6 +144,8 @@ Holder.
   the reachable-contour warning? Back clearance today changes the path (198 of
   323 moves on testing_15_2).
 
+- **Status 2026-08-13** — the WARNING half is built and measured, but NOT wired: `lathe_front_flank.py`, inert, nothing imports it. On the demo projects it reports spans up to **14.42 mm of radius** (testing_15_5) on parts that machine correctly, so the angle convention or the side mirror may be wrong. It discriminates - a plain rising taper, a cylinder and an unusable angle all report nothing - so it is not a blanket artifact. `analysis/040` names the single physical check that settles it. The toolpath half stays blocked on that answer.
+
 #### 2. Tool Orientation — a programmable B axis
 
 - **What it is** — *"Use this option if your lathe turret has a programmable B

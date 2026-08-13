@@ -1231,6 +1231,27 @@ concluded from the tables that nothing was missing. All three were wrong.
   by side, showed it in one line. Prefer a measurement that enumerates what
   should be there over one that inspects what is.
 
+## Gap 1, front tool clearance — measured, NOT wired, 2026-08-13
+
+The warning half is built: `lathe_front_flank.py` mirrors the back-angle wedge
+(same `flank_envelope`, front angle, shadowed side flipped). It is **inert** —
+nothing imports it, asserted by `test_front_flank`, so no toolpath moved.
+
+- [ ] **NEEDS A PHYSICAL CHECK before it can be wired.** On testing_15_5 it
+  reports **14.42 mm of radius** unreachable over Z−70.2..−19.5, on a part that
+  machines correctly. Either the limitation is real and has never been warned
+  about, or the angle convention (`90 − I`) is inverted, or the side mirror is
+  wrong — code cannot tell them apart. It is **not** a blanket artifact: a plain
+  rising taper, a cylinder and an unusable angle all report nothing.
+  - **The check**: with the tool that cuts testing_15_5 (orient 2, `I15 J75`),
+    can the LEADING edge get into Z−70.2 to −19.5? If yes the model is wrong and
+    wants fixing; if no the limitation is real, the warning should be wired, and
+    the toolpath half becomes worth its risk.
+  - Survey of every demo project and the reasoning: `analysis/040`.
+  - Wiring, when the answer is in, is one block in `polyline.cfg`'s
+    `[VALIDATION]` beside the existing back-angle warning, at `msg_inv(..., 2)`
+    — severity 2, since severity 1 blocks headless runs.
+
 ## Roughing bugs found in AXIS — greatEndian, 2026-08-11
 
 All on `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_5.xml`
