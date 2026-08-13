@@ -707,68 +707,20 @@ so picking it up again does not start from a blank page.
 > per-op side table, which op supports what, and the entry rule — is written up
 > in **`TOOL-DEFINITION.md` §7**. The open points below are what is left.
 
-- [ ] **NEEDS A CALL — is tool radius compensation done by the CNC or by the
-  CAM?** Raised by greatEndian 2026-08-02. **Both modes already exist** — the
-  `Tool nose comp` combo is Off / Native LinuxCNC / In CAM, and In CAM is built
-  for both tapers, boring and the polyline. What is not decided is which is the
-  DEFAULT and which one the project commits to. Today the default is
-  **the control**:
-  `taper`/`taper_id`/`boring`/`facing` switch native comp on through
-  `tip_comp_on.ngc` (`G41.1`/`G42.1 D#<_tip_comp_d> L#<_tip_comp_l>`),
-  `turning` and `radius_od` use plain `G41`/`G42`, and the polyline finish pass
-  uses dynamic comp with `L0` for the geometric offset and `L#5413` only when
-  nose comp is on. The CAM emits control points and the interpreter offsets
-  them.
-
-  The alternative — and the one the standing rule points at — is to offset the
-  path **in Python at generation time**, the way `entry_contour()` and the stop
-  table already offset the contour, and emit coordinates the machine walks with
-  `G40` throughout.
-
-  What each side actually buys:
-
-  | | CNC-side (today) | CAM-side (Python) |
-  |---|---|---|
-  | follows the machine's own tool table | yes, no regeneration needed | no, baked in at generation |
-  | a re-ground insert | just works | must regenerate |
-  | unit-testable | no, only `rs274` end-to-end | yes, plain `python3` |
-  | entry/exit rules | a comp entry needs a straight feed ≥ nose radius in free air | none |
-  | impossible geometry | control aborts the program | we decide and can warn in the pane |
-  | preview agrees with the machine | only if we model comp ourselves | exactly, the points are the path |
-
-  The entry rule is not theoretical: it is why `facing.ngc` **drops its lead-in
-  and lead-out arcs** when comp is on, why the ID ops need the retract widened
-  by `#<_tip_lead_w>`, and it is the likely root of the 1.4929 mm ID gouge
-  below. It is also why comp is refused on some ops at all.
-
-  The realistic answer is probably **both, as a preference** — control comp for
-  a shop that edits its tool table between runs, CAM comp for correctness and
-  for the preview. But that is a decision, not a guess, and it decides how much
-  of `lib/lathe` stays. Nothing else should be built on top of comp until it is
-  taken.
-
-  ### Settled since — accuracy no longer decides it
-
-  Steps 1 to 5 in the Done section closed both defects that were making the
-  two modes look different. The surface each leaves now, corners excluded:
-
-  | project | Off | Native | In CAM |
-  |---|---|---|---|
-  | testing_15_2 | 0.1094 | **0.0080** | **0.0080** |
-  | testing_11 | 0.1058 | **0.0079** | **0.0079** |
-  | testing_13_arcs | 0.0013 | **0.0014** | **0.0014** |
-
-  **Native and In CAM agree to the last digit on all three.** The earlier
-  reading - Native 0.37 and In CAM 0.89 - was two separate faults, each
-  inflating the OTHER mode's apparent error: the arc truncation was in the
-  native path and In CAM only escaped it by asking for nose_r 0, and the entry
-  ramp was Native's alone.
-
-  So this decision is now about **tool-table behaviour, testability and the
-  preview**, not correctness. The trade-off table above still stands on those
-  grounds. My reading remains **both, as a preference**, with the default the
-  open question - but it is a preference now, not a correctness call, which
-  makes it a smaller decision than it was.
+- [x] **CNC-SIDE IS THE DEFAULT — RULED AND DONE**, 2026-08-13, `analysis/045`.
+  greatEndian: *"CNC side"*. Six of the seven lathe ops already defaulted to
+  Native LinuxCNC; only `facing` shipped `value = 0`, disagreeing with its own
+  tooltip which already called Native the default. `facing.cfg` → 1.26.
+  - **Scope, measured**: a cfg default is read when a feature is ADDED, and a
+    saved project keeps its own stored value through migration. All three demo
+    projects hash identical before and after (`b849fd15881b` / `7de894acaec9` /
+    `d5d3b06f1ee0`), and testing_15_5 still stores Facing=0, Polyline=2. **An
+    existing feature must be set by hand.** Same asymmetry `analysis/043` found
+    for the back-clearance bounds.
+  - Noted in the tooltip: any compensated mode on FACING replaces the lead-in/out
+    arcs with a straight run-in beyond the OD, because an arc cannot establish
+    compensation — so switching a facing cut off Off changes the motion, by
+    design. `test_comp_default.py` locks all seven.
 
 - [ ] **In CAM comp is refused on FACING only** — corrected 2026-08-02 by
   reading the code rather than the note. The `.cfg` validation blocks mode 2
