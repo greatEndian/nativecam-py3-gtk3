@@ -1647,9 +1647,21 @@ decides whether they are work at all:
     finish pass skip it too, or trace across its mouth? The detector is ready
     either way.
 
-- [ ] **12 — rest machining.** The only large one — and the preview's
-  `StockField` already simulates remaining material, so it is nearer than it
-  looks.
+- [ ] **12 — rest machining — MEASURED, not built**, 2026-08-13, `analysis/047`.
+  `test_leftover` reports **0 wide regions on every demo project**, both
+  sectioning states; the only material standing is narrow shoulder spikes
+  (0.5681–0.8579 mm), every one narrower than 1.5× the nose. **Within one
+  operation with one tool there is nothing to rest-machine** — a pass emitter
+  would emit nothing, everywhere.
+  - It is inherently a **second-tool** feature: those spikes are nose-radius
+    fillets and come out only with a smaller nose. That needs (a) the simulated
+    result of one operation carried to the next AT GENERATION TIME — `StockField`
+    simulates a finished program in the preview, not per-feature during the walk
+    — and (b) an operation whose stock is the previous operation's result rather
+    than the Workpiece, or the second polyline roughs from the bar again and cuts
+    air. The feature-to-feature mechanism exists (`WORKPIECE_FACE_Z`,
+    `analysis/039`), so it is a real design, just a much larger one than the gap
+    description implies.
 
 **Recorded and parked** — real differences, not worth chasing now: Tool
 Orientation as a B axis (2), tailstock M21/M22 (3), negative diameter (4), six
