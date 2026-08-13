@@ -3,9 +3,12 @@ import subprocess
 
 from lxml import etree
 
+import lathe_sections
+
 import ncam
 from ncam import (
-    gtk, gdk, _, tv_select, mess_dlg, get_int, search_path, search_warning, Feature,
+    gtk, gdk, _, tv_select, mess_dlg, get_int, get_float, search_path,
+    search_warning, Feature,
     XML_TAG, CFG_DIR, CATALOGS_DIR, PROJECTS_DIR, CURRENT_WORK, DEFAULT_TEMPLATE,
     EXAMPLES_DIR,
 )
@@ -135,6 +138,9 @@ class NCamProjectIOMixin:
 
     def to_gcode(self, *arg) :
         ncam.UNIQUE_ID = 9
+        # cleared every build: a face left over from the last generation would
+        # silently datum this one against a Workpiece that is no longer there
+        lathe_sections.WORKPIECE_FACE_Z = None
         self.resolve_program_units()
 
         def recursive(itr, ldr, parent_feature = None) :
@@ -150,6 +156,18 @@ class NCamProjectIOMixin:
                 # whatever the last GUI edit happened to leave behind, or 0.
                 # Features are processed in order, so by the time a later
                 # feature asks, the nearest preceding tool change has spoken.
+                # The Workpiece's face, for anything measuring FROM it - the
+                # Z-limit datums. Same mechanism and same reason as the tool
+                # change below: features are processed in order and the
+                # Workpiece is the first of them, so by the time the polyline
+                # asks, it has spoken. Set on lathe_sections rather than looked
+                # up from there, because that module imports nothing from ncam
+                # by design and a Feature has no back-reference to its tree.
+                if f.get_attr('type') == 'workpiece' :
+                    p_wz = f.get_param('param_z')
+                    if p_wz is not None :
+                        lathe_sections.WORKPIECE_FACE_Z = \
+                            get_float(p_wz.get_ngc_value())
                 if f.get_attr('type') == 'tool_change' :
                     p_dnum = f.get_param('param_dnum')
                     if p_dnum is not None :

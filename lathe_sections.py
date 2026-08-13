@@ -103,6 +103,74 @@ def extend_tangent(points, front=0.0, back=0.0):
     return pts
 
 
+# The Workpiece's face Z, published here by `to_gcode` as it walks the tree -
+# see z_limit_abs. None when no Workpiece has been seen this build.
+#
+# Set from OUTSIDE rather than looked up: this module imports nothing from ncam
+# on purpose, so that it stays GTK-free and unit-testable, and a Feature has no
+# back-reference to the tree it sits in - it holds only its own attributes and
+# parameters. The one-way dependency ncam -> lathe_sections already exists
+# (ncam.py imports this module), so ncam sets the attribute and this module
+# never has to know ncam is there.
+WORKPIECE_FACE_Z = None
+
+
+def z_limit_abs(polyline_feature, which):
+    """The absolute Z a Z limit sits at, or None when its switch is off.
+
+    Gap 8/14's useful half. A limit used to be an absolute Z and nothing else.
+    The reference package gives each one a datum, but its datums - Model front,
+    Chuck front, Selection - point at solid geometry we do not have. Ours is a
+    real object with a real face, so that is the datum that survives the
+    translation: `POLYLINE-GAPS.md` says as much.
+
+    `which` is 'front' or 'end'. Datum 0 is Absolute Z, exactly what the value
+    has always meant. Datum 1 measures FROM THE WORKPIECE FACE, into the stock:
+    the face is the origin and the value is how far past it the limit sits, so
+    the absolute Z is `face - value`. That sign is what makes the number read
+    the way a machinist says it - "40 from the face" - rather than as a
+    coordinate that happens to be negative.
+
+    WITH NO WORKPIECE IN THE TREE the datum cannot be resolved and the value is
+    taken as absolute, which is the behaviour every existing project already
+    has. Falling back rather than refusing is deliberate but not silent: it is
+    the caller's job to say so, and `build_z_limit_note` emits a comment into
+    the program when it happens.
+    """
+    sw = polyline_feature.get_param(
+        'param_fr_z_on' if which == 'front' else 'param_e_z_on')
+    val = polyline_feature.get_param(
+        'param_fr_z' if which == 'front' else 'param_e_z')
+    if sw is None or val is None or _to_float(sw.get_ngc_value()) <= 0:
+        return None
+    v = _to_float(val.get_ngc_value())
+    dat = polyline_feature.get_param(
+        'param_fr_z_dat' if which == 'front' else 'param_e_z_dat')
+    if dat is None or int(_to_float(dat.get_ngc_value())) != 1:
+        return v
+    if WORKPIECE_FACE_Z is None:
+        return v                       # no Workpiece - see the docstring
+    return WORKPIECE_FACE_Z - v
+
+
+def build_z_limit_note(polyline_feature):
+    """A comment when a limit asks for a datum there is no Workpiece for."""
+    if WORKPIECE_FACE_Z is not None:
+        return ''
+    for which in ('front', 'end'):
+        dat = polyline_feature.get_param(
+            'param_fr_z_dat' if which == 'front' else 'param_e_z_dat')
+        sw = polyline_feature.get_param(
+            'param_fr_z_on' if which == 'front' else 'param_e_z_on')
+        if (dat is not None and sw is not None
+                and _to_float(sw.get_ngc_value()) > 0
+                and int(_to_float(dat.get_ngc_value())) == 1):
+            return ('(WARNING - a Z limit is set to measure from the workpiece '
+                    'face and there is no Workpiece in the tree, so it has '
+                    'been taken as an absolute Z instead.)')
+    return ''
+
+
 def trim_to_front_z(points, f_z):
     """The profile clipped at a FRONT limit, keeping the part behind it.
 
@@ -270,20 +338,17 @@ def resolve_points(polyline_feature, vertices=None, trim=True):
     # the front limit first, then the back one - each gated on its own switch,
     # because no Z value is safe as a sentinel when a profile may begin at a
     # positive Z. See trim_to_end_z.
-    def _lim(sw, val):
-        a = polyline_feature.get_param(sw)
-        b = polyline_feature.get_param(val)
-        if a is None or b is None or _to_float(a.get_ngc_value()) <= 0:
-            return None
-        return _to_float(b.get_ngc_value())
-
     if not trim:
         return pts
 
-    fz = _lim('param_fr_z_on', 'param_fr_z')
+    # each limit resolved through its own datum first - see z_limit_abs. The
+    # trims themselves are unchanged and still take an absolute Z, so every
+    # contour, window, ladder and table inherits the datum without knowing it
+    # exists.
+    fz = z_limit_abs(polyline_feature, 'front')
     if fz is not None:
         pts = trim_to_front_z(pts, fz)
-    ez = _lim('param_e_z_on', 'param_e_z')
+    ez = z_limit_abs(polyline_feature, 'end')
     if ez is not None:
         pts = trim_to_end_z(pts, ez)
 

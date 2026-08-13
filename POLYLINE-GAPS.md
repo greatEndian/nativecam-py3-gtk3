@@ -96,6 +96,11 @@ the translation is pointing at **our own** objects: the Workpiece's stock
 diameter and face Z. That single idea would close the useful half of gaps 8 and
 14 at once.
 
+**DONE, 2026-08-13** — the face half of it: each Z limit now carries a datum,
+Absolute Z or From workpiece face, resolved in Python to the absolute Z the
+trims already take. `analysis/039`, polyline.cfg 1.55. The stock DIAMETER half
+is still open and is the same idea applied to the radial limits.
+
 **And what we have that they do not**, worth remembering before treating their
 UI as the target: a per-region roughing floor ladder, the reachable-contour
 warning that names the span it cannot make in millimetres, and nose

@@ -849,11 +849,24 @@ validation ones.
   as bounded by the lead-in length so it cannot grow. **NEEDS A CALL:** should
   a front limit approach radially instead?
 
-- [ ] **The Z limits have no datum modes.** Both are absolute Z. The reference
-  measures from the stock face, the chuck or a picked face; the version that
-  could work here is pointing at the **Workpiece** feature, which already
-  carries a face Z and stock diameter. Gap 14's useful half.
+- [x] **The Z limits have datum modes — DONE**, 2026-08-13, polyline.cfg
+  **1.55**, `analysis/039`. *Front Z datum* / *End Z datum*: Absolute Z (the
+  default, unchanged) or From workpiece face, the value then being how far past
+  the face into the stock. The face reaches generation-time Python the way the
+  tool change's values already do — `to_gcode` publishes it as it walks the
+  tree, the Workpiece being the first feature — because a Feature has no
+  back-reference to its tree and `lathe_sections` imports nothing from `ncam`.
+  Default proven byte-identical on three projects; datum 40-from-face equals
+  absolute −40 (Z−40.6043), follows the workpiece to Z−50.6043 when it moves,
+  and an absolute value correctly does not. `test_z_datum.py`.
 
+- [ ] **An End Z limit does not bite on testing_15_5.** An absolute `-40` still
+  reaches Z−70.4 there, while the same limit on testing_15_2 correctly reaches
+  Z−40.6043. Verified **pre-existing** — identical with the datum work stashed —
+  so it is not a regression from it, and it was found only because that work
+  needed a project with a known-good limit to anchor its probe against. Worth
+  finding out what is different about 15_5 before trusting a Z limit on an
+  arbitrary project.
 - [ ] **VALIDATION — a `[VALIDATION]` block cannot use `resolve_points`.** It
   runs from `Feature.validate()` part-way through `to_gcode`'s walk, before the
   children are resolvable, so it returns an **empty list** there. A check
