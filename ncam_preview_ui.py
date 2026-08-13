@@ -1053,20 +1053,36 @@ class NCamPreviewMixin(object):
         from inside size-allocate re-enters this handler, and the same trap is
         already documented for the dual-view panes in ncam_ui_chrome.
         """
-        h = allocation.height
-        w = self.feature_Hpane.get_allocated_width()
-        if h < 200 or w < 200:
+        if allocation.height < 200 or \
+                self.feature_Hpane.get_allocated_width() < 200:
             return                  # not laid out yet; a real allocation follows
-        want_v = h // 2
-        if widget.get_position() != want_v:
-            widget.set_position(want_v)
-        want_h = w // 2
-        if self.feature_Hpane.get_position() != want_h:
-            self.feature_Hpane.set_position(want_h)
         handler = getattr(self, '_fmt_handler', None)
         if handler is not None:
             widget.disconnect(handler)
             self._fmt_handler = None
+        # NOT APPLIED HERE. set_layout defers its work with GLib.idle_add at the
+        # default idle priority, and that deferred pass REPACKS frame2 - the
+        # parameters - into feature_Hpane. Formatting from inside size-allocate
+        # therefore lands BEFORE the repack and is undone by it, which is why
+        # the first version measured half in isolation and did nothing in the
+        # running panel. PRIORITY_LOW is numerically after PRIORITY_DEFAULT_IDLE,
+        # so this runs once the layout has settled.
+        GLib.idle_add(self._apply_half_split, widget,
+                      priority=GLib.PRIORITY_LOW)
+
+    def _apply_half_split(self, paned):
+        """Both splits to half, from an idle after the layout has settled."""
+        h = paned.get_allocated_height()
+        w = self.feature_Hpane.get_allocated_width()
+        if h > 200:
+            want = h // 2
+            if paned.get_position() != want:
+                paned.set_position(want)
+        if w > 200:
+            want = w // 2
+            if self.feature_Hpane.get_position() != want:
+                self.feature_Hpane.set_position(want)
+        return False                # one shot
 
     def _preview_soft_profile(self):
         """The reachable contour, or None when the drawn one is reachable."""

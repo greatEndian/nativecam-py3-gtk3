@@ -45,6 +45,36 @@ correct unsectioned and four times too long sectioned, and the screenshot had
 Sectioning ticked. Read the settings out of the picture, and measure that case
 first.
 
+## **Research, show the path, fix, self-verify — standing rule**
+
+greatEndian, 2026-08-13: *"create own habit ... that I something want, you do
+research, investigate the problem/task, briefly show me your path of problem and
+its solving, fix/solve it and then self verify/test it by yourself"*.
+
+Four steps, every request, in order:
+
+1. **Research and investigate.** Read the code AND measure the behaviour. Never
+   act on a hypothesis formed from reading alone.
+2. **Briefly show the path** — the problem and how it will be solved. A few
+   lines, not an essay.
+3. **Fix it.** Deliver the change, not a description of one.
+4. **Self-verify.** Run it. Prove it with a number or a test before saying done.
+
+Earned across the session of 2026-08-10..13, where the failure was always the
+same shape: steps 1 and 4 skipped. Wrong conclusions drawn from reading code
+instead of measuring, five times over; "correct" claimed from parameter tables
+while greatEndian could see metal standing in AXIS; and repeated hand-backs of
+"measured, reverted, here is the next step" when a fix was asked for. Two claims
+had to be retracted, and one unverified change crashed LinuxCNC.
+
+**Validate the instrument before trusting it.** Broken probes cost more than no
+probe. In that session alone: wrong global names read as findings, an
+interpolator that silently skipped vertical segments (three wrong conclusions),
+and a filtered point list whose non-adjacent points were interpolated across.
+Check any new probe against a number already known.
+
+**Self-verify means self.** greatEndian is the last check, not the first.
+
 ## **Plan the whole blast radius first — standing rule**
 
 greatEndian, 2026-08-09: *"before we will touch anything you will go to
