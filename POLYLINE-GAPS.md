@@ -60,6 +60,7 @@ contained, and Python-first:
 |---|---|---|
 | ~~15~~ | ~~Separate X and Z stock to leave~~ | **DONE 2026-08-09** — `analysis/024`, polyline.cfg 1.44 |
 | ~~8~~ | ~~A back Z limit~~ | **DONE 2026-08-09** — `analysis/025`, polyline.cfg 1.45. Front limit and datums still open |
+| ~~23~~ | ~~**High feedrate mode**~~ | **DONE 2026-08-13** - `analysis/044`, polyline.cfg 1.56. Our rapids are all single-axis, so the dogleg case cannot arise here; the modes that convert are still useful |
 | 16 | **Pecking** | chip breaking has no expression at all; a Python subdivision of an interval we already compute |
 | 9 | **Tangential extension** | run the cut past the profile along its own direction, front and back |
 | 1 | **Tool clearance FRONT** | we have back only, and the reachable-contour maths already takes a front angle |

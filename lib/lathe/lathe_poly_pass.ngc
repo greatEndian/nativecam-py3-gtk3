@@ -178,9 +178,9 @@ o<lathe_poly_pass> sub
 
 	(safe approach: retract above stock, rapid back in Z)
 	o<ap_side> if [#<_pl_side> EQ 1]
-		G0 X#<_pl_id_ret>
+		o<hf_move> CALL [0] [#<_pl_id_ret>] [#<pass_feed>]
 	o<ap_side> else
-		G0 X[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]
+		o<hf_move> CALL [0] [[#<_wp_dia_od> + #<_x_clear> + #<shift_r> * #<_diameter_mode>]] [#<pass_feed>]
 	o<ap_side> endif
 
 	(Does the contour trace begin on an ARC? The trace starts at record 2, so)
@@ -235,8 +235,8 @@ o<lathe_poly_pass> sub
 			#<li_bax> = #<comp_ex>
 		o<li_base> endif
 
-		G0 Z[#<li_baz> + #<li_len> * #<li_bz>]
-		G0 X[[#<li_bax> + #<li_len> * #<li_bx>] * #<_diameter_mode>]
+		o<hf_move> CALL [1] [[#<li_baz> + #<li_len> * #<li_bz>]] [#<pass_feed>]
+		o<hf_move> CALL [0] [[[#<li_bax> + #<li_len> * #<li_bx>] * #<_diameter_mode>]] [#<pass_feed>]
 		(the lead feed applies to the STRAIGHT lead only - the blend radius is)
 		(already cutting into the part at the contour's own direction, so it)
 		(runs at the pass feed like the rest of the cut. With no lead feed set)
@@ -283,8 +283,8 @@ o<lathe_poly_pass> sub
 			#<ae_dst> = [#<comp_r> * 2]
 		o<ae_min> endif
 
-		G0 Z[#<entry_z> + #<ae_dst> * #<ae_bz>]
-		G0 X[[#<entry_x> + #<ae_dst> * #<ae_bx>] * #<_diameter_mode>]
+		o<hf_move> CALL [1] [[#<entry_z> + #<ae_dst> * #<ae_bz>]] [#<pass_feed>]
+		o<hf_move> CALL [0] [[[#<entry_x> + #<ae_dst> * #<ae_bx>] * #<_diameter_mode>]] [#<pass_feed>]
 		o<tip_comp_on> CALL [#<c_side>]
 		#<comp_done> = 1
 		F#<li_feed>
@@ -293,8 +293,8 @@ o<lathe_poly_pass> sub
 		#<_cut_current_x> = #<entry_z>
 	o<lead_in> else
 		(plunge approach, landing on the already-compensated entry point)
-		G0 Z[#<comp_ez> + #<z_dir> * #<_pl_z_clear>]
-		G0 X[#<comp_ex> * #<_diameter_mode>]
+		o<hf_move> CALL [1] [[#<comp_ez> + #<z_dir> * #<_pl_z_clear>]] [#<pass_feed>]
+		o<hf_move> CALL [0] [[#<comp_ex> * #<_diameter_mode>]] [#<pass_feed>]
 		#<_cut_current_x> = [#<entry_z> + #<z_dir> * #<_pl_z_clear>]
 	o<lead_in> endif
 	#<_cut_current_y> = #<entry_x>

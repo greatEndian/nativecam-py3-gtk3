@@ -2678,6 +2678,10 @@ class Preferences(object):
             # generated before the parameter existed behaves as it always did.
             self.default += ("#<_pl_pf_on>                = 1.0\n")
             # chip breaking on the roughing levels; 0 = one continuous cut
+            # High feedrate mode: which axis's positioning moves post as G1
+            self.default += ("#<_pl_hf_x>                 = 0.0\n")
+            self.default += ("#<_pl_hf_z>                 = 0.0\n")
+            self.default += ("#<_pl_hf_feed>              = 0.0\n")
             self.default += ("#<_pl_peck_len>             = 0.0\n")
             self.default += ("#<_pl_peck_ret>             = 0.0\n")
             self.default += ("#<_pl_peck_dwell>           = 0.0\n")

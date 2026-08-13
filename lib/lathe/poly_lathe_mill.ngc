@@ -109,8 +109,8 @@ o<poly_lathe_mill> sub
 
         o<park_in> if [#<_pl_park_on> GT 0]
                 (user start point: begin the operation from here)
-                G0 X#<_pl_park_x>
-                G0 Z#<_pl_park_z>
+                o<hf_move> CALL [0] [#<_pl_park_x>] [#<_rough_feed>]
+                o<hf_move> CALL [1] [#<_pl_park_z>] [#<_rough_feed>]
         o<park_in> endif
 
         o<sgn> if [#<start_radius> GE #<final_radius>]
@@ -973,15 +973,15 @@ o<poly_lathe_mill> sub
         #<_x_wall_dir> = 0
 
         o<ret_side> if [#<_pl_side> EQ 1]
-                G0 X#<_pl_id_ret>
+                o<hf_move> CALL [0] [#<_pl_id_ret>] [#<_rough_feed>]
         o<ret_side> else
-                G0 X[#<_wp_dia_od> + #<_X_rapid>]
+                o<hf_move> CALL [0] [[#<_wp_dia_od> + #<_X_rapid>]] [#<_rough_feed>]
         o<ret_side> endif
         G40
         o<park_out> if [#<_pl_park_on> GT 0]
                 (return to the user start point)
-                G0 X#<_pl_park_x>
-                G0 Z#<_pl_park_z>
+                o<hf_move> CALL [0] [#<_pl_park_x>] [#<_rough_feed>]
+                o<hf_move> CALL [1] [#<_pl_park_z>] [#<_rough_feed>]
         o<park_out> endif
 
         (restore coordinate system - only if the polyline ever left it)

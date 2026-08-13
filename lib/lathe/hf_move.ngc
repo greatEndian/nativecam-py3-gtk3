@@ -1,0 +1,52 @@
+(High-feedrate positioning: emit one single-axis positioning move as either a)
+(true rapid or a G1 at the high feed, per _pl_hf_x / _pl_hf_z.)
+(CALL axis[1] target[2] restore_feed[3])
+(axis 0 = X, the radial move; axis 1 = Z, the axial one.)
+
+(WHY A SUBROUTINE AND NOT 13 INLINE CONDITIONALS. Every positioning move the)
+(polyline emits is SINGLE-AXIS - measured, 148 rapids on testing_15_5 and not)
+(one of them moves both X and Z - so which axis a site is belongs to the site)
+(and the only question left is G0 or G1. Centralising it puts the FEED RESTORE)
+(below in one place instead of thirteen.)
+
+(THE FEED RESTORE IS THE WHOLE RISK. F is modal, so a G1 issued at the high)
+(feed leaves it set, and the next cutting move that does not name its own F)
+(would run at it. lathe_level_pass has such a path: with the profile-angle)
+(approach off, the level cut takes the F last set. So every converted move)
+(puts the caller's feed back before returning, and the caller passes the feed)
+(that should be in effect afterwards.)
+o<hf_move> sub
+	#<hf_axis>    = #1
+	#<hf_target>  = #2
+	#<hf_restore> = #3
+
+	#<hf_g1> = 0
+	o<hf_pick> if [#<hf_axis> LT 0.5]
+		#<hf_g1> = #<_pl_hf_x>
+	o<hf_pick> else
+		#<hf_g1> = #<_pl_hf_z>
+	o<hf_pick> endif
+
+	(a high feed of 0 means the operator asked for the mode but gave no rate -)
+	(posting G1 F0 would stop the machine dead, so fall back to a true rapid)
+	o<hf_rate> if [#<_pl_hf_feed> LE 0.0001]
+		#<hf_g1> = 0
+	o<hf_rate> endif
+
+	o<hf_do> if [#<hf_g1> GT 0]
+		o<hf_ax1> if [#<hf_axis> LT 0.5]
+			G1 F#<_pl_hf_feed> X#<hf_target>
+		o<hf_ax1> else
+			G1 F#<_pl_hf_feed> Z#<hf_target>
+		o<hf_ax1> endif
+		o<hf_rst> if [#<hf_restore> GT 0.0001]
+			F#<hf_restore>
+		o<hf_rst> endif
+	o<hf_do> else
+		o<hf_ax0> if [#<hf_axis> LT 0.5]
+			G0 X#<hf_target>
+		o<hf_ax0> else
+			G0 Z#<hf_target>
+		o<hf_ax0> endif
+	o<hf_do> endif
+o<hf_move> endsub

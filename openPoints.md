@@ -1683,8 +1683,15 @@ decides whether they are work at all:
 - [ ] **7 / 11 — Machine Undercuts, Groove Suppression.** Both may be our
   *Respect tool back angle* and *Re-entrant profile* worded differently. Two
   tooltips would settle both.
-- [ ] **23 — rapids posted as G1.** Real safety on a control that doglegs.
-  Does yours?
+- [x] **23 — High feedrate mode — DONE**, 2026-08-13, polyline.cfg **1.58**,
+  `analysis/044`. Six modes plus a rate; default *Preserve all* is
+  byte-identical. **The dogleg reason does not apply here and the tooltip says
+  so**: measured 148 positioning moves on testing_15_5, 99 radial, 49 axial,
+  **0 moving both axes**, so three of the six choices are the same thing on this
+  output. The risk was the MODAL FEED, not the geometry - a converted move
+  leaves `F` set and the level cut has a path that inherits it - so `hf_move`
+  restores the caller's feed, verified by counting high-feed moves against
+  converted ones: 99/99, 49/49, 148/148, no leak.
 - [ ] **12 — rest machining.** The only large one — and the preview's
   `StockField` already simulates remaining material, so it is nearer than it
   looks.
