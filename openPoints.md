@@ -1251,7 +1251,17 @@ that made the ramp `tan(88°)` and invented 1.32 mm and 1.10 mm of unreachable
 radius on testing_3 and testing_4. `finish_profile` already refuses the trailing
 flank the same way; the two now agree.
 
-- [ ] **The TOOLPATH half is still open, and is a decision, not a task.** The
+- [x] **The TOOLPATH half is DONE, opt-in**, `analysis/042`. `Respect tool
+  front angle`, `polyline.cfg` 1.57, default OFF. `finish_profile` was the one
+  place; `flank_envelope` gained a second flank with its own reach, because
+  merging two finished envelopes manufactures corners tighter than the nose and
+  the interpreter refuses them outright. Default byte-identical; switched on,
+  testing_15_2 goes 361 to 340 moves and testing_15_5 484 to 463, with the
+  contour standing further off the drawn shape inside the front-unreachable
+  region - 4.787 to 7.228 mm on 15_5. **Never run on a real part**: whether the
+  result is the part greatEndian wants is a question for a machine.
+
+- [ ] ~~The TOOLPATH half is still open, and is a decision, not a task.~~ The
   warning now says which regions the leading flank cannot make; keeping the path
   out of them means changing `finish_profile`, the choke point every contour,
   section window, ladder and table derives from. For scale, the back clearance

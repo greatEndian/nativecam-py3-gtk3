@@ -141,6 +141,7 @@ class NCamProjectIOMixin:
         # cleared every build: a face left over from the last generation would
         # silently datum this one against a Workpiece that is no longer there
         lathe_sections.WORKPIECE_FACE_Z = None
+        lathe_sections.TOOL_FRONT_ANGLE = 0.0
         self.resolve_program_units()
 
         def recursive(itr, ldr, parent_feature = None) :
@@ -172,6 +173,12 @@ class NCamProjectIOMixin:
                     p_dnum = f.get_param('param_dnum')
                     if p_dnum is not None :
                         ncam.TOOL_TABLE.save_tool_orient(get_int(p_dnum.get_ngc_value()))
+                        # and the front angle, for the leading flank's shadow.
+                        # Read here rather than in lathe_sections because that
+                        # module imports nothing from ncam; same route as the
+                        # workpiece face above.
+                        lathe_sections.TOOL_FRONT_ANGLE = \
+                            ncam.TOOL_TABLE.get_front_angle()
                     # the flank length travels the same way and for the same
                     # reason: it describes the INSERT, so it belongs to the
                     # tool change, and every feature under it - the polyline's

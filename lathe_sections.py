@@ -114,6 +114,13 @@ def extend_tangent(points, front=0.0, back=0.0):
 # never has to know ncam is there.
 WORKPIECE_FACE_Z = None
 
+# The front angle of the tool in force, published by to_gcode's walk the same
+# way WORKPIECE_FACE_Z is and for the same reason: this module imports nothing
+# from ncam, and a Feature has no back-reference to its tree. 0 means no tool
+# has spoken yet, which is indistinguishable from a table with no I column -
+# and both must mean "do not constrain", never "0 degrees".
+TOOL_FRONT_ANGLE = 0.0
+
 
 def z_limit_abs(polyline_feature, which):
     """The absolute Z a Z limit sits at, or None when its switch is off.
@@ -1615,7 +1622,7 @@ def flank_sides(rough_dir):
 
 
 def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
-                   clearance=0.0):
+                   clearance=0.0, front_deg=None):
     """The profile widened into the shape the tool can actually reach.
 
     A wedge dilation by the trailing flank: a point (zp, rp) on the shadowed
@@ -1647,19 +1654,34 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
     if not points or len(points) < 2:
         return list(points)
 
-    k = flank_slope(back_deg, clearance)
-    if k is None:
-        return list(points)
-    k *= DIAMETER_MODE
-    slopes = [(side, k) for side in flank_sides(rough_dir)]
+    def _flank(deg, dirn):
+        """[(side, slope, reach)] for one flank, or [] when it constrains
+        nothing. Reach is per-flank: two angles project different distances
+        along Z, so one shared value would give the shallower flank the
+        steeper one's range."""
+        kk = flank_slope(deg, clearance)
+        if kk is None:
+            return []
+        rr = None
+        if flank_len and flank_len > EPS:
+            rr = flank_len * math.cos(math.radians(90.0 - deg - clearance))
+            if rr <= EPS:
+                return []
+        return [(side, kk * DIAMETER_MODE, rr) for side in flank_sides(dirn)]
 
-    # how far along Z the flank still exists
-    reach = None
-    if flank_len and flank_len > EPS:
-        reach = flank_len * math.cos(math.radians(90.0 - back_deg
-                                                  - clearance))
-        if reach <= EPS:
-            return list(points)
+    # THE LEADING FLANK IS THE SAME DILATION, MIRRORED. Passing it here rather
+    # than merging two finished envelopes afterwards is not a style choice: a
+    # merge resamples two piecewise-linear curves onto a union of breakpoints
+    # and manufactures corners tighter than the nose, which the interpreter
+    # refuses outright - "Straight feed in concave corner cannot be reached by
+    # the tool without gouging", measured on testing_15_5. Built here, the
+    # candidate-Z generation, the outer bound and the collinearity pruning all
+    # see both flanks at once and the result is one coherent contour.
+    slopes = _flank(back_deg, rough_dir)
+    if front_deg is not None and front_deg > 0:
+        slopes += _flank(front_deg, mirror_dir(rough_dir))
+    if not slopes:
+        return list(points)
 
     zs = [p[0] for p in points]
     lo, hi = min(zs), max(zs)
@@ -1681,7 +1703,7 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
                 cand.add(zc)
 
     for zp, rp in points:
-        for side, kk in slopes:
+        for side, kk, reach in slopes:
             for _z2, r2 in points:
                 if r2 < rp - EPS:
                     zc = zp - side * (rp - r2) / kk
@@ -1703,7 +1725,7 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
         if best is None:
             best = points[0][1]
         for zp, rp in points:
-            for side, kk in slopes:
+            for side, kk, reach in slopes:
                 d = (zp - z0) * side
                 if d > EPS and (reach is None or d <= reach + EPS):
                     bound = rp - d * kk
@@ -2974,10 +2996,23 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     d = polyline_feature.get_param('param_f_dir')
     fin_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
 
+    # THE LEADING FLANK, ONLY WHEN ASKED FOR. Off by default, and that is not
+    # timidity: honouring it removes about a quarter of the moves - 361 to 275
+    # on testing_15_2, 484 to 356 on testing_15_5 - because the path stops
+    # trying to make regions the front of the insert cannot enter. That is the
+    # correct part, and it is also a different part from the one every saved
+    # project has been making, so it cannot arrive without being asked for.
+    # The trailing flank has had its own switch since it was built, for the
+    # same reason; this is its pair.
+    fdeg = None
+    fp = polyline_feature.get_param('param_front_flank')
+    if fp is not None and _to_float(fp.get_ngc_value()) >= 1:
+        fdeg = TOOL_FRONT_ANGLE if TOOL_FRONT_ANGLE > 0 else None
+
     # flank_len belongs to the tool change, so it arrives as an argument -
     # see build_flank_gcode and FLANK_BOUNDS_CONTOUR
     env = flank_envelope(points, back_deg, fin_dir,
-                         _contour_flank(flank_len), clearance)
+                         _contour_flank(flank_len), clearance, fdeg)
     if not env or len(env) < 2:
         return points, False
     if points[0][0] > points[-1][0]:

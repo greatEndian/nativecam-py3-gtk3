@@ -20,8 +20,14 @@ detection describes the part, and belongs beside its mirror.
 WHAT THIS FILE PROVES:
   - the detection DISCRIMINATES - it fires on a steep front-facing wall and is
     silent on shapes with nothing for a leading flank to catch on;
-  - it MOVES NO METAL - the front functions are reachable only from the cfg's
-    [VALIDATION] block, never from a block that builds G-code.
+  - the WARNING moves no metal - the reporting functions are reachable only
+    from the cfg's [VALIDATION] block, never from one that builds G-code.
+
+THE TOOLPATH IS A SEPARATE, OPT-IN THING and is not this file's business. That
+is `Respect tool front angle`, off by default, covered by
+`test_front_flank_path`. The distinction matters: this file asserts that being
+TOLD about the leading flank cannot move the tool, which stays true whether or
+not the operator later asks for the path to respect it.
 
 THE NEGATIVE CONTROLS ARE THE POINT. A detector that fires on everything is
 worse than none: it trains the operator to ignore it. A plain rising taper, which
@@ -145,7 +151,7 @@ def main():
         for f in FAILED:
             print('   -', f)
         sys.exit(1)
-    print('The leading flank is reported, and no metal moves for it.')
+    print('The leading flank is reported, and the reporting moves nothing.')
 
 
 if __name__ == '__main__':
