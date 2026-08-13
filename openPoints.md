@@ -126,24 +126,29 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
   greatEndian's call, not a guess.
 
 
-- [~] **RESTART NATIVECAM — CAUSE FOUND AND FIXED, NEEDS A TRY IN AXIS**,
-  2026-08-10, `96e91ec`, `analysis/028`. The `os.execv` reasoning was wrong at
-  both ends. Keeping the pid was **never needed** — `gladevcp -x {XID}` forces
-  an Xlib reparent into AXIS's **Tk frame**, which outlives the process. And
-  keeping the pid is **what broke it**: gladevcp frees its HAL component in a
-  `finally`, execv never unwinds, HAL sees the name owned by a live pid — the
-  same pid — and refuses it, whereupon gladevcp calls **`sys.exit(0)`**. Status
-  0, log only: restarts, never comes back, no error. Measured
-  (`HAL: ERROR: duplicate component name`) and the fix measured too.
-  - Now: fork a detached child that blocks on a pipe, exit cleanly through
-    `gtk.main_quit()` so `halcomp.exit()` runs, child then execs the original
-    argv (still carrying `-x <XID>`).
-  - **greatEndian: please try it in AXIS.** The HAL half is proven here; the
-    reparent cannot be — AXIS will not run in this environment, and reasoning
-    is what produced the broken first version. If the panel still does not
-    come back, look for gladevcp's `XID:` line in the log: it says whether the
-    relaunch got that far. Fallback stays what it was — remove the menu item
-    rather than let it fail silently.
+- [ ] **RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB** — greatEndian
+  2026-08-13: *"restart is working but it starts in separated window outside axis
+  ui"*. `96e91ec` fixed the HAL half; this is the X half. `analysis/048`.
+  - **Measured, not reasoned**: AXIS embeds the panel in
+    `Tkinter.Frame(root_window, container=1, ...)`, and **Tk destroys a
+    `container=1` frame when the window embedded in it goes away**. By the time
+    the replacement runs, the XID on its command line is dead — `Gtk.Plug.new()`
+    raises `BadWindow`, gladevcp swallows it under `Gdk.error_trap_push()`, and
+    the plug stays a toplevel. Reproduced under Xvfb: a plain `tk.Frame` survives
+    its child and a second process reparents in fine; a `container=1` frame is
+    `XERROR BadWindow` immediately after.
+  - **So no re-exec can ever reach the tab**, and AXIS exposes no way to rebuild
+    it: `load_gladevcp_panel()` runs once at startup with no re-entry point, and
+    AXIS tracks only the `halcmd loadusr` wrapper, which exits 0 at once.
+  - **The answer is an IN-PROCESS rebuild** — the point of the menu item is to
+    pick up changed `cfg/` and `catalogs/`, not to get a new pid. Scoped in
+    `analysis/048`: save the project, rebuild menus/toolbars from
+    `catalogs/<machine>/menu.xml`, reload the project through
+    `update_features` (the migration path that already exists), and leave the
+    plug, the HAL component and the preview pane alone. NOT built — it changes
+    the startup sequence and wants its own plan.
+  - The confirmation dialog now states what actually happens rather than only
+    that LinuxCNC is untouched.
 
 - [x] **LEAD-OUT MISPLACED UNDER COMPENSATION — FIXED**, 2026-08-04,
   `analysis/009`. greatEndian's criterion: *"lead in and lead out can not end
@@ -1476,9 +1481,14 @@ offsets say destroys that measurement, which is why these are not cosmetic.
     should fall back toward the `sec_len 0` figures, with the Z slicing still
     visible as more, shorter passes rather than more metal.
 
-- [ ] **Sectioned roughing passes in FRONT of the boss have mixed, crossing
-  paths, offset randomly from each other.** Sectioning on. The passes are not a
-  clean ladder — they cross one another and sit at inconsistent offsets.
+- [x] **FIXED — confirmed by greatEndian in AXIS, 2026-08-13.**
+  ~~Sectioned roughing passes in FRONT of the boss have mixed, crossing paths~~.
+  Not fixed deliberately: it was carried away by the roughing work of 12-13 Aug —
+  most likely `5790e01` (the floor contour built from the reachable profile,
+  which removed a floor collapsed 8 mm too deep across 24 mm of part) and
+  `288b936` (the resume envelope reaching the bottom of the last descent).
+  Recorded rather than tied to one commit, because it was never reproduced here
+  and so cannot honestly be attributed.
 
 - [ ] **Pre-finish offset = 0.0 is ignored by roughing**, which still leaves
   something standing off the final contour — visible as the yellow dashed line.

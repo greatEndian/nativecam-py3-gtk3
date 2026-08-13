@@ -497,9 +497,22 @@ class NCamAppActionsMixin:
         The project is saved first, and the restart is abandoned if that fails
         - losing a feature tree to a convenience button would be a poor trade.
         """
+        # The warning is not caution, it is a measured fact - see analysis/048.
+        # AXIS embeds this panel in a Tk frame created with `container=1`, and
+        # Tk DESTROYS such a frame when the window embedded in it goes away. So
+        # by the time the replacement starts, the XID it was given no longer
+        # exists: Gtk.Plug.new() on a dead window raises BadWindow, gladevcp
+        # swallows it under Gdk.error_trap_push(), and the panel comes up as its
+        # own toplevel. Nothing the replacement can do reaches the tab, and AXIS
+        # exposes no way to recreate it - load_gladevcp_panel() runs once at
+        # startup with no re-entry point.
         if not mess_yesno(_('Restart NativeCAM?\n\nThe current project is '
                             'saved first. LinuxCNC and the machine are not '
-                            'touched.')):
+                            'touched.\n\nNOTE: the panel will reopen in its '
+                            'OWN WINDOW, not in the AXIS tab, and the tab will '
+                            'be left empty. AXIS destroys the tab when the '
+                            'panel exits and offers no way to rebuild it, so '
+                            'returning it to the tab needs LinuxCNC restarted.')):
             return
         try:
             self.action_saveCurrent()
