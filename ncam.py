@@ -2685,6 +2685,10 @@ class Preferences(object):
             self.default += ("#<_pl_peck_len>             = 0.0\n")
             self.default += ("#<_pl_peck_ret>             = 0.0\n")
             self.default += ("#<_pl_peck_dwell>           = 0.0\n")
+            # the roughing ladder's radius bounds - see rough_radius_bounds
+            self.default += ("#<_pl_rgh_hi_r>            = 0.0\n")
+            self.default += ("#<_pl_rgh_lo_r>            = 0.0\n")
+            self.default += ("#<_pl_ext_bk_dz>            = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")

@@ -350,6 +350,12 @@ o<poly_lathe_mill> sub
         o<sr_side> endif
         #<e_z> = #[#<r_pds> + 1]
         #<l_z> = #[#<r_pds> + [#[#<r_pds>] - 1] * 8 + 1]
+        (and on past it by the back extension. The record array is built from)
+        (the raw polyline items and never sees an extension, so this bound -)
+        (the profile's last Z - stopped roughing short while the contour)
+        (passes, which read the extended profile, ran on out. A DISPLACEMENT,)
+        (0.0 when no extension is set, so this line is a no-op without one.)
+        #<l_z> = [#<l_z> + #<_pl_ext_bk_dz>]
         o<wzd> if [#<e_z> GE #<l_z>]
                 #<z_dirw> = 1
         o<wzd> else

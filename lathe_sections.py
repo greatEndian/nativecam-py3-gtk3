@@ -263,7 +263,7 @@ def trim_to_end_z(points, e_z):
     return out if len(out) >= 2 else points
 
 
-def resolve_points(polyline_feature, vertices=None, trim=True):
+def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
     """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
     in (diameter units as typed - see module docstring in the plan:
@@ -371,7 +371,7 @@ def resolve_points(polyline_feature, vertices=None, trim=True):
         return _to_float(p.get_ngc_value()) if p is not None else 0.0
 
     fr, bk = _ext('param_ext_fr'), _ext('param_ext_bk')
-    if fr > EPS or bk > EPS:
+    if extend and (fr > EPS or bk > EPS):
         pts = extend_tangent(pts, fr, bk)
     return pts
 
@@ -1379,6 +1379,103 @@ def build_entry_ramp_gcode(points, rough_cut):
         lines.append('#%d = %s' % (slot + 2, _fmt(az)))
         lines.append('#%d = %s' % (slot + 3, _fmt(ax)))
     return '\n'.join(lines) + '\n'
+
+
+def rough_radius_bounds(polyline_feature):
+    """(begin, end) radius for the roughing ladder, widened for an extension.
+
+    The ladder runs between `param_b_x` and `param_e_x` - the operation's own
+    Begin and End diameters - and NOT between the profile's own extremes. That
+    is right until a tangential extension takes the profile past one of them,
+    which is exactly what it is for: extending a rising front cone forward
+    makes the part smaller than End X, and roughing then stops short while the
+    pre-finish and finish passes, which follow the profile, run on out there.
+
+    Measured on testing_15_5 with a front extension of 3.0: the floor, stop and
+    entry contours all moved correctly - first point (0.8217, 19.0217) ->
+    (2.9430, 16.9003), 3.0 along the 45 degree tangent - while the ladder kept
+    its 30 levels and its lowest radius of 20.016, so roughing reached Z2.4284
+    against the contour passes' Z3.7071. greatEndian: it "works only in
+    prefinish and finish and it should work for the roughing too".
+
+    WITH NO EXTENSION THE PARAMETERS ARE RETURNED UNTOUCHED, so every saved
+    project keeps the ladder it has always had - asserted byte-identical.
+
+    Widened only in the direction the profile actually went, and by min/max
+    against the parameter rather than replacing it, so an extension can add
+    levels but never remove one.
+    """
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    b = _p('param_b_x') / DIAMETER_MODE
+    e = _p('param_e_x') / DIAMETER_MODE
+    if _p('param_ext_fr') <= EPS and _p('param_ext_bk') <= EPS:
+        return b, e
+
+    pts = resolve_points(polyline_feature)          # already extended
+    if not pts or len(pts) < 2:
+        return b, e
+    rs = [x / DIAMETER_MODE for _z, x in pts]
+    lo_r, hi_r = min(rs), max(rs)
+    # b >= e is OD - the ladder descends from the stock inwards. On a bore both
+    # comparisons invert; ID work is paused, so it is written out rather than
+    # assumed symmetric.
+    if b >= e:
+        return max(b, hi_r), min(e, lo_r)
+    return min(b, lo_r), max(e, hi_r)
+
+
+def ext_dz(polyline_feature, end='front'):
+    """Signed Z displacement the tangential extension adds at one end, or 0.0.
+
+    NOT the extension length. The extension runs along the segment's own
+    tangent, so its Z component is `length * cos(angle)` - on the 45 degree
+    front cone of testing_15_5 a 3.0 extension moves Z by 2.121, not 3.0.
+    `_pl_begin_z` was adding the raw length, starting roughing 0.88 further
+    forward than the profile actually reaches and sweeping that much air.
+
+    The BACK end needs the same number for the opposite reason: the roughing
+    sweep takes both its bounds from the RECORD ARRAY - `e_z` is its first
+    point and `l_z` its last - and the record array is built from the raw
+    polyline items, so it never sees the extension at all. The contours do,
+    which is why the pre-finish and finish passes ran out there while roughing
+    stopped short.
+
+    A displacement rather than an absolute Z on purpose: it is 0.0 when no
+    extension is set, so adding it is byte-identical by construction, and it
+    cannot disagree with the record array about where the profile ended.
+    """
+    plain = resolve_points(polyline_feature, extend=False)
+    full = resolve_points(polyline_feature)
+    if not plain or not full or len(plain) < 2 or len(full) < 2:
+        return 0.0
+    i = 0 if end == 'front' else -1
+    return full[i][0] - plain[i][0]
+
+
+def build_rough_bounds_gcode(polyline_feature):
+    """Emit the ladder's radius bounds as globals, always.
+
+    Always, not only when an extension is set, so the cfg can read them
+    unconditionally and there is one code path rather than two. With no
+    extension they are the parameters themselves and nothing moves.
+
+    Emitted from the cfg immediately BEFORE the slots that consume them -
+    ordering is the whole point, since these are plain G-code assignments and a
+    value read before it is written is zero.
+    """
+    b, e = rough_radius_bounds(polyline_feature)
+    return ('(roughing ladder bounds - the Begin and End diameters, widened to)\n'
+            '(cover a tangential extension where one takes the profile past)\n'
+            '(them. Equal to the parameters when no extension is set.)\n'
+            '#<_pl_rgh_hi_r> = %s\n#<_pl_rgh_lo_r> = %s\n'
+            '(how much further in Z the BACK extension reaches - the roughing)\n'
+            '(sweep takes its far bound from the record array, which is built)\n'
+            '(from the raw items and never sees an extension. 0.0 when off.)\n'
+            '#<_pl_ext_bk_dz> = %s'
+            % (_fmt(b), _fmt(e), _fmt(ext_dz(polyline_feature, 'back'))))
 
 
 def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):

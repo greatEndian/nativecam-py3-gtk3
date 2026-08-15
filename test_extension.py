@@ -127,12 +127,22 @@ def main():
                   % (off['front'], off['maxx']))
             fr = run(['polyline:param_ext_fr=3.0'])
             bk = run(['polyline:param_ext_bk=3.0'])
-            check('a front extension moves where CUTTING starts, not just the '
-                  'contour',
-                  fr is not None and abs(fr['front'] - off['front'] - 3.0) < 1e-3,
-                  'front-most cut Z%.4f against Z%.4f - _pl_begin_z did not '
-                  'follow the extension'
-                  % (fr['front'] if fr else 0.0, off['front']))
+            # BY THE EXTENSION'S Z COMPONENT, NOT ITS LENGTH. This asserted a
+            # shift of 3.0 and so encoded a bug: `_pl_begin_z` was adding the
+            # raw tangent length, which starts the sweep further forward than
+            # the profile actually reaches - 0.88 of air on this project - and
+            # is the same confusion as measuring a length in diameters. This
+            # profile's first segment is 45 degrees, so 3.0 along it is
+            # 3.0/sqrt(2) = 2.1213 of Z, and that is what the cut may move.
+            want = 3.0 / math.sqrt(2.0)
+            check('a front extension moves where CUTTING starts, by its Z '
+                  'component',
+                  fr is not None
+                  and abs(fr['front'] - off['front'] - want) < 1e-2,
+                  'front-most cut Z%.4f against Z%.4f, a shift of %.4f where '
+                  '%.4f was due'
+                  % (fr['front'] if fr else 0.0, off['front'],
+                     (fr['front'] - off['front']) if fr else 0.0, want))
             # this project ends in a wall, so the back extension shows in X
             check('a back extension runs on up the end wall',
                   bk is not None and abs(bk['maxx'] - off['maxx'] - 3.0) < 1e-3,
@@ -142,6 +152,61 @@ def main():
                   fr is not None and bk is not None
                   and fr['maxx'] == off['maxx']
                   and bk['front'] == off['front'])
+
+    # ---- and ROUGHING must follow it, not only the contour passes --------
+    # greatEndian, 2026-08-15: it "works only in prefinish and finish and it
+    # should work for the roughing too". Three things were wrong and each has
+    # its own assertion below.
+    if os.path.isfile(INI) and os.path.isfile(GEN) and shutil.which('rs274'):
+        def rough_front(sets):
+            import ncam_preview as P
+            d = tempfile.mkdtemp(prefix='extr_')
+            try:
+                out = os.path.join(d, 'o.ngc')
+                cmd = [sys.executable, GEN, '--ini', INI, '--project', PROJECT,
+                       '--out', out, '--config-copy']
+                for kv in sets:
+                    cmd += ['--set', kv]
+                subprocess.run(cmd, capture_output=True, text=True)
+                if not os.path.isfile(out):
+                    return None
+                tp = P.parse_program(out, INI)
+                if tp.error:
+                    return None
+                mv = [m for m in tp.moves if m.op == 'Lathe Polyline'
+                      and m.kind != 'rapid']
+                rgh = [m for m in mv if not m.subs]
+                con = [m for m in mv if m.subs]
+                lv = [m for m in rgh if abs(m.b[0] - m.a[0]) < 1e-6
+                      and abs(m.b[2] - m.a[2]) > 1e-6]
+                rz = [q for m in rgh for q in (m.a[2], m.b[2])]
+                cz = [q for m in con for q in (m.a[2], m.b[2])]
+                return (round(max(rz), 4), round(max(cz), 4),
+                        len({round(m.a[0], 4) for m in lv}))
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+
+        a = rough_front([])
+        b = rough_front(['polyline:param_ext_fr=3.0'])
+        if a and b:
+            print('      no extension  roughing front Z%.4f, %d levels'
+                  % (a[0], a[2]))
+            print('      front 3.0     roughing front Z%.4f, %d levels'
+                  % (b[0], b[2]))
+            # THE ONE THAT MATTERS: roughing must reach as far as the contour
+            # passes do. It used to stop 1.28 short while they ran on out.
+            check('ROUGHING reaches the extension, not just the contour passes',
+                  abs(b[0] - b[1]) < 0.01,
+                  'roughing front Z%.4f against the contour passes\' Z%.4f'
+                  % (b[0], b[1]))
+            check('   and the ladder gains levels to get there',
+                  b[2] > a[2],
+                  '%d levels against %d - the ladder is still bounded by '
+                  'Begin X / End X and ignores the extended profile'
+                  % (b[2], a[2]))
+            check('   and it moves at all', b[0] > a[0] + 1.0,
+                  'front Z%.4f against Z%.4f' % (b[0], a[0]))
+
 
     print()
     if FAILED:
