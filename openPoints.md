@@ -967,7 +967,7 @@ So against a boss face, a wall or a shoulder a roughing level is allowed to stop
 to cut. That is a rubbing pass, and a rubbing pass chatters — a machining
 requirement, not a preference.
 
-- [ ] **FIX: the stop contour must carry `fin + prefin` too.** It must NOT go
+- [x] **DONE `3df0a4c`** — the stop contour carries `fin + prefin`, verified: `stop_x, stop_z = fin_off + pf_off, fin_off_z + pf_off` in `lathe_sections`. Levels stop 0.2540 short of the wall, exactly `pf_off`. ~~FIX: the stop contour must carry `fin + prefin` too.** It must NOT go
   back to stopping on the roughing FLOOR, which is what that table was built to
   stop doing — the floor is rounded up to the level grid, so that left a gap of
   up to a whole depth of cut. `fin + prefin` is the allowance actually asked
@@ -1016,7 +1016,7 @@ right: `grep` for `rough entry` across the whole tree returns **one** file,
 `ncam_preview_ui.py`, which is the legend swatch itself. No help text, no
 tooltip, no `md_files/` entry for any of the four overlays.
 
-- [ ] **Document the four overlays**, in the help section and not only as a
+- [x] **DONE `65b6672`** — Help > Preview Lines, a drawn dialog beside the tool-orientation entry, using the real colours and dashes from `ncam_preview` so it cannot drift from the plot. ~~Document the four overlays~~, in the help section and not only as a
   colour swatch. What each one IS, and — the part that actually confuses —
   whether it is a *surface*, a *toolpath*, or a *construction reference*:
 
@@ -1027,13 +1027,13 @@ tooltip, no `md_files/` entry for any of the four overlays.
   | pre-finish surface | solid | the offset contour, `stock_pair`, nose 0 — a real surface |
   | comp path | teal dashed | the compensated finish toolpath |
 
-- [ ] **The dashed/solid convention mislabels two of them.** The code's own
+- [x] **DONE `efcea35`** — renamed to *rough entry limit* / *rough stop limit*, and construction references now draw DASH-DOT against the toolpath's plain dash. Guarded by `test_rough_overlay`. ~~The dashed/solid convention mislabels two of them.** The code's own
   comment says *"SURFACES are solid, TOOL PATHS are dashed"*, but `rgh_entry`
   and `rgh_stop` are neither — they are reference contours, and calling them
   "path" in the legend invites exactly the reading that they are where the tool
   goes. Renaming them "rough entry limit" / "rough stop limit", or giving
   references their own dash pattern, would say what they are.
-- [ ] **The entry line's constant gap needs stating wherever it is documented**:
+- [x] **DONE `65b6672`** — stated in that dialog: the entry limit sits at Offset + Pre-finish + one depth of cut and so never meets the offset contour, because a depth of cut is not an allowance. ~~The entry line's constant gap needs stating~~:
   it is `fin + prefin + ONE DEPTH OF CUT`, so it never collapses onto the offset
   contour even at a pre-finish offset of 0.0 — measured 0.5213 on testing_15_5
   at Z−50 against a 0.508 depth of cut. That is a cut depth, not an allowance,
@@ -1191,8 +1191,12 @@ flank the same way; the two now agree.
   region - 4.787 to 7.228 mm on 15_5. **Never run on a real part**: whether the
   result is the part greatEndian wants is a question for a machine.
 
-- [ ] ~~The TOOLPATH half is still open, and is a decision, not a task.~~ The
-  warning now says which regions the leading flank cannot make; keeping the path
+- [x] **DONE `8b2da4e`** — greatEndian ruled on 2026-08-13 that the limitation
+  is real and the convention right, so the toolpath half was built: *Respect
+  tool front angle*, **off by default**, the same wedge dilation mirrored
+  rather than a second copy of that geometry. The caution below stands and is
+  why it is opt-in. ~~The TOOLPATH half is still open, and is a decision, not
+  a task.~~ The warning now says which regions the leading flank cannot make; keeping the path
   out of them means changing `finish_profile`, the choke point every contour,
   section window, ladder and table derives from. For scale, the back clearance
   moves 198 of 323 moves on testing_15_2, and getting the back-angle version of
@@ -1463,7 +1467,7 @@ offsets say destroys that measurement, which is why these are not cosmetic.
   Recorded rather than tied to one commit, because it was never reproduced here
   and so cannot honestly be attributed.
 
-- [ ] **Pre-finish offset = 0.0 is ignored by roughing**, which still leaves
+- [x] **DONE `e27a858`** — the motion always honoured it; the ENTRY CONTOUR did not, and now sits at `fin + prefin + one depth of cut`. ~~Pre-finish offset = 0.0 is ignored by roughing~~, which still leaves
   something standing off the final contour — visible as the yellow dashed line.
   With the pre-finish offset zeroed, roughing's floor should sit on
   `finish offset` alone.
@@ -1550,7 +1554,7 @@ offsets say destroys that measurement, which is why these are not cosmetic.
   behind-boss region is the obvious suspect, and it may share a cause with the
   missing first pass above.
 
-- [ ] **The missing first pass behind the boss persists with a different offset
+- [x] **DONE `5790e01` + `288b936`**, and confirmed by greatEndian in AXIS. ~~The missing first pass behind the boss persists with a different offset
   applied** — so it is not specific to the offsets that project was saved with.
   Same item as the one at the top of this file; recorded here because it was
   re-confirmed under new settings.
@@ -1593,7 +1597,7 @@ tracked and carries each one in full; these are the ones still open.
     Z/radius plane and asserted there. Verified: front +3.0000 in Z at the
     front-most cutting move, back +3.0000 in radius up the end wall, neither
     touching the other end. `test_extension.py`.
-- [ ] **1 — Tool clearance FRONT — NEEDS A CALL, and it is bigger than the
+- [x] **DONE — greatEndian ruled 2026-08-13 ("the limitation is real", "angle convention is right"), warning `eab37b1`, toolpath `8b2da4e` (opt-in, off by default).** ~~1 — Tool clearance FRONT — NEEDS A CALL, and it is bigger than the
   spec claimed.** `analysis/037`. The gap notes said the front-angle wiring
   already existed in `lathe_sections`; **it does not** — there is no front
   angle there at all, only `back_deg`. The tool table's front angle is used
