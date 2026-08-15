@@ -284,10 +284,24 @@ o<poly_lathe_mill> sub
         (roughing: straight level passes stopped at the offset profile,)
         (optionally repeated per Z section window for thin-part rigidity)
         o<rough_00> if [#<op> NE 2]
+        (ONE DECOMPOSITION, TWO EMISSION ORDERS. Back to front used to sweep)
+        (the REVERSED record array, so every downstream decision - which)
+        (windows exist, their order, where a level starts and stops, which)
+        (section is first - was taken in a reversed frame and came out a)
+        (different decomposition rather than the same one walked the other)
+        (way. Measured on testing_15_6 with Sectioning on: 45 level cuts front)
+        (to back against 40 back to front, sharing ONE. greatEndian reported)
+        (that as mess, and asked for the same G-code as front to back with the)
+        (movement running from the last polyline reference to the front.)
+        (So roughing always decomposes on the forward array, and the reversal)
+        (lives in the emission: lathe_sections orders the section windows)
+        (last-section-first at generation time, and _pl_cut_rev tells)
+        (lathe_level_pass to cut each interval from its back end forward.)
+        (See analysis/054.)
+        #<r_pds> = #<pds>
+        #<_pl_cut_rev> = 0
         o<rpick> if [#<rough_dir> EQ 1]
-                #<r_pds> = #<_mill_data_rev>
-        o<rpick> else
-                #<r_pds> = #<pds>
+                #<_pl_cut_rev> = 1
         o<rpick> endif
 
         (a re-entrant profile can split one level into several disjoint)
@@ -875,6 +889,9 @@ o<poly_lathe_mill> sub
                 #<w_idx> = [#<w_idx> + 1]
         o<wh_w> endwhile
         (roughing levels end)
+        (the contour passes below carry their own direction flag into)
+        (cam_load, so the level flag is put back before they run)
+        #<_pl_cut_rev> = 0
 
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)

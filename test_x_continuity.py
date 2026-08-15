@@ -151,9 +151,21 @@ def main():
         print('SKIP  rs274 is not installed')
         return
 
+    # BOTH ROUGHING DIRECTIONS. Back to front had never been asked to pass
+    # this - or anything else - and it did not: until analysis/054 it swept the
+    # REVERSED record array and came out a different decomposition, 40 level
+    # cuts against front to back's 45 on testing_15_6 with one in common. It
+    # now emits the same cuts in the reverse order, so the same invariant has
+    # to hold, and a regression that only shows up one way round is caught.
     for project in PROJECTS:
-        for tag, sets in (('sect off', ('polyline:param_sectioning=0',)),
-                          ('sect ON ', ('polyline:param_sectioning=1',))):
+        for tag, sets in (('sect off f2b', ('polyline:param_sectioning=0',
+                                            'polyline:param_dir=0')),
+                          ('sect ON  f2b', ('polyline:param_sectioning=1',
+                                            'polyline:param_dir=0')),
+                          ('sect off b2f', ('polyline:param_sectioning=0',
+                                            'polyline:param_dir=1')),
+                          ('sect ON  b2f', ('polyline:param_sectioning=1',
+                                            'polyline:param_dir=1'))):
             cuts, doc = passes_of(project, sets)
             check('%s %s generates' % (project, tag), cuts is not None)
             if cuts is None:
@@ -170,7 +182,8 @@ def main():
     # A CHECK THAT CANNOT FAIL PROVES NOTHING. Drop one level from the parsed
     # program - the measurement's input, so nothing generated is touched - and
     # the step across it must be reported.
-    cuts, doc = passes_of('testing_15_6.xml', ('polyline:param_sectioning=0',))
+    cuts, doc = passes_of('testing_15_6.xml', ('polyline:param_sectioning=0',
+                                               'polyline:param_dir=0'))
     if cuts:
         behind = sorted([c for c in cuts if c[1] < -34.0], reverse=True)
         if len(behind) >= 3:

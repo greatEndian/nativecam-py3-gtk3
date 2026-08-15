@@ -70,9 +70,11 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     a converted move that did not put the caller's feed back would **cut at
     positioning speed**.
 
-- [ ] **3 — Back to front is a mess — OPEN, and it is a rework.** See
-  *Roughing direction* below for the measurement, the ruled-out cheap fix, and
-  the gate. greatEndian's spec is an ORDER, recorded there in full.
+- [x] **3 — Back to front is a mess — FIXED**, 2026-08-15, `analysis/054`.
+  One decomposition frame, reversed emission. Same cut SET as front to back on
+  four projects in both sectioning modes, sections walked last-first, front to
+  back byte-identical across all 39 demo projects. See *Roughing direction*
+  below for the numbers and what is still short.
 
 ## Next — before anything else
 
@@ -619,7 +621,39 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
 
 ## Roughing direction — back to front, 2026-08-15
 
-- [ ] **BACK TO FRONT IS A DIFFERENT DECOMPOSITION, not a reversed traversal.**
+- [x] **BACK TO FRONT IS A DIFFERENT DECOMPOSITION — FIXED**, 2026-08-15,
+  `analysis/054`. It is now one decomposition with two emission orders: every
+  Python table that feeds the roughing scans is built in the front-to-back
+  frame (`rough_frame_dir`), `poly_lathe_mill` always sweeps the forward record
+  array, and direction 1 changes only the window visit order - re-ordered in
+  Python, within each radius band, by `_sections_back_to_front` - and the
+  movement, via the new global `#<_pl_cut_rev>` that `lathe_level_pass` reads.
+
+  **Gate, all four met.** Cut SET identical on testing_15_6 / 15_5 / 15_2 /
+  15_4 in both sectioning modes - 45 cuts not 40 on testing_15_6 sectioning on,
+  0 spans unique to either direction - and every back-to-front pass travels
+  back to front, 45 of 45. Order: the long full-length window first, then every
+  band last-section-first; Artificial slicing comes out exactly
+  `[-57.7,-70.4] ... [0,-1]`. Front to back byte-identical across all 39 demo
+  projects, the only difference being the one new default line.
+  `test_x_continuity` and `test_leftover` now take a direction and are green in
+  all four combinations, controls still firing. Overcut past the pre-finish
+  target agrees between the directions to 0.0024 mm; `check_tangent` PASS both.
+
+  **Still short, and recorded rather than hidden:**
+  - a reversed pass has **no lead-in and no profile-angle ramp** - it descends
+    at the interval end. The mirror of `resume_envelope`/`entry_contour` for
+    the back end is the next step, in Python. Costs 1.1827 mm worst standing
+    against 0.7219 on testing_15_5, both inside the bound.
+  - **interval order inside one level is still front-first** where a boss
+    splits it - 3 levels of 45 on testing_15_6. Needs a dry-run or a scratch
+    array in the `.ngc` to reverse; front to back alternates the same way.
+  - **Natural sectioning's weakest-first ranking is replaced by section order**
+    in direction 1, because greatEndian asked for section order. One place to
+    change if he wants the rigidity ranking kept: `_sections_back_to_front`.
+  - **`param_dir` = 2, both directions, is untouched** and still open.
+
+- [x] **the original measurement, for the record.**
   greatEndian: *"back to front - is mess, it creates messy preview and mess
   Gcode ... path have to be same Gcode as Front to back but movement is from
   last polyline reference to front"*.

@@ -291,12 +291,13 @@ def main():
 
     d = tempfile.mkdtemp(prefix='leftover_')
     try:
-        def run(project, sec_on):
-            out = os.path.join(d, '%s_%d.ngc' % (project[:-4], sec_on))
+        def run(project, sec_on, rdir=0):
+            out = os.path.join(d, '%s_%d_%d.ngc' % (project[:-4], sec_on, rdir))
             subprocess.run([sys.executable, GEN, '--ini', INI,
                             '--project', project, '--out', out,
                             '--config-copy',
                             '--set', 'polyline:param_n_comp=0',
+                            '--set', 'polyline:param_dir=%d' % rdir,
                             '--set', 'polyline:param_sectioning=%d' % sec_on],
                            capture_output=True, text=True)
             if not os.path.isfile(out):
@@ -321,9 +322,15 @@ def main():
             f_off, pf_off, doc = project_offsets(project)
             print('\n%s   offset %.4f + pre-finish %.4f, depth of cut %.4f'
                   % (project, f_off, pf_off, doc))
-            for sec_on in (0, 1):
-                tag = '%s sect %s' % (project[:-4], 'ON ' if sec_on else 'off')
-                tp = run(project, sec_on)
+            # BOTH ROUGHING DIRECTIONS. Back to front has never been asked
+            # to leave no metal standing, and before analysis/054 it could not
+            # have: it decomposed the part differently - 40 level cuts against
+            # 45 - rather than cutting the same ones in reverse order.
+            for sec_on, rdir in ((0, 0), (1, 0), (0, 1), (1, 1)):
+                tag = '%s sect %s %s' % (project[:-4],
+                                         'ON ' if sec_on else 'off',
+                                         'b2f' if rdir else 'f2b')
+                tp = run(project, sec_on, rdir)
                 check('%s generates and runs' % tag, tp is not None)
                 if tp is None:
                     continue
@@ -363,7 +370,7 @@ def main():
                       % (len(runs), max(r[2] for r in runs),
                          max(runs, key=lambda r: r[2])[0]) if runs else '')
 
-                if sec_on == 0:
+                if sec_on == 0 and rdir == 0:
                     first[project] = (rough, target, doc)
 
         # ---------------------------------------------------------- control

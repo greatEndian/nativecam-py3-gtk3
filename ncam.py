@@ -2663,6 +2663,12 @@ class Preferences(object):
             self.default += ("#<_pl_zc_ovr>               = 0.0\n")
             self.default += ("#<_pl_z_clear>              = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_multi_cross>          = 0.0\n")
+            # Roughing direction = back to front. The DECOMPOSITION is always
+            # computed front to back - same windows, same levels, same
+            # intervals - and only the emission is reversed: this flag tells
+            # lathe_level_pass to cut each interval from its back end toward
+            # the front. 0 is front to back and is the untouched path.
+            self.default += ("#<_pl_cut_rev>              = 0.0\n")
             self.default += ("#<_pl_level_z_end>          = 0.0\n")
             self.default += ("#<_pl_resume_found>         = 0.0\n")
             self.default += ("#<_pl_resume_z>             = 0.0\n")

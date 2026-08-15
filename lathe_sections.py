@@ -1088,8 +1088,12 @@ def build_sections_gcode(polyline_feature):
 
     dir_param = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
-    if rough_dir == 1:
-        points = list(reversed(points))
+    # ONE FRAME. `points` used to be reversed here for direction 1, which made
+    # the sections, their ranking and their radius bands a different
+    # decomposition rather than the same one taken the other way round - see
+    # rough_frame_dir. Back to front now re-orders the finished window list
+    # below and changes nothing about what the windows ARE.
+    frame_dir = rough_frame_dir(rough_dir)
 
     sections = detect_sections(points)
     if not sections:
@@ -1118,6 +1122,9 @@ def build_sections_gcode(polyline_feature):
         # this function's own docstring for why it must not be merged.
         windows = [(z_from, z_to, 0.0, BAND_ALL) for z_from, z_to in ordered]
 
+    if frame_dir != rough_dir:
+        windows = _sections_back_to_front(windows, points)
+
     lines = [
         '#<_pl_sect_count> = %d' % len(windows),
         '#<_pl_sect_mode> = %d' % sect_mode,
@@ -1131,6 +1138,42 @@ def build_sections_gcode(polyline_feature):
         lines.append('#%d = %s' % (slot + 4, _fmt(r_hi)))
 
     return '\n'.join(lines) + '\n'
+
+
+def _sections_back_to_front(windows, points):
+    """The same windows, visited last-recognised-section first.
+
+    greatEndian's spec for `param_dir` = 1, 2026-08-15: *"rough all long
+    passes from last reference to first, then last recognized section rough,
+    last recognized section - 1, repeating to first/front section"*.
+
+    THE BANDS KEEP THEIR ORDER. `band_windows` emits highest radius band
+    first, and roughing has to keep working downward whichever way it travels
+    - a band re-order would have the tool dropping to the deepest levels
+    before the stock above them is gone. So only the windows WITHIN a band are
+    re-ordered, and the "long passes" - the merged full-length window in the
+    topmost band, and Sectioning's own unsectioned phase 1 - stay first by
+    construction.
+
+    Back-most first means furthest from the profile's own first point, which
+    is the "first reference"; that works whichever way round the polyline was
+    drawn. Natural sectioning normally ranks weakest-first inside a band, and
+    this replaces that ranking for direction 1 on purpose: greatEndian asked
+    for section order, not for diameter order.
+    """
+    if not windows:
+        return windows
+    z0 = points[0][0]
+    out = []
+    i = 0
+    while i < len(windows):
+        j = i
+        band = (windows[i][2], windows[i][3])
+        while j < len(windows) and (windows[j][2], windows[j][3]) == band:
+            j += 1
+        out += sorted(windows[i:j], key=lambda w: -abs(w[0] - z0))
+        i = j
+    return out
 
 
 # Stand-in for "no upper limit" on a window's radius band, in the diameter
@@ -1493,10 +1536,11 @@ def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
     if not points or len(points) < 2 or rough_cut <= EPS:
         return ''
 
-    dir_param = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
-    if rough_dir == 1:
-        points = list(reversed(points))
+    # THE FLOOR STAGES ARE THE SAME STAGES WHICHEVER WAY ROUGHING TRAVELS.
+    # `points` was reversed here for direction 1, so region merging chained
+    # the other way and the ladder could come out with different stages - part
+    # of the different decomposition analysis/052 measured. One frame now; see
+    # rough_frame_dir.
 
     def _p(name, default=0.0):
         prm = polyline_feature.get_param(name)
@@ -1701,6 +1745,34 @@ def flank_slope(back_deg, clearance=0.0):
     if eff <= EPS or eff >= 90.0 - EPS:
         return None
     return math.tan(math.radians(eff))
+
+
+def rough_frame_dir(rough_dir):
+    """The direction the roughing DECOMPOSITION is worked out in.
+
+    greatEndian, 2026-08-15: back to front must be *"same Gcode as Front to
+    back"*, only *"movement is from last polyline reference to front"*. So
+    `param_dir` = 1 is an ORDER, not a second geometry: there is exactly one
+    decomposition - the front-to-back one - and the direction changes which
+    window is visited first and which way each pass is cut.
+
+    Before this, every table feeding the roughing scans was rebuilt on a
+    REVERSED profile for direction 1, and poly_lathe_mill swept the reversed
+    record array on top of that. Measured on testing_15_6 with sectioning on,
+    that gave 45 level cuts front to back and 40 back to front, with ONE
+    shared - two almost disjoint decompositions, which is what greatEndian
+    reported as *"mess"*. See analysis/052 and analysis/054.
+
+    Direction 2, "both directions", is a genuinely different question and is
+    left exactly as it was - it is an open point in its own right.
+    """
+    return 0 if rough_dir == 1 else rough_dir
+
+
+def rough_emit_reversed(polyline_feature):
+    """True when roughing is emitted back to front - `param_dir` = 1."""
+    p = polyline_feature.get_param('param_dir')
+    return p is not None and int(_to_float(p.get_ngc_value())) == 1
 
 
 def flank_sides(rough_dir):
@@ -1913,7 +1985,13 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
         return ''
 
     d_param = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(d_param.get_ngc_value())) if d_param is not None else 0
+    # THE REACHABLE ENVELOPE IS PART OF THE DECOMPOSITION, so it is built in
+    # the one frame - see rough_frame_dir. Which flank shadows which side of a
+    # peak is direction physics, but back to front is an emission order here,
+    # not a second geometry, and roughing must stop against the same surface
+    # in both directions or the cut sets cannot match.
+    rough_dir = rough_frame_dir(
+        int(_to_float(d_param.get_ngc_value())) if d_param is not None else 0)
     # flank_len comes from the TOOL CHANGE, not from this feature - it
     # describes the insert, so one polyline could not sensibly hold a
     # different value from the next under the same tool. _contour_flank then
@@ -2738,7 +2816,9 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     if not pts or len(pts) < 2:
         return ''
     d = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    # one decomposition frame - see rough_frame_dir
+    rough_dir = rough_frame_dir(
+        int(_to_float(d.get_ngc_value())) if d is not None else 0)
     # into RADIUS before offsetting - see entry_contour. The table is written
     # in radius too, so there is no second conversion on the way out.
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
@@ -2842,7 +2922,9 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     if not pts or len(pts) < 2:
         return ''
     d = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    # one decomposition frame - see rough_frame_dir
+    rough_dir = rough_frame_dir(
+        int(_to_float(d.get_ngc_value())) if d is not None else 0)
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
                         floor_x, rough_dir, _nr, _or, floor_z)
@@ -3049,7 +3131,9 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     if not pts or len(pts) < 2:
         return ''
     d = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    # one decomposition frame - see rough_frame_dir
+    rough_dir = rough_frame_dir(
+        int(_to_float(d.get_ngc_value())) if d is not None else 0)
     _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
                         stop_x, rough_dir, _nr, _or, stop_z)
@@ -3367,7 +3451,9 @@ def front_unreachable_spans(polyline_feature, front_deg, tol=0.01,
     if not hard or len(hard) < 2:
         return []
     d = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    # one decomposition frame - see rough_frame_dir
+    rough_dir = rough_frame_dir(
+        int(_to_float(d.get_ngc_value())) if d is not None else 0)
     env = front_flank_envelope(hard, front_deg, rough_dir, flank_len,
                                clearance)
     return spans_between(hard, env, tol)

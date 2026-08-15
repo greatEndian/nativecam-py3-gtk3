@@ -807,6 +807,35 @@ o<lathe_level_pass> sub
 	(stopped cutting, to search for a further interval past it)
 	#<_pl_level_z_end> = #<z_end>
 
+	(EVERYTHING ABOVE THIS LINE IS THE FRONT-TO-BACK DECOMPOSITION and stays)
+	(that way in both directions: the crossing scan, the multi-crossing)
+	(replay, the entry contour, the stop table and the interval this pass)
+	(covers are all worked out from w_from toward w_to. Only what follows -)
+	(which end the tool arrives at, which way it travels, and which end the)
+	(lead-out retreats from - is reversed for Back to front. That is the)
+	(whole of greatEndian's spec: same G-code, movement from the last)
+	(polyline reference to the front.)
+	(e_dir is the emission direction in the sense z_dir carries: the pass)
+	(travels along -e_dir and every lead is offset along +e_dir. With)
+	(_pl_cut_rev 0 it IS z_dir and every expression below is the one that)
+	(was always emitted.)
+	#<e_dir> = #<z_dir>
+	#<em_z0> = #<z_start>
+	#<em_z1> = #<z_end>
+	o<rev_em> if [#<_pl_cut_rev> GT 0]
+		#<e_dir> = [0 - #<z_dir>]
+		#<em_z0> = #<z_end>
+		#<em_z1> = #<z_start>
+		(THE PROFILE-ANGLE APPROACH BELONGS TO THE OTHER END. It is armed)
+		(from the entry contour crossing at z_start, and z_start is where)
+		(this pass now FINISHES - ramping in along it would drive the tool)
+		(into the material the cut has not reached yet. The reversed pass)
+		(takes the plain approach instead; a mirror table - the entry)
+		(contour's own equivalent at the stop end - is the next step and is)
+		(recorded in analysis/054.)
+		#<pa_on> = 0
+	o<rev_em> endif
+
 	(resolve the lead-out radius and the possibly-shortened cut end BEFORE the)
 	(straight cut, so a cut ending near a wall can stop just early enough that)
 	(a full-radius lead-out arc still lands tangent to the pre-finish contour)
@@ -814,14 +843,14 @@ o<lathe_level_pass> sub
 	(floor crossing - is left untouched for the interval/blocking logic and)
 	(the _pl_level_z_end export; only the physical straight-cut endpoint and)
 	(the fillet's own tangent point move)
-	#<z_end_cut> = #<z_end>
+	#<z_end_cut> = #<em_z1>
 
 	o<lo_res> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
 		(lead-out line direction: unit vector pointing from the exit toward)
 		(the far rapid point - 0 degrees along Z surface, 90 radial)
-		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
+		#<lo_bz> = [#<e_dir> * COS[#<lo_ang>]]
 		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
-		#<_lo_cos> = [#<z_dir> * #<lo_bz>]
+		#<_lo_cos> = [#<e_dir> * #<lo_bz>]
 		#<_lo_leff> = #<lo_len>
 
 		(mirrors the lead-in's own _li_leff/li_cap_all cap above, and bounds the)
@@ -844,7 +873,11 @@ o<lathe_level_pass> sub
 		(everything in front of that is air - so capping there just takes)
 		(the lead the operator asked for: on testing_15_4's chamfer level a)
 		(1.000 mm lead came out 0.125 because the cut is 0.088 long.)
-		o<lo_cap_all> if [[#<_pl_multi_cross> GT 0] AND [#<w_from> LT [#<_pl_begin_z> - 0.000001]]]
+		(Front-to-back emission only. The obstruction this cap keeps the)
+		(retreat off is the one that blocked the sweep at w_from, and a)
+		(reversed pass retreats from the OTHER end - the front of the)
+		(interval, where there is nothing but air in front of the part.)
+		o<lo_cap_all> if [[#<_pl_multi_cross> GT 0] AND [#<_pl_cut_rev> LE 0] AND [#<w_from> LT [#<_pl_begin_z> - 0.000001]]]
 			#<_lo_room> = ABS[#<z_end> - #<w_from>]
 			o<lo_lcap> if [#<_lo_cos> GT 0.0001]
 				#<_lo_lmax> = [#<_lo_room> / #<_lo_cos>]
@@ -875,13 +908,22 @@ o<lathe_level_pass> sub
 		(bottoms out ON the pre-finish line rather than past it. Guard: a short)
 		(multi-crossing interval with no room to pull back falls back to)
 		(clipping the radius, so it still cannot overflow)
+		(A REVERSED PASS ENDS IN AIR, so there is no pre-finish line for the)
+		(arc to bottom out on and nothing to pull the cut end back from -)
+		(pulling it back would shorten the cut and change the very set of)
+		(cuts back to front is required to reproduce. Clip the radius)
+		(instead, which is the same fallback the short-interval case takes.)
 		o<lo_pull> if [[#<lo_rad> GT 0] AND [#<_lo_reff> GT #<_lo_rad_cap>]]
-			#<z_end_try> = [#<z_end> + #<z_dir> * [#<_lo_reff> - #<_lo_rad_cap>]]
-			o<lo_pull2> if [[#<z_dir> * [#<w_from> - #<z_end_try>]] GT 0.0001]
-				#<z_end_cut> = #<z_end_try>
-			o<lo_pull2> else
+			o<lo_prev> if [#<_pl_cut_rev> GT 0]
 				#<_lo_reff> = #<_lo_rad_cap>
-			o<lo_pull2> endif
+			o<lo_prev> else
+				#<z_end_try> = [#<z_end> + #<z_dir> * [#<_lo_reff> - #<_lo_rad_cap>]]
+				o<lo_pull2> if [[#<z_dir> * [#<w_from> - #<z_end_try>]] GT 0.0001]
+					#<z_end_cut> = #<z_end_try>
+				o<lo_pull2> else
+					#<_lo_reff> = #<_lo_rad_cap>
+				o<lo_pull2> endif
+			o<lo_prev> endif
 		o<lo_pull> endif
 	o<lo_res> endif
 
@@ -901,7 +943,7 @@ o<lathe_level_pass> sub
 	(_pl_level_z_end is already set above, so the disjoint-interval scan still)
 	(knows where this level reached and carries on past it.)
 	o<shrt> if [#<_pl_min_pass> GT 0]
-		o<shrt2> if [ABS[#<z_end_cut> - #<z_start>] LT #<_pl_min_pass>]
+		o<shrt2> if [ABS[#<z_end_cut> - #<em_z0>] LT #<_pl_min_pass>]
 			o<lathe_level_pass> return
 		o<shrt2> endif
 	o<shrt> endif
@@ -927,14 +969,20 @@ o<lathe_level_pass> sub
 	(the plain-rapid branch use it, because the segment is NOT part of the)
 	(lead-in - it is there whether or not a lead-in was asked for, and the)
 	(project that wanted it has lead-in length and radius both 0.)
-	#<ap_z> = #<z_start>
+	#<ap_z> = #<em_z0>
 	#<ap_x> = #<level>
 	o<ap_use> if [#<pa_on>]
 		#<ap_z> = #<pa_z>
 		#<ap_x> = #<pa_x>
 	o<ap_use> endif
 
-	o<lead_in> if [[#<li_len> GT 0] OR [#<li_rad> GT 0]]
+	(NO STRAIGHT LEAD-IN ON A REVERSED PASS. The lead runs BACKWARD from the)
+	(pass start along +e_dir, and a reversed pass starts at the end of its)
+	(own interval - the point where the profile rises above this level and)
+	(stopped the cut. Backward from there is inside that rising material, so)
+	(the lead would feed the tool straight into the boss it is about to work)
+	(along. The plain approach below descends at the interval end instead.)
+	o<lead_in> if [[#<_pl_cut_rev> LE 0] AND [[#<li_len> GT 0] OR [#<li_rad> GT 0]]]
 		(a level pass always travels along Z at constant X, so the toolpath's)
 		(own direction at the entry is always pure Z - no profile lookup needed)
 		#<li_bz> = [#<z_dir> * COS[#<li_ang>]]
@@ -1009,7 +1057,19 @@ o<lathe_level_pass> sub
 		o<li_arc> endif
 		F#<pass_feed>
 	o<lead_in> else
-		o<hf_move> CALL [1] [[#<ap_z> + #<z_dir> * #<_pl_z_clear>]] [#<pass_feed>]
+		(Z APPROACH CLEARANCE ONLY WHERE THERE IS ROOM FOR IT. Front to)
+		(back the pass starts in front of its cut, so standing off by the)
+		(clearance and descending there descends through air. A reversed)
+		(pass starts at the far end of its own interval, where the profile)
+		(is rising - that is what stopped the cut - so the same stand-off)
+		(would put the radial descent inside standing material. It descends)
+		(at the interval end itself, where the floor allowance still leaves)
+		(the surface lvl_d below this level.)
+		#<ap_cz> = [#<ap_z> + #<e_dir> * #<_pl_z_clear>]
+		o<ap_rev> if [#<_pl_cut_rev> GT 0]
+			#<ap_cz> = #<ap_z>
+		o<ap_rev> endif
+		o<hf_move> CALL [1] [#<ap_cz>] [#<pass_feed>]
 		o<hf_move> CALL [0] [[#<ap_x> * #<_diameter_mode>]] [#<pass_feed>]
 	o<lead_in> endif
 
@@ -1037,19 +1097,19 @@ o<lathe_level_pass> sub
 	(compensated path and re-enter it, and re-entry is where gouges come from.)
 	o<peck> if [[#<_pl_peck_len> GT 0.0001] AND [#<_pl_peck_ret> GT 0.0001]]
 		#<pk_dir> = 1
-		o<pk_sgn> if [#<z_end_cut> LT #<z_start>]
+		o<pk_sgn> if [#<z_end_cut> LT #<em_z0>]
 			#<pk_dir> = -1
 		o<pk_sgn> endif
-		#<pk_left> = ABS[#<z_end_cut> - #<z_start>]
-		#<pk_at>   = #<z_start>
+		#<pk_left> = ABS[#<z_end_cut> - #<em_z0>]
+		#<pk_at>   = #<em_z0>
 		o<pk_w> while [#<pk_left> GT [#<_pl_peck_len> + 0.0001]]
 			#<pk_at>   = [#<pk_at> + #<pk_dir> * #<_pl_peck_len>]
 			#<pk_left> = [#<pk_left> - #<_pl_peck_len>]
 			G1 Z#<pk_at>
 			(back along the path, never past where this cut began)
 			#<pk_bk> = [#<pk_at> - #<pk_dir> * #<_pl_peck_ret>]
-			o<pk_clamp> if [[#<pk_dir> * [#<pk_bk> - #<z_start>]] LT 0]
-				#<pk_bk> = #<z_start>
+			o<pk_clamp> if [[#<pk_dir> * [#<pk_bk> - #<em_z0>]] LT 0]
+				#<pk_bk> = #<em_z0>
 			o<pk_clamp> endif
 			G1 Z#<pk_bk>
 			(wait AT THE RETRACTED POINT, where the chip is already broken)
@@ -1087,7 +1147,7 @@ o<lathe_level_pass> sub
 			(assumes travel INTO T1 along -lead; lead-out actually travels)
 			(OUT of T1 along +lead, so the sense fed in must be reversed to)
 			(place T1 where it is actually tangent to the real lo_str line)
-			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [-#<z_dir>] [0] [-#<lo_bz>] [-#<lo_bx>] [#<_lo_reff>] [#<z_dir>]
+			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [-#<e_dir>] [0] [-#<lo_bz>] [-#<lo_bx>] [#<_lo_reff>] [#<e_dir>]
 		o<lo_geom> endif
 
 		o<lo_arc> if [#<_flt_ok>]
