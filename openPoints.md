@@ -427,35 +427,14 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
   ten minutes against 41.7 s without it. A light cut landing on a floor is not
   the fault that was reported; the 0.7068 overload was, and that is fixed.
 
-- [ ] **CRASH: toggling the Sectioning property kills the panel** —
-  greatEndian 2026-08-04, hard X error, LinuxCNC terminated.
+- [x] **CLOSED, NOT FIXED — greatEndian 2026-08-13: never repeated.**
+  ~~CRASH: toggling the Sectioning property kills the panel~~.
+  **The cause was never found.** Closed on the report that it has not recurred
+  across a fortnight of heavy use of that very property - the sectioning work of
+  12-13 Aug toggled it on and off on every project. Something in that work may
+  have carried it away, or it may be latent. If it returns, nothing here was
+  fixed: start from a fresh crash, because there is no diagnosis to build on.
 
-  ```
-  Gdk-WARNING: GdkWindow 0x5c00006 unexpectedly destroyed
-  Gtk.py:1689: Warning: invalid (NULL) pointer instance
-  Gtk.py:1689: g_signal_handler_disconnect: assertion 'G_TYPE_CHECK_INSTANCE' failed
-  Gdk-CRITICAL: gdk_frame_clock_end_updating: assertion 'GDK_IS_FRAME_CLOCK' failed  (x3)
-  [GladeVCP-ncam][ERROR] GLADE VCP ERROR: X Protocol Error: 3   (BadWindow)
-  ```
-
-  **No Python traceback** in `linuxcnc_debug.txt` or `linuxcnc_print.txt` - GTK
-  aborts on the X error before anything surfaces. The G-code path is NOT
-  implicated: `gen_project.py --set polyline:param_sectioning=1` builds
-  cleanly headless.
-
-  **One real defect found and fixed on the way** (not proven to be the cause):
-  `NCamPreviewPane._done`'s liveness guard was
-  `if self.area.get_window() is None AND self._acc is not None`. `_acc` is a
-  cached path-length array that says nothing about whether the panel is alive,
-  and it is set to None four lines below - so on the first result after any
-  refresh the guard could not fire. A parse finishing after the pane went away
-  then ran on through `set_text` / `_render_stats` / `_render_info`, touching
-  destroyed widgets. Now tested on the window alone.
-
-  **To pin the actual cause**: re-run with `GDK_SYNCHRONIZE=1` so the X error
-  points at the failing call rather than at the next flush. Also worth knowing
-  whether the crash needs a preview parse to be in flight - toggle Sectioning
-  immediately after a Regenerate versus well after one.
 
 - [x] **Nothing asserts the roughing start or the retreat height directly —
   DONE**, 2026-08-08, `analysis/020`, `test_rough_ends.py`. Both ends of a
@@ -550,21 +529,15 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
   commanded surface - because that is a design question, not a bug.
 
 
-- [ ] **AXIS FROZE ON THE PREVIEW'S STOP BUTTON, cause unknown** —
-  greatEndian 2026-08-03, AXIS had to be killed, no traceback. Ruled out by
-  reading and by measurement: the stop path is cheap (`sim_t = 0`
-  short-circuits the field rebuild), `rs274` runs on a worker thread with `-b`
-  and a 120 s timeout, and `parse_program` on the live program measures
-  **1.76 s / 17 MB peak** — not memory. A double removal of the playback timer
-  source was found and fixed, but it fires at the END of playback, not on Stop,
-  so it is not claimed as the cause.
+- [x] **CLOSED, NOT FIXED — greatEndian 2026-08-13: never repeated.**
+  ~~AXIS froze on the preview's Stop button, cause unknown~~.
+  **The cause was never found**, and a freeze leaves no traceback - the process
+  is alive and stuck, so there is nothing to raise. What it does leave is
+  whatever was already flushed, which is why `_trace()` in `ncam_preview_ui`
+  prints a line per coarse UI callback: the last line printed names the callback
+  that did not return. That instrument is still in place, so a recurrence will
+  say where itself. Set NCAM_NO_TRACE=1 to silence it.
 
-  **`_trace()` now logs each coarse UI callback to stderr, flushed** — `play`,
-  `stop`, `stop done`, `refresh start`, `done`. A hang leaves only what was
-  already flushed, so the last `[ncam-preview]` line names the callback that
-  did not return. **Next time it freezes, the last few of those lines are what
-  is needed.** `NCAM_NO_TRACE=1` silences it. Working in
-  `analysis/003-stop-button-freeze.md`.
 
 - [ ] **Do `taper`, `taper_id` and `boring` fold an allowance into D too?**
   Unchecked. The polyline's pre-finish collapse came from exactly that - with a
