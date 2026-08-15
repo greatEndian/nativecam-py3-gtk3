@@ -797,6 +797,9 @@ class NCamAppActionsMixin:
         self.actionToolOrient = ca("ToolOrient", None, _('Lathe Tool Orientation'), None,
                                    _("LinuxCNC's tool orientation numbers, drawn"),
                                    self.action_toolOrient)
+        self.actionPreviewLines = ca("PreviewLines", None, _('Preview Lines'), None,
+                                     _("What each line on the preview plot is"),
+                                     self.action_previewLines)
         self.actionCNCHome = ca("CNCHome", None, _("LinuxCNC web Site"), None, None, self.action_lcncHome)
         self.actionForum = ca("CNCForum", None, _('LinuxCNC Forum'), None, None, self.action_lcncForum)
         self.actionAbout = ca("About", 'gtk-about', _("_About NativeCAM"), None, None, self.action_about)
@@ -997,6 +1000,104 @@ class NCamAppActionsMixin:
         5: _('CL 180\u00b0'), 6: _('CL 90\u00b0'), 7: _('CL 0\u00b0'), 8: _('CL 270\u00b0'),
         9: _('on the point'),
     }
+
+    def action_previewLines(self, *arg):
+        """Say what each line on the preview plot is.
+
+        Nothing did. A grep for the legend's own wording returned exactly one
+        file - the swatch that draws it - so an operator who wanted to know
+        what the yellow-green line meant had nowhere to look. greatEndian read
+        it as a cut standing off the contour, twice, and the second time it
+        cost a chain of measurement aimed at a toolpath that was never there.
+
+        Drawn rather than written, and drawn with the REAL colours and dashes
+        from ncam_preview, so this cannot drift from the plot it describes.
+        Same shape as the tool-orientation help beside it in the menu.
+        """
+        import ncam_preview as prev
+
+        rows = [
+            (prev.COL['prefin_surf'], None, _('pre-finish surface'),
+             _('SURFACE'),
+             _('Where metal ends after the pre-finish pass - the surface you\n'
+               'measure to set the finish compensation. Moves with Offset.')),
+            (prev.COL['comp'], [6.0, 3.0], _('comp path'),
+             _('TOOL PATH'),
+             _('Where the control point actually travels on the finish pass,\n'
+               'with compensation applied. The only true path drawn here.')),
+            (prev.COL['rgh_entry'], prev.REF_DASH, _('rough entry limit'),
+             _('REFERENCE'),
+             _('Where a roughing level may BEGIN cutting. The tool never\n'
+               'follows it. Sits at Offset + Pre-finish + one depth of cut,\n'
+               'so it never meets the offset contour - even at a pre-finish\n'
+               'offset of 0, because a depth of cut is not an allowance.')),
+            (prev.COL['rgh_stop'], prev.REF_DASH, _('rough stop limit'),
+             _('REFERENCE'),
+             _('Where a roughing level must STOP. Also never followed, and\n'
+               'built WITH the nose, so it is a tool-CENTRE reference:\n'
+               'the cut surface lies one nose radius inside it.')),
+        ]
+
+        dlg = gtk.Dialog(title=_('Preview lines'),
+                         transient_for=self.get_toplevel(), modal=True)
+        dlg.set_resizable(False)
+        vbox = dlg.get_content_area()
+        vbox.set_spacing(6)
+        vbox.set_border_width(12)
+
+        lbl = gtk.Label()
+        lbl.set_markup('<b>' + _('What each line on the plot is') + '</b>')
+        lbl.set_halign(gtk.Align.START)
+        vbox.pack_start(lbl, False, False, 0)
+
+        intro = gtk.Label(label=_(
+            'Three kinds of line, told apart by their dash:\n'
+            '   solid       a real surface, where metal ends\n'
+            '   dashed      a real tool path, where the tool goes\n'
+            '   dash-dot    a construction reference - the tool never goes there'))
+        intro.set_halign(gtk.Align.START)
+        vbox.pack_start(intro, False, False, 0)
+        vbox.pack_start(gtk.Separator(), False, False, 4)
+
+        grid = gtk.Grid()
+        grid.set_row_spacing(8)
+        grid.set_column_spacing(10)
+        for r, (colour, dash, name, kind, what) in enumerate(rows):
+            sample = gtk.DrawingArea()
+            sample.set_size_request(90, 16)
+
+            def _draw(widget, cr, colour=colour, dash=dash):
+                w = widget.get_allocated_width()
+                h = widget.get_allocated_height()
+                cr.set_source_rgb(*colour)
+                cr.set_line_width(2.0)
+                cr.set_dash(dash or [], 0)
+                cr.move_to(2, h / 2.0)
+                cr.line_to(w - 2, h / 2.0)
+                cr.stroke()
+                return False
+
+            sample.connect('draw', _draw)
+            grid.attach(sample, 0, r, 1, 1)
+
+            nm = gtk.Label()
+            nm.set_markup('<b>%s</b>\n<small>%s</small>' % (name, kind))
+            nm.set_halign(gtk.Align.START)
+            nm.set_valign(gtk.Align.START)
+            grid.attach(nm, 1, r, 1, 1)
+
+            desc = gtk.Label(label=what)
+            desc.set_halign(gtk.Align.START)
+            desc.set_valign(gtk.Align.START)
+            grid.attach(desc, 2, r, 1, 1)
+        vbox.pack_start(grid, False, False, 0)
+
+        dlg.add_button(_('Close'), gtk.ResponseType.CLOSE)
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
+        self._restore_focus()
+
 
     def action_toolOrient(self, *arg):
         """Draw LinuxCNC's lathe tool orientation numbers.
