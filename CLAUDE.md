@@ -45,6 +45,31 @@ correct unsectioned and four times too long sectioned, and the screenshot had
 Sectioning ticked. Read the settings out of the picture, and measure that case
 first.
 
+## **Solve by agent, and loop it — standing rule**
+
+greatEndian, 2026-08-15: *"create permanent habit to solve problem by agent and
+create loops for it ... also if context will be vvery hugh save everything
+before my compact promt"*.
+
+**Delegate by default.** A forked agent inherits the whole conversation, keeps
+its tool output out of the main context, and can afford the long verify cycles
+this project needs - one generation is 2-9 minutes, and a full gate is longer.
+
+**Looping means** giving the agent an explicit acceptance gate - the number that
+proves it - and sending it back with what was ruled out if it returns short,
+rather than accepting a diagnosis in place of a fix. Faults here have taken four
+and five passes; each pass starts from the last one's measurements.
+
+**Verify the agent's result yourself before relaying it.** Agents in this
+project have reported "fixed" with the work still uncommitted, validated a
+harness against the wrong widget, and measured cut length while claiming metal.
+Run the gate; relay only what you have seen.
+
+**Save before compaction, not after.** When context runs high, write
+`session_N.md`, `openPoints.md` and any outstanding `analysis/NNN` FIRST, then
+commit and push. A compaction arriving with work only in the transcript loses
+it.
+
 ## **Research, show the path, fix, self-verify — standing rule**
 
 greatEndian, 2026-08-13: *"create own habit ... that I something want, you do
