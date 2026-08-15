@@ -15,9 +15,64 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `8c6551b`.
+Branch: `liveTooling`. Last pushed: `d6aae05`.
 
 ---
+
+## Reported 2026-08-15 — greatEndian's three issues
+
+> Written down late, and that is the point of the entry. The sweep `0a60d80`
+> ran BEFORE the two fixes below; the findings went into the commit messages
+> and `analysis/044`/`051` and never came back here. greatEndian asked *"why
+> you did not mark down this issues to open points?"* — because a fix recorded
+> only in a commit message is not recorded. **The sweep belongs after the fix,
+> not before it.**
+
+- [x] **1 — The tangential extension reached only pre-finish and finish —
+  FIXED**, 2026-08-15, `f7356af`, polyline.cfg **1.60**. greatEndian:
+  *"tangential extension works only in prefinish and finish and it should work
+  for the roughing too"*. Three separate things were wrong, and the first is
+  the one the earlier "DONE" at gap 9 missed:
+  - **the roughing ladder is bounded by Begin X / End X**, not by the extended
+    profile, so an extension that grew the shape gained no levels to cut it
+    with;
+  - `_pl_begin_z` carried the extension's **length** rather than its **Z
+    component**, starting the sweep 0.88 mm of air forward of where the profile
+    actually reaches on testing_15_5 — the same diameter/radius confusion that
+    made a 3.0 extension move a wall by 1.5;
+  - the level scan stopped 1.28 mm short of where the contour passes ran on to.
+  - **Gate, now in `test_extension.py`**: roughing's front-most cut and the
+    contour passes' front-most cut agree within 0.01 mm, the ladder GAINS
+    levels, and the front-most cut moves by the extension's Z component
+    (3.0/√2 = 2.1213 on this profile's 45° first segment), not by 3.0.
+
+- [x] **2 — High feedrate mode should not exist at all — FIXED**, 2026-08-15,
+  `8f60e77`, polyline.cfg **1.61**, `analysis/051`. greatEndian: *"there should
+  be only high feedrate mode feedrate floating point and if it is non zero it
+  is on then"*.
+  - The rendering fault was real — `PARAM_HF_MODE` was `type = combo` with six
+    options **and** carried `digits = 0`, so it presented as a float entry.
+    Not chased: the mode is not wanted, so it is **deleted** — the parameter,
+    its `order` entry, the `_pl_hf_x`/`_pl_hf_z` globals, their
+    `create_defaults` entries, and the per-axis pick in `hf_move`.
+  - It was never worth its weight: the six choices exist for machines that
+    dogleg on a two-axis G0, and testing_15_5 emits **148 positioning moves, 99
+    radial, 49 axial, NONE moving both axes** — so three of the six were
+    identical on this output.
+  - Zero means off, which is also the only safe reading of "no rate", since
+    `G1 F0` stops the machine.
+  - **Measured**: rate 0 → 470 moves, 148 rapids, hash `d14e9d952c14`, which is
+    the hash from **before the feature existed** — byte-identical. Rate 2000 →
+    470 moves, 0 rapids, **exactly 148** at the rate, not one more. The move
+    count is unchanged, so a converted move goes where the rapid went.
+  - **KEPT deliberately**: the feed restore at all 21 sites. F is modal and
+    `lathe_level_pass` has a path where the level cut takes the last F set, so
+    a converted move that did not put the caller's feed back would **cut at
+    positioning speed**.
+
+- [ ] **3 — Back to front is a mess — OPEN, and it is a rework.** See
+  *Roughing direction* below for the measurement, the ruled-out cheap fix, and
+  the gate. greatEndian's spec is an ORDER, recorded there in full.
 
 ## Next — before anything else
 
@@ -567,7 +622,20 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
 - [ ] **BACK TO FRONT IS A DIFFERENT DECOMPOSITION, not a reversed traversal.**
   greatEndian: *"back to front - is mess, it creates messy preview and mess
   Gcode ... path have to be same Gcode as Front to back but movement is from
-  last polyline reference to front"*. Measured on testing_15_6, sectioning on:
+  last polyline reference to front"*.
+
+  **The spec is an ORDER, and greatEndian stated it fully** on 2026-08-15:
+  *"rough all long passes from last reference to first, then last recognized
+  section rough, last recognized section − 1, repeating to first/front
+  section"*. So it is three ordering rules, not one:
+  1. the **long passes first** — those spanning the whole part — run from the
+     last reference toward the first;
+  2. then the **sections**, in DESCENDING order: last recognised section, then
+     that section − 1, down to the front-most;
+  3. and within all of it the **cut set is the front-to-back set**, unchanged.
+     Front to back must stay byte-identical.
+
+  Measured on testing_15_6, sectioning on:
   front-to-back 45 level cuts, back-to-front 40, and **one cut shared between
   them** (44 unique to one, 40 to the other). Front to back opens with long
   passes down the whole part; back to front opens by roughing one section at
@@ -588,7 +656,10 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
     to back byte-identical, and `test_x_continuity` + `test_leftover` green in
     BOTH directions - which they have never been asked to be.
 - [ ] **Both directions (`rough_dir == 2`)** — greatEndian leaves it open
-  explicitly; untouched.
+  explicitly; untouched. The case to investigate when it is picked up is
+  **sectioning ON** at
+  `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_6.xml`,
+  named by greatEndian as the file the mess shows on.
 
 ## Tool shape
 
@@ -1651,7 +1722,11 @@ tracked and carries each one in full; these are the ones still open.
   `test_peck.py`. Runtime rather than a Python table, deliberately: the
   interval END is decided by the scan at runtime, so the rule is walked and no
   geometry is computed in the `.ngc`.
-- [x] **9 — Tangential extension — DONE**, 2026-08-13, polyline.cfg **1.54**.
+- [x] **9 — Tangential extension — DONE**, 2026-08-13, polyline.cfg **1.54**,
+  **and completed 2026-08-15, `f7356af`, 1.60 — this entry was premature.** It
+  claimed `_pl_begin_z` made roughing start at the extension; roughing in fact
+  reached only the contour passes, because the ladder is bounded by Begin X /
+  End X. See *Reported 2026-08-15* at the top for the three faults and the gate.
   *Front* and *Back tangential extension*: run the cut on past the drawn
   profile along the direction of its own end segment. Applied in
   `resolve_points` after the Z limits — so it grows "from the Front limit" as
