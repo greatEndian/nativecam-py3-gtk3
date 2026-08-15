@@ -562,6 +562,34 @@ Branch: `liveTooling`. Last pushed: `8c6551b`.
   *"skip it when `comp_r` is 0"* was wrong: that is exactly the mode set the
   detector lives in.
 
+## Roughing direction — back to front, 2026-08-15
+
+- [ ] **BACK TO FRONT IS A DIFFERENT DECOMPOSITION, not a reversed traversal.**
+  greatEndian: *"back to front - is mess, it creates messy preview and mess
+  Gcode ... path have to be same Gcode as Front to back but movement is from
+  last polyline reference to front"*. Measured on testing_15_6, sectioning on:
+  front-to-back 45 level cuts, back-to-front 40, and **one cut shared between
+  them** (44 unique to one, 40 to the other). Front to back opens with long
+  passes down the whole part; back to front opens by roughing one section at
+  radii the other never uses there. `analysis/052`.
+  - **Ruled out by experiment**: the two profile reversals in
+    `build_sections_gcode` / `build_floor_ladder_gcode`. Disabling them makes it
+    worse - 34 cuts, still disjoint - so the Python point order is not the
+    cause and the cheap fix does not exist.
+  - **It lives in `poly_lathe_mill`**: at `dir == 1` the whole sweep runs on the
+    REVERSED record array, so every downstream decision - which windows exist,
+    their order, where a level starts and stops - is taken in that frame.
+  - **The fix**: compute the decomposition in one frame (front to back) and
+    reverse only the EMISSION - window order, section order, and each pass's
+    cut direction. A rework of direction handling at the choke point
+    `analysis/032`'s five faults came from, so it wants its own pass; not
+    started rather than half done.
+  - **Gate**: same cut SET as front to back (45, not 40), reversed order, front
+    to back byte-identical, and `test_x_continuity` + `test_leftover` green in
+    BOTH directions - which they have never been asked to be.
+- [ ] **Both directions (`rough_dir == 2`)** — greatEndian leaves it open
+  explicitly; untouched.
+
 ## Tool shape
 
 > The tool as it stands is written up in full in **`TOOL-DEFINITION.md`** —
