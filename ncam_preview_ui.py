@@ -590,14 +590,27 @@ class PreviewPane(object):
             parts += [swatch(*names[p]) for p in found if p in names]
         if self.contour_btn.get_active() and self.soft_cb is not None:
             parts.append(swatch(col['soft'], _('reachable surface')))
-        # SURFACES are solid, TOOL PATHS are dashed, and the legend says which
-        # - under compensation a control point sits up to R*sqrt(2) away from
-        # any surface, so a plot that does not distinguish them cannot be read
+        # THREE KINDS OF LINE, told apart by their dash before the legend is
+        # read at all - under compensation a control point sits up to R*sqrt(2)
+        # away from any surface, so a plot that does not distinguish them
+        # cannot be read:
+        #   SOLID          a real surface, where metal ends
+        #   DASHED         a real TOOL PATH, where the tool goes
+        #   DASH-DOT       a CONSTRUCTION REFERENCE - a line the tool never
+        #                  follows, borrowed from the drawing convention for
+        #                  centre and reference lines
+        #
+        # The last class is why these two are called LIMIT and not path. They
+        # are #<_pl_entry_*> and #<_pl_stop_*>: where a roughing level may
+        # begin, and where it must stop. Calling them "path" invited the
+        # reading that the tool travels along them, and it misled greatEndian
+        # twice - the entry line at an offset of 1.0, and the pre-finish band
+        # on testing_15_6 - costing several rounds each time.
         if self._drawn_flags.get('surf'):
             parts.append(swatch(col['prefin_surf'], _('pre-finish surface')))
         if self._drawn_flags.get('rough'):
-            parts.append(swatch(col['rgh_entry'], _('rough entry path')))
-            parts.append(swatch(col['rgh_stop'], _('rough stop path')))
+            parts.append(swatch(col['rgh_entry'], _('rough entry limit')))
+            parts.append(swatch(col['rgh_stop'], _('rough stop limit')))
         # the compensated path, and WHICH MODE produced it. The mode is the
         # part that answers the question: a polyline with nose comp off has no
         # compensation in its path at all, and every saved test project had it

@@ -268,6 +268,23 @@ def main():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+    # THE THREE LINE CLASSES MUST STAY TELLABLE APART. The entry and stop
+    # contours are construction REFERENCES - the tool never follows them - and
+    # they were drawn with the same plain dash as a real toolpath while the
+    # legend called them "path". That combination twice invited the reading
+    # that the tool travels along them, at a cost of several rounds each time.
+    # A dash pattern is easy to make uniform again by accident, so it is
+    # asserted rather than left to review.
+    import ncam_preview as _P
+    ref = getattr(_P, 'REF_DASH', None)
+    check('construction references have a dash of their own',
+          ref is not None and len(ref) == 4,
+          'REF_DASH is %r - a reference line should be dash-DOT, four numbers'
+          % (ref,))
+    check('   and it is not the toolpath dash',
+          ref is not None and list(ref) != [6.0, 3.0],
+          'the comp path and the construction references would look identical')
+
     print()
     if FAILED:
         print('FAILED: %d' % len(FAILED))

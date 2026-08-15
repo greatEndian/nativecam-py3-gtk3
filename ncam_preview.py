@@ -657,6 +657,7 @@ COL = {
     # match the finish pass's.
     'rgh_entry': (0.70, 0.95, 0.35),
     'rgh_stop':  (1.00, 0.45, 0.35),
+    # (their dash is REF_DASH, below - they are references, not paths)
     # THE PRE-FINISH SURFACE - the only other SURFACE on the plot besides the
     # reachable contour. Everything else drawn here is a tool path: where the
     # control point travels, which under compensation is nowhere near the
@@ -666,6 +667,21 @@ COL = {
     # means tool path on this plot, solid means surface.
     'prefin_surf': (0.55, 0.75, 1.00),
 }
+
+
+# THE DASH THAT MEANS "THE TOOL NEVER GOES HERE".
+#
+# Three classes of line are drawn on this plot and they have to be tellable
+# apart before the legend is read: SOLID is a real surface, a plain dash is a
+# real tool path, and DASH-DOT is a construction reference. The last is the
+# drawing convention for centre and reference lines, so it reads as "not a
+# feature of the part, not a path" to anyone who has held a drawing.
+#
+# It exists because the entry and stop contours were drawn with a plain dash
+# and called "path" in the legend, and that combination twice invited the
+# reading that the tool travels along them - the entry line at an offset of
+# 1.0, and the pre-finish band on testing_15_6. Both cost several rounds.
+REF_DASH = [6.0, 2.0, 1.5, 2.0]
 
 
 def _fit(tp, stock, plane, width, height, margin):
@@ -799,9 +815,13 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
     if rough:
         entry, stop = rough
         if entry:
-            _draw_profile(cr, entry, pt, COL['rgh_entry'], 1.2, [3.0, 3.0])
+            # DASH-DOT, not a plain dash: these two are construction
+            # references, not toolpaths. The drawing convention for a centre or
+            # reference line is dash-dot, so the class is readable before the
+            # legend is - see the legend's own comment in ncam_preview_ui.
+            _draw_profile(cr, entry, pt, COL['rgh_entry'], 1.2, REF_DASH)
         if stop:
-            _draw_profile(cr, stop, pt, COL['rgh_stop'], 1.2, [3.0, 3.0])
+            _draw_profile(cr, stop, pt, COL['rgh_stop'], 1.2, REF_DASH)
 
     if points:
         cr.set_source_rgb(*COL['text'])
