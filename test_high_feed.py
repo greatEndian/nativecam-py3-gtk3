@@ -137,62 +137,48 @@ def main():
           '%d radial + %d axial != %d rapids, so some move both and the '
           'dogleg case IS live here' % (x0, z0, r0))
 
-    def same(mode, label):
-        r = moves(['polyline:param_hf_mode=%d' % mode,
-                   'polyline:param_hf_feed=%s' % HF])
-        check('   %s is byte-identical to the default' % label,
-              r is not None and r[1] == h0 and r[2] == r0,
-              'hash %s against %s' % (r[1] if r else '?', h0))
+    # THE RATE IS THE WHOLE SWITCH. There was a six-choice mode here and
+    # greatEndian had it removed: "there should be only high feedrate mode
+    # feedrate floating point and if it is non zero it is on then". So the
+    # cases below are about a number being zero or not, and the modes they
+    # replaced are gone rather than left inert.
 
-    # a rate alone must not convert anything - the mode is what asks for it
-    idle = moves(['polyline:param_hf_feed=%s' % HF])
-    check('a high feedrate with the default mode changes NOTHING',
-          idle is not None and idle[1] == h0,
-          'setting only the rate re-posted the program')
-    same(0, 'preserve all')
-    same(1, 'preserve axial and radial')
-    same(4, 'preserve single-axis')
+    # ZERO IS OFF, and this is the assertion that matters: a saved project
+    # that never asked for this must be untouched, byte for byte.
+    off = moves(['polyline:param_hf_feed=0'])
+    check('a rate of zero is byte-identical to the default',
+          off is not None and off[1] == h0 and off[2] == r0,
+          'hash %s against %s' % (off[1] if off else '?', h0))
 
-    # the three that do something
-    for mode, label, keep_x, keep_z in ((2, 'preserve axial only', 0, z0),
-                                        (3, 'preserve radial only', x0, 0),
-                                        (5, 'always high feed', 0, 0)):
-        r = moves(['polyline:param_hf_mode=%d' % mode,
-                   'polyline:param_hf_feed=%s' % HF])
-        if r is None:
-            check('%s generates' % label, False)
-            continue
-        n, _h, rap, xr, zr = r
-        print('      %-22s %d rapids left (%d radial, %d axial)'
-              % (label, rap, xr, zr))
-        check('%s converts what it says' % label,
-              xr <= keep_x + 4 and zr <= keep_z + 4
-              and (keep_x or xr < x0) and (keep_z or zr < z0),
-              'radial %d (keep %d), axial %d (keep %d)'
-              % (xr, keep_x, zr, keep_z))
-        # THE GEOMETRY MAY NOT MOVE - a G1 rapid goes where the G0 went
-        check('   %s moves the tool to the same places' % label, n == n0,
+    on = moves(['polyline:param_hf_feed=%s' % HF])
+    if on is None:
+        check('the project generates with a rate set', False)
+    else:
+        n, _h, rap, xr, zr = on
+        print('      rate %-6s          %d rapids left (%d radial, %d axial)'
+              % (HF, rap, xr, zr))
+
+        # NON-ZERO IS ON, and it applies to every positioning move - there is
+        # no longer any way to ask for some of them.
+        check('a non-zero rate leaves NO rapid in the operation', rap == 0,
+              '%d rapids remain, so some positioning move was preserved '
+              'and nothing can ask for that any more' % rap)
+
+        # THE GEOMETRY MAY NOT MOVE - a G1 positioning move goes exactly where
+        # the G0 went, so the move count is the same and only the word changed.
+        check('   and the tool goes to the same places', n == n0,
               '%d moves against %d' % (n, n0))
-        # AND NO CUT MAY INHERIT THE RATE
-        hi = high_feed_cuts(['polyline:param_hf_mode=%d' % mode,
-                             'polyline:param_hf_feed=%s' % HF])
-        conv = r0 - rap
-        check('   %s leaks the rate into no cut' % label, hi == conv,
-              '%s moves run at the high feed for %d converted - the modal '
-              'feed is leaking into cuts' % (hi, conv))
 
-    # always high feed must leave nothing behind
-    allhf = moves(['polyline:param_hf_mode=5',
-                   'polyline:param_hf_feed=%s' % HF])
-    check('always high feed leaves NO rapid in the operation',
-          allhf is not None and allhf[2] == 0,
-          '%d rapids remain' % (allhf[2] if allhf else -1))
-
-    # a mode with no rate must stay on true rapids - G1 F0 stops the machine
-    norate = moves(['polyline:param_hf_mode=5'])
-    check('a mode with no rate set stays on true rapids',
-          norate is not None and norate[1] == h0,
-          'converted without a feed, which would post G1 F0')
+        # AND NO CUT MAY INHERIT THE RATE. F is modal: a G1 at the high feed
+        # leaves it set, and lathe_level_pass has a path where the level cut
+        # takes the F last set - so a leak would cut at positioning speed.
+        # Exactly the converted moves may run at it, and not one more.
+        hi = high_feed_cuts(['polyline:param_hf_feed=%s' % HF])
+        check('   and no cut inherits the rate', hi == r0,
+              '%s moves run at the high feed where %d were converted - the '
+              'modal feed is leaking into cuts' % (hi, r0))
+        print('      %s of %d converted moves run at the rate, and nothing else'
+              % (hi, r0))
 
     print()
     if FAILED:

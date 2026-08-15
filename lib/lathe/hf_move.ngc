@@ -1,5 +1,5 @@
 (High-feedrate positioning: emit one single-axis positioning move as either a)
-(true rapid or a G1 at the high feed, per _pl_hf_x / _pl_hf_z.)
+(true rapid or a G1 at the high feed, per _pl_hf_feed alone.)
 (CALL axis[1] target[2] restore_feed[3])
 (axis 0 = X, the radial move; axis 1 = Z, the axial one.)
 
@@ -20,17 +20,15 @@ o<hf_move> sub
 	#<hf_target>  = #2
 	#<hf_restore> = #3
 
+	(THE RATE IS THE WHOLE SWITCH. There was a six-choice mode here, deciding)
+	(per axis whether a move was preserved as a rapid; greatEndian asked for it)
+	(to go - "there should be only high feedrate mode feedrate floating point)
+	(and if it is non zero it is on then". Non-zero converts every positioning)
+	(move, zero leaves them all rapids, which is also the only safe reading of)
+	(zero: a G1 F0 would stop the machine dead.)
 	#<hf_g1> = 0
-	o<hf_pick> if [#<hf_axis> LT 0.5]
-		#<hf_g1> = #<_pl_hf_x>
-	o<hf_pick> else
-		#<hf_g1> = #<_pl_hf_z>
-	o<hf_pick> endif
-
-	(a high feed of 0 means the operator asked for the mode but gave no rate -)
-	(posting G1 F0 would stop the machine dead, so fall back to a true rapid)
-	o<hf_rate> if [#<_pl_hf_feed> LE 0.0001]
-		#<hf_g1> = 0
+	o<hf_rate> if [#<_pl_hf_feed> GT 0.0001]
+		#<hf_g1> = 1
 	o<hf_rate> endif
 
 	o<hf_do> if [#<hf_g1> GT 0]
