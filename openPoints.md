@@ -1103,6 +1103,47 @@ greatEndian: the first and last roughing passes behind the boss are missing on
 
 ## The leftover check — measure the metal, not the recipe (2026-08-12)
 
+- [x] **THE CONTROL COULD NOT FAIL ON MOST GEOMETRY — FIXED 2026-08-15**,
+  `analysis/053`. Reported as "does not fire on testing_15_6"; surveying all 21
+  runnable demo projects showed the old control — delete one radius at
+  `len(radii)//3` — fired on **7 of 21**.
+  - **Deleting one pass is not a valid mutilation.** A shallow pass is usually
+    redundant: the final surface is the DEEPEST pass covering each Z, so on
+    testing_10 removing each of the seven outermost radii in turn left the worst
+    standing figure identical to four decimals, 0.2505 mm at Z−14.47 every time.
+    Where it is not redundant it is narrow: on 15_6, removing r29.6520 leaves
+    0.9580 mm standing across **0.350 mm of Z**, which `MIN_RUN` (0.600)
+    discards.
+  - **That falsified the file's own justification for `MIN_RUN`** — "a missing
+    pass is wide, at least 2.2 mm". It is not; the band runs 3.75 mm at the top
+    of 15_6's ladder to 0.05 mm at the bottom. The comment now says so and the
+    bound stays, because the nose-fillet case it excludes is real.
+  - **Now it leaves a 6 mm Z window UNROUGHED**, trimmed out of the moves rather
+    than deleting passes — the failure actually worth catching, and the shape
+    the behind-the-boss bug had. Placed on the longest stretch where roughing
+    both machines cleanly AND demonstrably cut; each half was needed (a mid-span
+    window missed on current_work, 15_2, 15_3, 15_4; without the "did cut" half,
+    15_3 slipped through). **21 of 21**, and it runs on every project that can
+    carry it with the other 16 named and reasoned.
+  - Two rejected rules recorded with numbers: two deepest radii **20/21** (fails
+    on the bored testing_14_inside, where the final surface is the LARGEST
+    radius), two radii nearest the target **16/21**.
+
+- [ ] **The gate cannot see a SINGLE missing pass on most geometry, and that
+  stands.** Not a threshold to tune: in the redundant case the metal is not
+  there to find, and in the narrow case it is indistinguishable by width from a
+  nose fillet. `test_x_continuity` is what catches a missing pass — it, and not
+  `test_leftover`, is what caught the one behind the boss on testing_15_6. The
+  two gates are complementary; treating either as sufficient is what invited
+  this.
+
+- [ ] **`leftovers()` models the stock from the moves it is given**, so a
+  mutilation removing the outermost pass also lowers the modelled stock. Latent
+  wart in a measurement helper, not the cause of the above — fixing it changed
+  nothing, 7 of 21 either way, so it was left alone rather than fixed on
+  speculation. `analysis/053`.
+
+
 `test_leftover.py`, greatEndian's idea. Sweeps the real nose along the roughing
 moves with `StockField` and asks whether any metal stands **more than one depth
 of cut** above the surface roughing is meant to leave. It exists because four
