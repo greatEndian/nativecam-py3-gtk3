@@ -641,10 +641,18 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
   target agrees between the directions to 0.0024 mm; `check_tangent` PASS both.
 
   **Still short, and recorded rather than hidden:**
-  - a reversed pass has **no lead-in and no profile-angle ramp** - it descends
-    at the interval end. The mirror of `resume_envelope`/`entry_contour` for
-    the back end is the next step, in Python. Costs 1.1827 mm worst standing
-    against 0.7219 on testing_15_5, both inside the bound.
+  - [x] ~~a reversed pass has **no lead-in and no profile-angle ramp**~~ —
+    **FIXED 2026-08-15, `analysis/055`.** Not by the mirror envelope this entry
+    predicted: there is no second geometry to compute. Back to front is the
+    **same motion played backwards** — each lead belongs to an END of the pass
+    and keeps its own geometry either way, and `#<_pl_cut_rev>` only chooses
+    which is traversed inward as the approach. `e_dir` is **deleted**; it was a
+    second frame, the very thing `054` removed from the decomposition.
+    Standing metal now **identical** to front to back, not merely close:
+    0.7219 / 0.8579 / 0.6473 / 0.5681 on 15_5 and 15_6 × sectioning, against
+    1.1827 / 1.1517 / 0.7324 / 0.8126 before. Lead/ramp moves 45 → **106**,
+    equal to f2b. Overcut 0.0503 both directions; front to back still
+    byte-identical, 0 lines differing.
   - **interval order inside one level is still front-first** where a boss
     splits it - 3 levels of 45 on testing_15_6. Needs a dry-run or a scratch
     array in the `.ngc` to reverse; front to back alternates the same way.
