@@ -1124,6 +1124,8 @@ def build_sections_gcode(polyline_feature):
 
     if frame_dir != rough_dir:
         windows = _sections_back_to_front(windows, points)
+        windows = _split_level_intervals(windows, points, sections,
+                                         level_allowance(polyline_feature))
 
     lines = [
         '#<_pl_sect_count> = %d' % len(windows),
@@ -1173,6 +1175,159 @@ def _sections_back_to_front(windows, points):
             j += 1
         out += sorted(windows[i:j], key=lambda w: -abs(w[0] - z0))
         i = j
+    return out
+
+
+def level_allowance(polyline_feature):
+    """The stock a roughing level holds off the profile, in POINTS units.
+
+    This is `lvl_d` in poly_lathe_mill.ngc - `fin_off + prefin_off`, the
+    radial allowance the level scan offsets the profile by before looking for
+    its crossing - converted to the diameter units `points`, `boundary_height`
+    and a window's radius band are all carried in.
+
+    The radial offset, not the axial one: with *Separate Z offset* on the two
+    differ, but the level scan is given one number (CALL args 13 and 25) and
+    that number is the radial one.
+    """
+    def _v(name):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else 0.0
+
+    fin_off, _fin_z = stock_pair(polyline_feature)
+    pf_on = polyline_feature.get_param('param_pf_on')
+    pf_off = _v('param_pf_off')
+    if pf_on is not None and _to_float(pf_on.get_ngc_value()) <= 0:
+        pf_off = 0.0
+    return (fin_off + pf_off) * DIAMETER_MODE
+
+
+def _boundary_list(sections, points):
+    """[(z, height, is_peak)] for every internal section boundary.
+
+    Same spans, same order and the same `boundary_height` band_windows uses -
+    these ARE the boundaries it merged away, looked at again.
+
+    `is_peak` is what makes a boundary able to split a level in two: the
+    sections on both sides have to reach BELOW it, or there is no second
+    interval behind it to reach. A step or a flat-to-rise boundary is a
+    boundary all the same and blocks a level just as well, but everything past
+    it is above the level too, so the level simply stops there - splitting a
+    window on one would only add a window that cuts nothing.
+    """
+    z_ordered = sorted(sections, key=lambda s: -s[0]) \
+        if sections[0][0] > sections[-1][0] else sorted(sections, key=lambda s: s[0])
+    spans = [(z_from, z_to) for z_from, z_to, _m in z_ordered]
+
+    def _side_min(span, z_b):
+        """The lowest the profile gets in `span`, IGNORING the boundary itself.
+
+        Not `detect_sections`' own min_x: that is taken over the points a
+        section RECEIVES, which on a straight rise is just its far end, so a
+        boss made of two plain tapers would have the peak as its own minimum
+        and be rejected. What decides a peak is whether there is material
+        below it on each side, and the boundary vertex is on neither side.
+        """
+        lo, hi = min(span), max(span)
+        xs = [x for z, x in points
+              if lo - EPS <= z <= hi + EPS and abs(z - z_b) > EPS]
+        return min(xs) if xs else None
+
+    out = []
+    for i in range(len(spans) - 1):
+        z_b = spans[i][1]
+        h = boundary_height(points, z_b)
+        left, right = _side_min(spans[i], z_b), _side_min(spans[i + 1], z_b)
+        out.append((z_b, h,
+                    left is not None and right is not None
+                    and left < h - EPS and right < h - EPS))
+    return out
+
+
+def _split_level_intervals(windows, points, sections, allowance):
+    """One window per INTERVAL, for the levels a merged window splits in two.
+
+    Direction 1 only. `_sections_back_to_front` orders WINDOWS, so a level
+    whose two intervals live in two windows is reversed for free - measured on
+    testing_15_6 with Sectioning on, 13 of the 16 multi-interval levels come
+    out back-first that way. The other 3 have both intervals inside ONE window
+    - the merged full-length one at the top - where the runtime discovers them
+    sequentially (cut, `lathe_level_next_start`, cut) and nothing knows the
+    second one exists until the first has been emitted. Python is never handed
+    two things to order, so it cannot order them. See analysis/056 and 057.
+
+    THE SPLIT IS PER BAND, NOT PER LEVEL, and that is what makes it
+    expressible. A boss is tapered, so the Z gap it opens in a level moves
+    with the level - on testing_15_6, -28.96..-37.41 at X33.5965 and
+    -27.48..-39.61 at X33.0885 - and a window cannot carry a per-level Z. It
+    does not have to: the gaps are NESTED. Every level at or below a
+    boundary's own height plus the floor allowance is blocked AT that boundary
+    - the scan offsets the profile outward by `allowance`, and a normal offset
+    at a vertex is never nearer the profile than the radial one - so the
+    boundary's own Z sits inside every one of those gaps. One split point, the
+    whole sub-band.
+
+    That also fixes where the sub-band ends. A level ABOVE
+    `boundary_height + allowance` may run straight through the boundary, and
+    splitting the window there would cut it as two spans where it was one -
+    the cut set, which is the property this whole direction exists to keep.
+    So each window keeps a full-span copy of itself over the band above the
+    lowest qualifying threshold, and only the band below it is split.
+
+    Two kinds of boundary are passed over. One whose threshold is at or below
+    the window's own band bottom cannot block anything this window cuts. And
+    one that is not a PEAK - see `_boundary_list` - has nothing behind it for
+    a second interval to reach, so a piece there would cut air; splitting on
+    every merged-away boundary instead was measured at 15 windows on
+    testing_15_6 where 10 do the work.
+
+    Artificial sectioning is a no-op here by construction: `split_by_length`
+    never crosses a natural boundary, so a slice has no boundary inside it.
+    """
+    if allowance <= EPS or len(sections) < 2 or not windows:
+        return windows
+    bounds = _boundary_list(sections, points)
+    if not bounds:
+        return windows
+    z0 = points[0][0]
+
+    out = []
+    for w in windows:
+        z_from, z_to, r_lo, r_hi = w
+        lo_z, hi_z = min(z_from, z_to), max(z_from, z_to)
+        act = [(z_b, h_b) for z_b, h_b, peak in bounds
+               if peak and lo_z + EPS < z_b < hi_z - EPS
+               and h_b + allowance > r_lo + EPS]
+        if not act:
+            out.append(w)
+            continue
+        # the lowest threshold, so every level in the sub-band is blocked at
+        # EVERY split point in it - a level between two thresholds keeps the
+        # unsplit window above and is simply left in front-first order
+        top = min(min(h_b for _z, h_b in act) + allowance, r_hi)
+        if top - r_lo <= EPS:
+            out.append(w)
+            continue
+        if r_hi - top > EPS:
+            out.append((z_from, z_to, top, r_hi))
+        cuts = sorted((z_b for z_b, _h in act), reverse=z_from > z_to)
+        pieces = []
+        prev = z_from
+        for z_b in cuts:
+            pieces.append((prev, z_b, r_lo, top))
+            prev = z_b
+        pieces.append((prev, z_to, r_lo, top))
+        # back-most piece first, the same "furthest from the profile's own
+        # first point" rule _sections_back_to_front orders whole windows by
+        pieces.sort(key=lambda p: -abs(p[0] - z0))
+        out += pieces
+
+    # The table is 200 slots - 50 windows - and nothing above it is spare. A
+    # profile that would overflow keeps the unsplit list: the interval order
+    # inside a level is a consistency nicety, and a truncated window table is
+    # metal left standing.
+    if SECT_BASE + 4 * len(out) > FLANK_BASE:
+        return windows
     return out
 
 

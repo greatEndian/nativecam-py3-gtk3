@@ -653,8 +653,69 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     1.1827 / 1.1517 / 0.7324 / 0.8126 before. Lead/ramp moves 45 → **106**,
     equal to f2b. Overcut 0.0503 both directions; front to back still
     byte-identical, 0 lines differing.
-  - **interval order inside one level is still front-first** where a boss
-    splits it — **NEEDS A CALL, and the measurement says it is not worth much.**
+  - [x] **INTERVAL ORDER INSIDE ONE LEVEL — FIXED 2026-08-17,
+    `analysis/057`.** By the separate-windows route greatEndian ruled for, and
+    **entirely in Python**: not one line of O-code changed and the window
+    table's format is untouched. `_split_level_intervals` gives each interval
+    of a split level its own window, in direction 1 only.
+
+    **The crux dissolved.** The gaps a boss opens are NESTED — lower the level
+    and the blocked set only grows — so one split point, the peak's own Z,
+    serves every level in the band. The split does not have to move with the
+    level. The band's top edge is `peak height + allowance`, below which a
+    level is certainly blocked at the peak; above it the window is kept whole,
+    or a level that runs straight through would be cut as two spans and the
+    cut set would change. The model predicted the bracket the measurement
+    shows: X34.5318 unblocked and full-length, X34.0636 the first that splits,
+    threshold 34.167.
+
+    **Measured, testing_15_6 sectioning ON: front-first 3 → 0.** Fifteen of
+    the sixteen multi-interval levels are now strictly back-first. The
+    sixteenth, X34.0636, has its window pair reversed but is still preceded by
+    phase 1's own front cut at the same radius — the pre-existing duplicate
+    below. So gate A is **15 of 16, not 16**, and the residue is not this
+    change's. testing_11 moves 14/2 → 15/1 the same way.
+
+    **What is NOT covered, and cannot be by this route: phase 1.** The
+    unsectioned full-length pass above the section ceiling is not window-driven
+    (`w_idx < 0`) and has its own multi-crossing loop, so no window table can
+    re-order it. Every WINDOW-driven multi-interval level in every project
+    measured is back-first; both residues seen — 15_6's duplicate, 11's
+    three-interval level — are phase 1's own handover level. Giving phase 1 a
+    window table is the next step and a bigger one.
+
+    Nothing already won moved: cut SET identical between directions on
+    15_6 / 15_5 / 15_2 / 15_4 / 9 (45/44, 47/46, 30/29, 29/29, 25/25, 0 unique
+    either way), front to back **byte-identical across all 39 projects**,
+    standing metal 0.7219 / 0.8579 / 0.6473 / 0.5681 unchanged, overcut 0.0503
+    both directions, `check_tangent` PASS, `test_x_continuity` and
+    `test_leftover` green in all four combinations with controls firing.
+    Rapid travel back to front **1888.7 → 1877.9 mm**.
+
+    **Budget, measured across all 39:** worst case **64 of the 200 slots**
+    (testing_13_arcs, unaffected by the split); the split adds at most 8 slots
+    to any project. A guard refuses the split rather than overflow.
+
+  - **A DUPLICATE ROUGHING PASS at the phase-1 handover level — PRE-EXISTING,
+    both directions, found in `analysis/057`.** `poly_lathe_mill.ngc` ~715:
+    when phase 1's continuation past an obstruction comes back blocked it sets
+    `_pl_ph1_front_cut = 0` — "nothing was cut at all" — but the FIRST interval
+    was cut; only the continuation was blocked. Phase 2's window then redoes
+    the whole radius. Measured on testing_15_6 sectioning ON: X34.0636,
+    Z0 → -31.209, emitted twice with a full retract between. It is the whole of
+    the "45 cuts, 44 distinct" difference. Not fixed with the interval order:
+    removing it changes front-to-back output, and gating it to direction 1
+    would make the two directions emit different cut counts.
+
+  - **Sectioning OFF still emits multi-interval levels front-first** in
+    direction 1. There is no window table at all in that mode -
+    `poly_lathe_mill` builds its own single full-length window - so the
+    Python-side fix has nothing to re-order. Closing it means emitting windows
+    where today there are none, which needs the runtime's `_pl_sectioning`
+    gate to change.
+
+  - **the original front-first finding, for the record** — the measurement
+    that led to the ruling:
     Re-measured 2026-08-17 on testing_15_6 sectioning ON, `analysis/056`:
     **16 of 28 levels carry more than one interval**, and 13 of those 16 already
     reverse correctly. Only **3 of 45 passes** come out front-first — the top
@@ -675,15 +736,17 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
       it consistent.
     - **RULED 2026-08-17: greatEndian chose to FIX it, by the separate-windows
       route** — the Python-first one — over the scratch-array route and over
-      leaving it. In progress.
-    - **The crux the route has to survive**: intervals are per-LEVEL, not
-      per-BAND. A window is `(z_from, z_to, r_lo, r_hi)` covering a whole radius
-      band, but the boss is tapered, so the split moves with the level —
-      `-28.96..-37.41` at X33.5965 against `-27.48..-39.61` at X33.0885. If the
-      band abstraction cannot express that, say so rather than force it.
-    - **Budget**: testing_15_6 uses 32 of the 200 slots at 3400–3600 — 8 windows
-      of 4, 50 possible. The worst case across all 39 projects has NOT been
-      measured yet and must be, before the layout is committed.
+      leaving it. **Done, `analysis/057`** — see the tick above.
+    - **The crux the route had to survive — it survived it**: intervals are
+      per-LEVEL, not per-BAND. A window is `(z_from, z_to, r_lo, r_hi)` over a
+      whole radius band, but the boss is tapered, so the split moves with the
+      level — `-28.96..-37.41` at X33.5965 against `-27.48..-39.61` at
+      X33.0885. **The gaps are NESTED**, so one split point at the peak's own Z
+      is inside all of them; only the band's TOP edge has to be worked out, and
+      it is `peak height + allowance`.
+    - **Budget**: testing_15_6 used 32 of the 200 slots at 3400–3600 and now
+      uses 40. Worst case across all 39 measured: **64 slots**, testing_13_arcs,
+      which the split does not touch.
   - [x] **SETTLED 2026-08-17 — geometric section order STAYS.** greatEndian
     chose it over restoring the weakest-first rigidity ranking and over making
     it a parameter: back to front walks last section, section−1, … front, as

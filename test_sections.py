@@ -379,6 +379,7 @@ def main():
     test_entry_contour()
     test_swallowed_corner()
     test_table_layout()
+    test_interval_windows()
 
     print()
     if FAILED:
@@ -574,6 +575,67 @@ def test_table_layout():
     check('nothing runs into LinuxCNC own parameters at 5060',
           max(t for _n, _b, t in regions) <= 5060,
           'top is %d' % max(t for _n, _b, t in regions))
+
+
+def test_interval_windows():
+    """One window per interval, for the levels a merged window splits in two.
+
+    Back to front orders WINDOWS, so a level whose two intervals sit in one
+    window comes out front-first - 3 passes of 45 on testing_15_6, see
+    analysis/056 and 057. The fix gives those intervals their own windows over
+    the band where the peak actually blocks; everything here is the reason
+    that band has the edges it has.
+    """
+    import lathe_sections as L
+
+    # a boss between two flats: peak D60 at Z-30, flats at D40, and a step at
+    # Z-5 that is a boundary but NOT a peak
+    pts = [(0.0, 40.0), (-5.0, 40.0), (-5.0, 44.0), (-20.0, 44.0),
+           (-30.0, 60.0), (-40.0, 44.0), (-60.0, 44.0)]
+    secs = L.detect_sections(pts)
+    bounds = L._boundary_list(secs, pts)
+    peaks = [(z, h) for z, h, p in bounds if p]
+    check('only the boss counts as a peak, not the step',
+          [round(z, 3) for z, _h in peaks] == [-30.0],
+          'peaks at %s' % [(round(z, 2), round(h, 2)) for z, h in peaks])
+
+    win = [(0.0, -60.0, 44.0, L.BAND_ALL)]
+    # allowance 3.0 in diameter units: levels up to D63 are blocked at the boss
+    out = L._split_level_intervals(win, pts, secs, 3.0)
+    check('a merged window becomes full-span + two pieces', len(out) == 3,
+          'got %s' % (out,))
+    if len(out) == 3:
+        check('the band above peak+allowance keeps one full-span window',
+              abs(out[0][0]) < 1e-6 and abs(out[0][1] + 60.0) < 1e-6
+              and abs(out[0][2] - 63.0) < 1e-6,
+              'top window %s' % (out[0],))
+        check('the pieces carry the band from the merge edge to peak+allowance',
+              all(abs(w[2] - 44.0) < 1e-6 and abs(w[3] - 63.0) < 1e-6
+                  for w in out[1:]), 'pieces %s' % (out[1:],))
+        check('the BACK piece is emitted first', out[1][0] == -30.0
+              and out[2][0] == 0.0, 'order %s' % ([w[:2] for w in out[1:]],))
+        check('the pieces split at the peak, not somewhere else',
+              out[1][1] == -60.0 and out[2][1] == -30.0,
+              'pieces %s' % ([w[:2] for w in out[1:]],))
+
+    # a peak that cannot block anything this window cuts must not split it:
+    # its threshold is at or below the window's own band bottom
+    check('a peak below the band bottom leaves the window alone',
+          L._split_level_intervals([(0.0, -60.0, 62.0, L.BAND_ALL)],
+                                   pts, secs, 1.0)
+          == [(0.0, -60.0, 62.0, L.BAND_ALL)])
+    # and with no allowance there is nothing above the peak to block
+    check('a zero allowance leaves every window alone',
+          L._split_level_intervals(win, pts, secs, 0.0) == win)
+
+    # the guard: 200 slots is 50 windows, and a truncated table is metal left
+    # standing, so an overflow keeps the unsplit list
+    many = [(0.0, -60.0, 44.0, L.BAND_ALL)] * 20
+    check('a split that would overflow the window table is refused',
+          L._split_level_intervals(many, pts, secs, 3.0) == many,
+          'produced %d windows, %d slots'
+          % (len(L._split_level_intervals(many, pts, secs, 3.0)),
+             4 * len(L._split_level_intervals(many, pts, secs, 3.0))))
 
 
 if __name__ == '__main__':
