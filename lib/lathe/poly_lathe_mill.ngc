@@ -695,6 +695,12 @@ o<poly_lathe_mill> sub
                                 (there is nothing structurally different about a later)
                                 (interval also ending at a block point found by the scan)
                                 #<l_fr> = #<w_from>
+                                (has any pass of THIS level actually cut yet. Phase 1's)
+                                (blocked branch below hands the whole radius back to)
+                                (phase 2, and that is only right when nothing was cut)
+                                (here at all - on a LATER iteration the first interval)
+                                (was already cut and only the continuation is blocked)
+                                #<p1_cut> = 0
                                 o<wh_lvl> while [1]
                                         o<lathe_level_pass> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
 
@@ -713,13 +719,58 @@ o<poly_lathe_mill> sub
                                                 (offset short by that same reservation, even with)
                                                 (nothing blocking it - must not be mistaken for this)
                                                 o<blk_lvl_p1> if [#<_level_blocked>]
-                                                        (nothing reachable from w_from itself - stop here,)
-                                                        (nothing was cut at all so phase 2 must still do)
-                                                        (this exact radius fresh)
-                                                        #<sect_top_r> = #<current_radius>
-                                                        #<_pl_ph1_front_cut> = 0
-                                                        o<wh_00> break
+                                                        o<p1_none> if [#<p1_cut> EQ 0]
+                                                                (nothing reachable from w_from itself - stop)
+                                                                (here, nothing was cut at all so phase 2 must)
+                                                                (still do this exact radius fresh)
+                                                                #<sect_top_r> = #<current_radius>
+                                                                #<_pl_ph1_front_cut> = 0
+                                                                o<wh_00> break
+                                                        o<p1_none> endif
+                                                        (A LATER PASS OF THIS LEVEL CAME BACK BLOCKED, and)
+                                                        (that is NOT "nothing was cut at all" - the first)
+                                                        (interval was cut just above. Handing the whole)
+                                                        (radius back to phase 2 made phase 2 redo the part)
+                                                        (already cut: X34.0636, Z0 to -31.209, emitted)
+                                                        (TWICE with a full retract between on testing_15_6)
+                                                        (sectioning ON - the whole of the 45 cuts / 44)
+                                                        (distinct difference. See analysis/058)
+                                                        (What the block really means here is a disagreement)
+                                                        (about WHERE the level resumes, not whether there)
+                                                        (is more to cut. lathe_level_next_start's scan)
+                                                        (answer can land just inside the rise it found -)
+                                                        (-34.171 where the clear ground starts at -35.000 -)
+                                                        (and lathe_level_pass then reports the profile as)
+                                                        (already above the level at its own start. The)
+                                                        (resume ENVELOPE answers the same question and)
+                                                        (lands clear of it at -34.600; that is the pick)
+                                                        (phase 2's own blocked branch already uses, and it)
+                                                        (is what phase 2's window cut from before. So retry)
+                                                        (from there and FINISH THE LEVEL instead of handing)
+                                                        (half of it over - which also keeps the fix)
+                                                        (independent of the window table, so it holds in)
+                                                        (both roughing directions)
+                                                        o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                        o<pick_p1b> if [#<_pl_res_n> GT 1]
+                                                                #<r_found> = #<_pl_env_found>
+                                                                #<r_z>     = #<_pl_env_z>
+                                                        o<pick_p1b> else
+                                                                #<r_found> = #<_pl_resume_found>
+                                                                #<r_z>     = #<_pl_resume_z>
+                                                        o<pick_p1b> endif
+                                                        (searching from the last CUT end, not from the)
+                                                        (unusable resume point, so phase 1 finds exactly)
+                                                        (what phase 2's window would have found. The)
+                                                        (progress test is what stops that from looping:)
+                                                        (a candidate not past where this blocked pass)
+                                                        (already started would be retried forever)
+                                                        o<p1b_more> if [[#<r_found> EQ 0] OR [[[#<r_z> - #<l_fr>] * [#<w_to> - #<w_from>]] LE 0.0001]]
+                                                                o<wh_lvl> break
+                                                        o<p1b_more> else
+                                                                #<l_fr> = #<r_z>
+                                                        o<p1b_more> endif
                                                 o<blk_lvl_p1> else
+                                                        #<p1_cut> = 1
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mc_p1> if [#<_pl_multi_cross> GT 0]
                                                                 o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]

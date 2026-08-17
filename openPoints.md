@@ -632,7 +632,9 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
   **Gate, all four met.** Cut SET identical on testing_15_6 / 15_5 / 15_2 /
   15_4 in both sectioning modes - 45 cuts not 40 on testing_15_6 sectioning on,
   0 spans unique to either direction - and every back-to-front pass travels
-  back to front, 45 of 45. Order: the long full-length window first, then every
+  back to front, 45 of 45. (**Those 45 became 44 on 2026-08-17**, when
+  `analysis/058` removed the duplicate pass that was the whole of the "45 cuts,
+  44 distinct" gap. The property — same SET, 0 unique — is unchanged.) Order: the long full-length window first, then every
   band last-section-first; Artificial slicing comes out exactly
   `[-57.7,-70.4] ... [0,-1]`. Front to back byte-identical across all 39 demo
   projects, the only difference being the one new default line.
@@ -676,6 +678,15 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     below. So gate A is **15 of 16, not 16**, and the residue is not this
     change's. testing_11 moves 14/2 → 15/1 the same way.
 
+    **And removing that duplicate did NOT close it — the prediction was
+    wrong.** After `analysis/058`, X34.0636 reads
+    `[-31.21 → 0.00] [-68.89 → -35.00]`: still front-first, now because phase 1
+    **finishes the level itself** and cuts both intervals in its own
+    front-to-back order. Still 15 back-first / 1 front-first, still not a
+    regression, still phase 1. Closing it means teaching phase 1 the emission
+    direction — see the paragraph below, which is the same conclusion reached
+    from the other end.
+
     **What is NOT covered, and cannot be by this route: phase 1.** The
     unsectioned full-length pass above the section ceiling is not window-driven
     (`w_idx < 0`) and has its own multi-crossing loop, so no window table can
@@ -696,16 +707,33 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     (testing_13_arcs, unaffected by the split); the split adds at most 8 slots
     to any project. A guard refuses the split rather than overflow.
 
-  - **A DUPLICATE ROUGHING PASS at the phase-1 handover level — PRE-EXISTING,
-    both directions, found in `analysis/057`.** `poly_lathe_mill.ngc` ~715:
-    when phase 1's continuation past an obstruction comes back blocked it sets
-    `_pl_ph1_front_cut = 0` — "nothing was cut at all" — but the FIRST interval
-    was cut; only the continuation was blocked. Phase 2's window then redoes
-    the whole radius. Measured on testing_15_6 sectioning ON: X34.0636,
-    Z0 → -31.209, emitted twice with a full retract between. It is the whole of
-    the "45 cuts, 44 distinct" difference. Not fixed with the interval order:
-    removing it changes front-to-back output, and gating it to direction 1
-    would make the two directions emit different cut counts.
+  - [x] **A DUPLICATE ROUGHING PASS at the phase-1 handover level — FIXED
+    2026-08-17, `analysis/058`.** `poly_lathe_mill.ngc` ~715 set
+    `_pl_ph1_front_cut = 0` — "nothing was cut at all" — on a LATER iteration,
+    where the first interval had already been cut and only the continuation was
+    blocked, so phase 2's window redid the whole radius.
+    - **The block was a disagreement about WHERE the level resumes, not
+      whether there was more to cut.** `lathe_level_next_start`'s scan answers
+      -34.171, just inside the rise; clear ground starts at -35.000. The resume
+      ENVELOPE lands clear at -34.600 — the pick phase 2's own blocked branch
+      already uses. Phase 1 now retries from there, searching from the last CUT
+      end, and finishes the level instead of handing half over. A progress test
+      refuses a candidate not past where the blocked pass started, so it cannot
+      loop. It never consults the window table, which is why it holds in both
+      directions.
+    - **Measured**: 45 cuts/44 distinct → **44/44** on testing_15_6, 47/46 →
+      **46/46** on 15_5, both directions; **SET lost 0, gained 0** in all four
+      — a duplicate removed, not a pass. Standing metal bit-identical
+      (0.7219 / 0.8579 / 0.6473 / 0.5681), which is what proves the removed
+      pass was cutting air.
+    - **`cuts == distinct` now holds.** The "45 cuts, 44 distinct" arithmetic
+      quoted through `analysis/054`–`057` was this bug all along; those files
+      are point-in-time records and keep the old number.
+    - **Why it survived**: it removes no metal (`test_leftover` blind to it),
+      deletes no pass (`test_x_continuity` blind), stays inside the pre-finish
+      envelope (overcut blind) and is tangent-continuous (`check_tangent`
+      blind). **A count and a distinct-count are different measurements, and
+      where they disagree there is something to explain.**
 
   - **Sectioning OFF still emits multi-interval levels front-first** in
     direction 1. There is no window table at all in that mode -
