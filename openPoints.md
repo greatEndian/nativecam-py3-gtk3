@@ -673,9 +673,24 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
       five faults came from, for 3 passes of 45 with no metal and no time won.
       Recommend leaving it unless greatEndian sees it in the preview and wants
       it consistent.
-  - **Natural sectioning's weakest-first ranking is replaced by section order**
-    in direction 1, because greatEndian asked for section order. One place to
-    change if he wants the rigidity ranking kept: `_sections_back_to_front`.
+    - **RULED 2026-08-17: greatEndian chose to FIX it, by the separate-windows
+      route** — the Python-first one — over the scratch-array route and over
+      leaving it. In progress.
+    - **The crux the route has to survive**: intervals are per-LEVEL, not
+      per-BAND. A window is `(z_from, z_to, r_lo, r_hi)` covering a whole radius
+      band, but the boss is tapered, so the split moves with the level —
+      `-28.96..-37.41` at X33.5965 against `-27.48..-39.61` at X33.0885. If the
+      band abstraction cannot express that, say so rather than force it.
+    - **Budget**: testing_15_6 uses 32 of the 200 slots at 3400–3600 — 8 windows
+      of 4, 50 possible. The worst case across all 39 projects has NOT been
+      measured yet and must be, before the layout is committed.
+  - [x] **SETTLED 2026-08-17 — geometric section order STAYS.** greatEndian
+    chose it over restoring the weakest-first rigidity ranking and over making
+    it a parameter: back to front walks last section, section−1, … front, as
+    specified. No work; recorded so it is not reopened.
+    The mechanism, for the record: `_sections_back_to_front` replaces the
+    weakest-first ranking within each band in direction 1. That is the one
+    place to change if the ruling is ever revisited.
   - **`param_dir` = 2, both directions, is untouched** and still open.
 
 - [x] **the original measurement, for the record.**
