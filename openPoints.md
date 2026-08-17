@@ -654,8 +654,25 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     equal to f2b. Overcut 0.0503 both directions; front to back still
     byte-identical, 0 lines differing.
   - **interval order inside one level is still front-first** where a boss
-    splits it - 3 levels of 45 on testing_15_6. Needs a dry-run or a scratch
-    array in the `.ngc` to reverse; front to back alternates the same way.
+    splits it — **NEEDS A CALL, and the measurement says it is not worth much.**
+    Re-measured 2026-08-17 on testing_15_6 sectioning ON, `analysis/056`:
+    **16 of 28 levels carry more than one interval**, and 13 of those 16 already
+    reverse correctly. Only **3 of 45 passes** come out front-first — the top
+    three, X34.0636 / X33.5965 / X33.0885.
+    - **Root cause, from the emission slots**: where a level's intervals land in
+      DIFFERENT windows (slots 8 and 21) Python's `_sections_back_to_front`
+      orders them; where both sit in the SAME window (slots 4 and 5) the runtime
+      scan walks them sequentially and Python never sees two things to order.
+      So it is the levels above the point where the part splits into bands.
+    - **It costs nothing measurable.** The cut SET is identical either way
+      (proved), and back to front already uses **less** rapid travel than front
+      to back — **1888.7 mm against 1914.8 mm**, 146 rapids against 150.
+    - **The fix is not cheap**: either the intervals become their own windows so
+      the existing Python reorder catches them, or `poly_lathe_mill` gains a
+      dry-run/scratch array. That is surgery on the choke point `analysis/032`'s
+      five faults came from, for 3 passes of 45 with no metal and no time won.
+      Recommend leaving it unless greatEndian sees it in the preview and wants
+      it consistent.
   - **Natural sectioning's weakest-first ranking is replaced by section order**
     in direction 1, because greatEndian asked for section order. One place to
     change if he wants the rigidity ranking kept: `_sections_back_to_front`.
