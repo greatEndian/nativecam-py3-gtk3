@@ -324,3 +324,34 @@ copy instead.
   sets agree, so it does not arise today. It is the one place a future profile
   could make the split change the cut set.
 - **`param_dir` = 2, both directions**, still untouched.
+
+## A false FAIL from running the gates concurrently — 2026-08-17
+
+The independent re-verification of this commit reported
+
+```
+FAIL  testing_15_5 sect off b2f generates and runs
+FAILED: 1        exit=1
+```
+
+on a combination that had passed on `b719e53`. It did not reproduce. Generated
+by hand the same project gives 1537 lines and, with the test's own
+`param_n_comp=0`, 1242 lines; both parse with `error: None` and 472 / 381
+moves. Re-running `test_leftover` **alone** gave 46 PASS, 0 FAIL, exit 0, with
+all eight standing-metal rows present and identical between the directions.
+
+The cause was the verification itself: `test_leftover`, `test_x_continuity`,
+the overcut probe and the interval probe were all running at once, each
+spawning an NCam instance and `rs274`. `run()` in `test_leftover` has no
+timeout and only checks `os.path.isfile(out)`, so a generation that loses the
+race simply reports `None` and the row fails.
+
+**These gates are not safe to run in parallel with each other.** Each is 20–30
+minutes and it is tempting to overlap them; the cost is a failure that looks
+exactly like a regression in one specific project/mode/direction. Run the heavy
+gates one at a time, and if one row fails while its neighbours pass, reproduce
+that row by hand before believing it.
+
+Recorded because the wrong reaction — treating it as a real regression and
+reverting or "fixing" it — would have cost a round, and because the same trap
+is waiting for the next person who tries to save wall-clock time.
