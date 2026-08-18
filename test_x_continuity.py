@@ -165,7 +165,18 @@ def main():
                           ('sect off b2f', ('polyline:param_sectioning=0',
                                             'polyline:param_dir=1')),
                           ('sect ON  b2f', ('polyline:param_sectioning=1',
-                                            'polyline:param_dir=1'))):
+                                            'polyline:param_dir=1')),
+                          # BOTH DIRECTIONS, added 2026-08-18. Never generated
+                          # here before, which is how it survived unimplemented:
+                          # it was a strict SUBSET of front to back's cuts - 28
+                          # of 44 on testing_15_6 - so the step down across the
+                          # missing behind-boss levels was 7.49 mm where the
+                          # depth of cut is 0.508. This check is precisely the
+                          # one that would have said so. See analysis/060.
+                          ('sect off alt', ('polyline:param_sectioning=0',
+                                            'polyline:param_dir=2')),
+                          ('sect ON  alt', ('polyline:param_sectioning=1',
+                                            'polyline:param_dir=2'))):
             cuts, doc = passes_of(project, sets)
             check('%s %s generates' % (project, tag), cuts is not None)
             if cuts is None:

@@ -1207,7 +1207,11 @@ class NCamPreviewMixin(object):
             if max(off, off_z) <= 0:
                 return None
             d = f.get_param('param_dir')
-            rdir = int(float(d.get_ngc_value())) if d is not None else 0
+            # the FRAME the tables are built in - see rough_frame_dir. The
+            # drawn twin has to take the same one or "Both directions" would
+            # be drawn against a decomposition the program never uses.
+            rdir = lathe_sections.rough_frame_dir(
+                int(float(d.get_ngc_value())) if d is not None else 0)
             rad = [(z, x / lathe_sections.DIAMETER_MODE) for z, x in pts]
             out = lathe_sections.entry_contour(rad, off, rdir, 0.0, 0, off_z)
             if not out or len(out) < 2:
@@ -1249,7 +1253,11 @@ class NCamPreviewMixin(object):
             if not pts or len(pts) < 2:
                 return None
             d = f.get_param('param_dir')
-            rdir = int(float(d.get_ngc_value())) if d is not None else 0
+            # the FRAME the tables are built in - see rough_frame_dir. The
+            # drawn twin has to take the same one or "Both directions" would
+            # be drawn against a decomposition the program never uses.
+            rdir = lathe_sections.rough_frame_dir(
+                int(float(d.get_ngc_value())) if d is not None else 0)
             nr, orn = lathe_sections._comp_nose(f, nose_r, orient)
             rad = [(z, x / lathe_sections.DIAMETER_MODE) for z, x in pts]
 

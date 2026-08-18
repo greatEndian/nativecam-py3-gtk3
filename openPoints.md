@@ -813,7 +813,8 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     The mechanism, for the record: `_sections_back_to_front` replaces the
     weakest-first ranking within each band in direction 1. That is the one
     place to change if the ruling is ever revisited.
-  - **`param_dir` = 2, both directions, is untouched** and still open.
+  - [x] **`param_dir` = 2, both directions — DONE 2026-08-18, `analysis/060`.**
+    See the entry below.
 
 - [x] **the original measurement, for the record.**
   greatEndian: *"back to front - is mess, it creates messy preview and mess
@@ -851,11 +852,53 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
   - **Gate**: same cut SET as front to back (45, not 40), reversed order, front
     to back byte-identical, and `test_x_continuity` + `test_leftover` green in
     BOTH directions - which they have never been asked to be.
-- [ ] **Both directions (`rough_dir == 2`)** — greatEndian leaves it open
-  explicitly; untouched. The case to investigate when it is picked up is
-  **sectioning ON** at
-  `configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects/testing_15_6.xml`,
-  named by greatEndian as the file the mess shows on.
+- [x] **Both directions (`rough_dir == 2`) — DONE 2026-08-18, `analysis/060`.**
+  greatEndian: *"now do the both directions"*.
+
+  It was unimplemented with **two** faults, both measured on testing_15_6
+  sectioning ON: it did not alternate at all (28 cuts, every one of them the
+  same way round as direction 0), and it was a strict SUBSET of direction 0's
+  cuts, missing the 15 behind-boss intervals and leaving **7.49 mm** of stock
+  standing at Z−67.
+
+  **Root cause, one line:** `rough_frame_dir(2)` returned 2, so `flank_sides(2)`
+  answered `(1, -1)` — peaks on BOTH sides casting a shadow. That makes the
+  reachable envelope the INTERSECTION of the two directions' reachable sets, so
+  "both directions" reached strictly LESS than either one. Backwards: a tool
+  that can approach from both ends reaches more, and the shadow is per PASS,
+  each of which has exactly one direction.
+
+  **The fix, Python-first.** Direction 2 now rides frame 0 — direction 0's
+  windows, levels, intervals and window ORDER — and alternates only the
+  emission. `flank_sides`' and `mirror_dir`'s 2 branches are deleted; both take
+  a FRAME direction now. `param_f_dir` = 2 goes through the same mapping, and
+  so do the preview's drawn twins. The only O-code is a flag: `#<_pl_cut_alt>`
+  set in `poly_lathe_mill`, and `lathe_level_pass` flipping `#<_pl_cut_rev>` at
+  its very end — past every motion, and past the three returns that leave
+  without emitting any, so a skipped or blocked pass never consumes a flip.
+  The parity has to be runtime because only the runtime knows how many passes
+  there will be.
+
+  **Gate, all eight met.** Perfect zigzag, **0 repeats**, in all six
+  project × sectioning combinations. Cut set against direction 0: **lost 0,
+  gained 0**, six of six. Stock field **identical to 0.0000 mm** at Z −40 /
+  −50 / −60 / −67 (was +1.26 to +7.49). `test_leftover` and `test_x_continuity`
+  extended to direction 2 — they had never generated it, which is exactly how
+  it stayed broken — and green in all six combinations, controls firing 21 of
+  21. Directions 0 and 1 differ from `1ea086d` by **exactly one line** across
+  12 combinations, the required `#<_pl_cut_alt> = 0.0` default. Direction 1
+  still 16/0 back-first sectioning ON, 15/0 and 16/0 OFF; `cuts == distinct`
+  in all 18 runs. Standing metal 0.7219 / 0.8579 / 0.6473 / 0.5681, unchanged
+  and now equal in all three directions. Overcut 0.0503; `check_tangent` PASS
+  for direction 2 six of six.
+
+  **Left open, deliberately:** direction 2 removes the same metal as direction
+  0 in a better order — it does not yet reach FURTHER. The union envelope a
+  genuinely bidirectional tool could use would change the cut set and
+  manufactures sub-nose corners the interpreter refuses; that is a third
+  decomposition with its own gate. Parity carries across section boundaries
+  (one line to reset if greatEndian wants each section to open the same way).
+  `param_f_dir` = 2 still does not alternate the finish passes.
 
 ## Tool shape
 

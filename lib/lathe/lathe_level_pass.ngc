@@ -1255,4 +1255,22 @@ o<lathe_level_pass> sub
 		F#<pass_feed>
 	o<lead_rt> endif
 
+	(=== BOTH DIRECTIONS: FLIP FOR THE NEXT PASS ==========================)
+	(param_dir 2 is direction 0's decomposition emitted alternately, so the)
+	(next pass has to arrive at the end this one left. The flip sits HERE,)
+	(past every motion, for two reasons. It is the only point that knows a)
+	(pass really cut: the three returns above - blocked before the window,)
+	(blocked by the multi-crossing scan, and shorter than _pl_min_pass - all)
+	(leave without emitting anything, and flipping on one of those would put)
+	(two consecutive cuts the same way round for a pass nobody can see. And)
+	(the whole of this subroutine reads _pl_cut_rev as one value: moving the)
+	(flip earlier would emit an entry lead for one direction and a retreat)
+	(for the other.)
+	(_pl_cut_alt is 0 for front to back and for back to front, which is why)
+	(neither changes by a byte. poly_lathe_mill puts it back to 0 before the)
+	(contour passes.)
+	o<alt_fl> if [#<_pl_cut_alt> GT 0]
+		#<_pl_cut_rev> = [1 - #<_pl_cut_rev>]
+	o<alt_fl> endif
+
 o<lathe_level_pass> endsub

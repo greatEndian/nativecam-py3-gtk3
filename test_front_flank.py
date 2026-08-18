@@ -75,10 +75,23 @@ def main():
     check('the direction mirror flips the shadowed side',
           L.mirror_dir(0) == 1 and L.mirror_dir(1) == 0,
           '%d %d' % (L.mirror_dir(0), L.mirror_dir(1)))
-    check('   and both-directions stays both', L.mirror_dir(2) == 2)
+    # BOTH DIRECTIONS RIDES FRAME 0 - 2026-08-18, analysis/060. It used to
+    # answer mirror_dir(2) = 2 and flank_sides(2) = (1, -1), shadowing both
+    # sides of every peak: the INTERSECTION of the two directions' reachable
+    # sets, so "both directions" reached strictly less than either one and
+    # left 7.49 mm standing behind testing_15_6's boss. Both helpers now take
+    # a FRAME direction, which rough_frame_dir never returns 2 from.
+    check('   both directions maps onto the front-to-back frame',
+          L.rough_frame_dir(2) == 0 and L.rough_frame_dir(1) == 0
+          and L.rough_frame_dir(0) == 0,
+          '%d %d %d' % (L.rough_frame_dir(0), L.rough_frame_dir(1),
+                        L.rough_frame_dir(2)))
+    check('   so it shadows one side, the same one front to back does',
+          L.flank_sides(L.rough_frame_dir(2)) == L.flank_sides(0)
+          and len(L.flank_sides(L.rough_frame_dir(2))) == 1)
     check('   so the front takes the side the back does not',
           L.flank_sides(L.mirror_dir(0)) != L.flank_sides(0)
-          and set(L.flank_sides(L.mirror_dir(2))) == set(L.flank_sides(2)))
+          and L.flank_sides(L.mirror_dir(1)) != L.flank_sides(1))
 
     # --- it fires where a leading flank genuinely cannot go --------------
     steep = [(0.0, 20.0), (-10.0, 20.0), (-10.2, 60.0), (-30.0, 60.0)]

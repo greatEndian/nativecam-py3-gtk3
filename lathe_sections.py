@@ -1122,7 +1122,14 @@ def build_sections_gcode(polyline_feature):
         # this function's own docstring for why it must not be merged.
         windows = [(z_from, z_to, 0.0, BAND_ALL) for z_from, z_to in ordered]
 
-    if frame_dir != rough_dir:
+    # BACK TO FRONT ONLY - not "any direction whose frame differs". Direction 2
+    # also decomposes in frame 0 now (see rough_frame_dir), but it is not a
+    # re-ordering of the windows: it visits them in direction 0's own order and
+    # alternates the EMISSION of each pass. Testing `frame_dir != rough_dir`
+    # here would have handed it direction 1's window order as well, which is a
+    # different traversal from the one greatEndian asked for and would have
+    # moved the split levels on top of it.
+    if rough_dir == 1:
         windows = _sections_back_to_front(windows, points)
         windows = _split_level_intervals(windows, points, sections,
                                          level_allowance(polyline_feature))
@@ -1376,7 +1383,10 @@ def build_level_split_gcode(polyline_feature):
     """
     dir_param = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
-    if rough_dir != 1 or rough_frame_dir(rough_dir) == rough_dir:
+    # BACK TO FRONT ONLY. Direction 2 shares direction 0's window order and
+    # its single-span levels; a split table there would re-order intervals
+    # that direction 0 does not re-order, and the cut set has to match it.
+    if rough_dir != 1:
         return ''
 
     allowance = level_allowance(polyline_feature)
@@ -2006,10 +2016,22 @@ def rough_frame_dir(rough_dir):
     shared - two almost disjoint decompositions, which is what greatEndian
     reported as *"mess"*. See analysis/052 and analysis/054.
 
-    Direction 2, "both directions", is a genuinely different question and is
-    left exactly as it was - it is an open point in its own right.
+    DIRECTION 2, "both directions", RIDES THE SAME FRAME - 2026-08-18. It is
+    an alternating EMISSION of direction 0's decomposition: the same windows,
+    the same levels, the same intervals, each pass cut from the opposite end
+    to the one before it. So it maps onto frame 0 exactly as direction 1 does,
+    and only `_pl_cut_rev` - toggled per emitted pass by lathe_level_pass -
+    differs at runtime.
+
+    Leaving it at 2 was the whole of the second fault measured in
+    analysis/060: `flank_sides(2)` used to shadow BOTH sides of every peak, so
+    the reachable envelope roughing stops against was the INTERSECTION of the
+    two directions' reachable sets rather than either one. On testing_15_6
+    that lost the 15 behind-boss level cuts outright and left 7.49 mm of stock
+    standing at Z-67. A tool that can approach from both ends reaches MORE,
+    not less; the shadow is per PASS, and each pass has one direction.
     """
-    return 0 if rough_dir == 1 else rough_dir
+    return 0 if rough_dir in (1, 2) else rough_dir
 
 
 def rough_emit_reversed(polyline_feature):
@@ -2023,14 +2045,18 @@ def flank_sides(rough_dir):
 
     Cutting front to back the tool drives past a boss and the sections BEHIND
     it are the ones it can no longer reach, so only peaks on the +Z side
-    constrain. Back to front mirrors that. Both directions has to take both,
-    since each pass meets a different face of the same boss.
+    constrain. Back to front mirrors that.
+
+    THIS TAKES A FRAME DIRECTION, NOT A USER SETTING - every caller passes
+    `rough_frame_dir(...)`, which is 0 or 1 and never 2. Direction 2 used to
+    answer `(1, -1)` here, on the reasoning that each pass meets a different
+    face of the same boss. That is true of the PASSES and false of the
+    ENVELOPE: taking both sides intersects the two reachable sets instead of
+    uniting them, so "both directions" reached strictly LESS than either one -
+    15 lost level cuts and 7.49 mm standing on testing_15_6, analysis/060. The
+    2 branch is gone with the frame mapping that made it reachable.
     """
-    if rough_dir == 1:
-        return (-1,)
-    if rough_dir == 2:
-        return (1, -1)
-    return (1,)
+    return (-1,) if rough_dir == 1 else (1,)
 
 
 def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
@@ -2165,15 +2191,16 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
 def mirror_dir(rough_dir):
     """The roughing direction that shadows the OTHER side of every peak.
 
-    `flank_sides` maps 0 -> (1,), 1 -> (-1,), 2 -> (1, -1). The LEADING flank
-    is shadowed by whatever the trailing flank is not, so swapping 0 and 1
-    flips the side, while 2 - which already takes both - stays as it is.
+    `flank_sides` maps 0 -> (1,) and 1 -> (-1,). The LEADING flank is shadowed
+    by whatever the trailing flank is not, so this is just the swap.
+
+    A FRAME DIRECTION, like `flank_sides` - callers hand it
+    `rough_frame_dir(...)`, which never yields 2. `param_dir` = 2 rides frame
+    0 (see `rough_frame_dir`), so its leading flank mirrors to 1 like any
+    other frame-0 run. Answering 2 here, as this did, paired with the old
+    `flank_sides(2)` to shadow both sides of every peak twice over.
     """
-    if rough_dir == 0:
-        return 1
-    if rough_dir == 1:
-        return 0
-    return 2
+    return 0 if rough_dir == 1 else 1
 
 
 def front_flank_envelope(points, front_deg, rough_dir=0, flank_len=0.0,
@@ -3417,8 +3444,14 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     if p is not None and _to_float(p.get_ngc_value()) < 1:
         return points, False
 
+    # THE FRAME, not the raw setting. `param_f_dir` offers "Both directions"
+    # too, and 2 used to reach `flank_sides` untranslated and shadow both
+    # sides of every peak - the same fault analysis/060 measured on the
+    # roughing side. Both directions is an alternating emission of the
+    # front-to-back frame, so it dilates like frame 0.
     d = polyline_feature.get_param('param_f_dir')
-    fin_dir = int(_to_float(d.get_ngc_value())) if d is not None else 0
+    fin_dir = rough_frame_dir(
+        int(_to_float(d.get_ngc_value())) if d is not None else 0)
 
     # THE LEADING FLANK, ONLY WHEN ASKED FOR. Off by default, and that is not
     # timidity: honouring it removes about a quarter of the moves - 361 to 275

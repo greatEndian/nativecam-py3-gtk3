@@ -298,11 +298,32 @@ o<poly_lathe_mill> sub
         (last-section-first at generation time, and _pl_cut_rev tells)
         (lathe_level_pass to cut each interval from its back end forward.)
         (See analysis/054.)
+        (BOTH DIRECTIONS is the same decomposition again, alternating. rough_dir)
+        (2 rides frame 0 in lathe_sections - identical windows, levels and)
+        (intervals to front to back - and the only thing that differs is that)
+        (each emitted pass is cut from the opposite end to the one before it.)
+        (Nothing here is computed: the parity has to live at runtime because)
+        (only the runtime knows how many passes there will BE - a level can be)
+        (skipped as too thin, refused as blocked, or split into several)
+        (disjoint intervals by a boss. lathe_level_pass flips the flag itself,)
+        (after the motion and never on a pass that emitted none. See)
+        (analysis/060.)
         #<r_pds> = #<pds>
         #<_pl_cut_rev> = 0
+        #<_pl_cut_alt> = 0
         o<rpick> if [#<rough_dir> EQ 1]
                 #<_pl_cut_rev> = 1
         o<rpick> endif
+        o<ralt> if [#<rough_dir> EQ 2]
+                #<_pl_cut_alt> = 1
+        o<ralt> endif
+        (the level-split table is back to front only, and it is a GLOBAL the)
+        (cfg emits per polyline - a project with a back-to-front polyline)
+        (ahead of this one leaves its peaks behind. Clear it, or the sg_on)
+        (guard below could read a stale table on a level of this one.)
+        o<p1s_clr> if [#<rough_dir> NE 1]
+                #<_pl_p1s_n> = 0
+        o<p1s_clr> endif
 
         (a re-entrant profile can split one level into several disjoint)
         (safe-to-cut intervals - minimal retract's single reference radius)
@@ -1084,8 +1105,10 @@ o<poly_lathe_mill> sub
         o<wh_w> endwhile
         (roughing levels end)
         (the contour passes below carry their own direction flag into)
-        (cam_load, so the level flag is put back before they run)
+        (cam_load, so the level flag is put back before they run - and the)
+        (alternation with it, or a contour pass would go on flipping it)
         #<_pl_cut_rev> = 0
+        #<_pl_cut_alt> = 0
 
         (pre-finish contour pass at the roughing target: one connected trace)
         (that also cuts the steep walls and radii the level passes stopped short of)
