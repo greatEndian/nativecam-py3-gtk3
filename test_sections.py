@@ -15,6 +15,7 @@ the same way, against poly_mesh_lathe.ngc's own output.
 
 Needs rs274 and the ncam_demo sim config; skips with a clear message without.
 """
+import re
 import math
 import os
 import shutil
@@ -380,6 +381,7 @@ def main():
     test_swallowed_corner()
     test_table_layout()
     test_interval_windows()
+    test_level_split()
 
     print()
     if FAILED:
@@ -636,6 +638,51 @@ def test_interval_windows():
           'produced %d windows, %d slots'
           % (len(L._split_level_intervals(many, pts, secs, 3.0)),
              4 * len(L._split_level_intervals(many, pts, secs, 3.0))))
+
+
+def test_level_split():
+    """The peaks a level's sub-spans are ordered by, and when there are none.
+
+    Two sweeps carry no window table - Sectioning OFF, and Sectioning ON's
+    phase 1 - so `_split_level_intervals` could not reach them and every
+    multi-interval level there came out front-first. They get the same
+    geometry as a plain list of peaks instead, and walk the level in sub-spans
+    between the ones that block it.
+    """
+    import lathe_sections as L
+
+    pts = [(0.0, 40.0), (-5.0, 40.0), (-5.0, 44.0), (-20.0, 44.0),
+           (-30.0, 60.0), (-40.0, 44.0), (-60.0, 44.0)]
+    kids = [line_to(40.0, -5.0), line_to(44.0, -5.0), line_to(44.0, -20.0),
+            line_to(60.0, -30.0), line_to(44.0, -40.0), line_to(44.0, -60.0)]
+
+    def poly(direction, f_off='1.5', pf_off='0.0', children=None):
+        p = Poly(0.0, 40.0, kids if children is None else children)
+        p.params.update(param_dir=str(direction), param_f_off=f_off,
+                        param_pf_on='1', param_pf_off=pf_off)
+        return p
+
+    got = L.build_level_split_gcode(poly(1))
+    check('back to front emits one entry per peak', '#<_pl_p1s_n> = 1' in got,
+          got.replace('\n', ' | ')[:200])
+    slots = dict(re.findall(r'^#(3\d\d\d) = (\S+)$', got, re.M))
+    check('the split point is the peak, not the step at Z-5',
+          abs(float(slots.get('3160', '0')) + 30.0) < 1e-6,
+          'z %s' % slots.get('3160'))
+    check('the threshold is the peak height plus the floor allowance',
+          abs(float(slots.get('3161', '0')) - 63.0) < 1e-6,
+          'thr %s (want 60.0 + 3.0)' % slots.get('3161'))
+    check('the table sits clear of the cfg CALL scratch at #3141-#3159',
+          min(int(k) for k in slots) >= 3160, 'lowest slot %s' % min(slots))
+
+    check('front to back never gets the table',
+          L.build_level_split_gcode(poly(0)) == '')
+    check('no allowance means no peak can block, so no table',
+          L.build_level_split_gcode(poly(1, f_off='0.0')) == '')
+    flat = [line_to(40.0, -20.0), line_to(44.0, -20.0), line_to(44.0, -60.0)]
+    check('a profile with no peak keeps the level in one span',
+          L.build_level_split_gcode(poly(1, children=flat)) == '',
+          L.build_level_split_gcode(poly(1, children=flat))[:120])
 
 
 if __name__ == '__main__':

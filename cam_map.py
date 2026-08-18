@@ -41,6 +41,7 @@ CFG = os.path.join(HERE, 'cfg')
 # 3300 - so they are named here and checked against lathe_sections' own
 # constants.
 LITERAL_WINDOWS = {
+    'LVLSPLIT_BASE': 3160,
     'ERAMP_BASE': 3200,
     'SECT_FLOOR_BASE': 3380,
     'SECT_BASE': 3400,
@@ -98,14 +99,35 @@ def windows():
 def ngc_literals():
     """Numbered-parameter literals in lib/**.ngc, as (file, line, value).
 
-    Only 3200-4999: below that is the record array and the argument slots,
-    above it is LinuxCNC's own space.
+    Only 3160-4999: below that is the record array, the resume envelope and
+    cfg/lathe/polyline.cfg's own CALL scratch at #3141-#3159; above it is
+    LinuxCNC's own space.
     """
     out = []
     for path in _walk(LIB, '.ngc'):
         for i, line in enumerate(_read(path).splitlines(), 1):
             code = _code(line)
-            for m in re.finditer(r'#\[?\s*(3[2-9]\d\d|4\d\d\d)\b', code):
+            for m in re.finditer(r'#\[?\s*(31[6-9]\d|3[2-9]\d\d|4\d\d\d)\b', code):
+                out.append((os.path.relpath(path, HERE), i, int(m.group(1))))
+    return out
+
+
+def cfg_scratch():
+    """Numbered parameters the .cfg files ASSIGN, as (file, line, value).
+
+    The cfgs stage a feature's CALL arguments in plain numbered parameters -
+    `#3141 = #<_pl_rgh_hi_r>` and the rest of #3141-#3159 in
+    cfg/lathe/polyline.cfg. That block sits BETWEEN two declared windows, so
+    nothing in the overlap check could see it, and a new table placed in "the
+    gap at 3140" would have silently overwritten the polyline's own arguments.
+    Caught while placing the level-split table; declared here so it cannot
+    happen twice.
+    """
+    out = []
+    for path in _walk(CFG, '.cfg'):
+        for i, line in enumerate(_read(path).splitlines(), 1):
+            m = re.match(r'\s*#(\d{4})\s*=', line)
+            if m:
                 out.append((os.path.relpath(path, HERE), i, int(m.group(1))))
     return out
 
@@ -222,6 +244,9 @@ def check_all():
             highs = [v for k, v in win.items() if k.endswith('BASE') and v > base]
             top = min(highs) if highs else base + 1
         spans.append((base, top, name))
+    scratch_slots = sorted(set(v for _f, _l, v in cfg_scratch()))
+    if scratch_slots:
+        spans.append((scratch_slots[0], scratch_slots[-1] + 1, 'cfg CALL scratch'))
     spans.sort()
     bad = [(a, b) for a, b in zip(spans, spans[1:]) if a[1] > b[0]]
     res.append((not bad, 'parameter windows do not overlap',

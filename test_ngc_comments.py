@@ -26,6 +26,7 @@ long-working subs - facing.ngc, fillet_lead.ngc, lathe_level_pass.ngc - so
 LinuxCNC plainly treats it as comment text. A rule that fails on working code is
 a worse rule than none.
 """
+import re
 import glob
 import os
 import sys
@@ -136,6 +137,51 @@ def _generate_one():
     return out if (r.returncode == 0 and os.path.isfile(out)) else None
 
 
+# Prose comments that read as an `end` bracket, found on the first run of this
+# check and left alone: both are mill/generic features that are not the active
+# work, and rewording them changes the G-code every saved project of theirs
+# emits. Listed rather than ignored, so a NEW one still fails. Recorded in
+# openPoints.md - the preview attributes their moves to the wrong operation.
+STRAY_KNOWN = {
+    ('cfg/i_gcode.cfg', 77),
+    ('cfg/mill/sel-end-mill.cfg', 181),
+}
+
+
+def stray_brackets(paths):
+    """Comments that START with "begin " or "end " but pair with nothing.
+
+    NativeCAM brackets every feature it writes and the preview reads exactly
+    that - `COMMENT("begin X")` pushes an operation, `COMMENT("end X")` pops
+    one. So a PROSE comment whose first word happens to be `end` is not prose
+    to the preview; it is 54 unbalanced pops. One did exactly that - `(end of
+    the window, which ends the sub-spans)` in poly_lathe_mill - and the
+    symptom was not a parse error but a toolpath whose roughing moves were
+    attributed to no operation at all, which reads downstream as roughing
+    having emitted nothing.
+
+    The pairing test is what tells a real bracket from an accident: a genuine
+    one has its twin in the same file.
+    """
+    hits = []
+    for path in paths:
+        rel = os.path.relpath(path, HERE)
+        begins, ends = set(), []
+        for i, line in gcode_lines(path):
+            m = re.match(r"\s*\((begin|end)\s+([^)]*)\)\s*$", line)
+            if not m:
+                continue
+            if m.group(1) == 'begin':
+                begins.add(m.group(2).strip())
+            else:
+                ends.append((i, m.group(2).strip(), line))
+        for i, name, line in ends:
+            if name in begins or (rel, i) in STRAY_KNOWN:
+                continue
+            hits.append((rel, i, line))
+    return hits
+
+
 def main():
     files = []
     for pat in ('lib/**/*.ngc', 'cfg/**/*.cfg'):
@@ -160,6 +206,8 @@ def main():
 
     report('no comment contains a nested paren', all_nested)
     report('no comment is left unclosed on its line', all_unclosed)
+    report('no comment starts with a bracket word it does not mean',
+           stray_brackets(files))
     check('semicolons inside comments are not treated as an error',
           True, '%d present across the tree, all in long-working subs' % len(all_semi))
 
@@ -173,6 +221,13 @@ def main():
     check('the lint detects a planted nested paren', len(nested) == 1, str(nested))
     check('the lint detects a planted unclosed comment', len(unclosed) == 1,
           str(unclosed))
+    with tempfile.NamedTemporaryFile('w', suffix='.ngc', delete=False) as f:
+        f.write('(begin real)\nG0 X1\n(end real)\n(end of the window, and so on)\n')
+        tmp4 = f.name
+    stray = stray_brackets([tmp4])
+    os.unlink(tmp4)
+    check('the lint detects a prose comment that reads as a bracket',
+          len(stray) == 1, str(stray))
     # and it must not fire on a .cfg tooltip, which is prose and not G-code
     with tempfile.NamedTemporaryFile('w', suffix='.cfg', delete=False) as f:
         f.write('[PARAM_X]\ntool_tip = _("a (parenthetical) aside; and a semicolon")\n'

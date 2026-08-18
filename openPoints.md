@@ -695,6 +695,37 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
     three-interval level — are phase 1's own handover level. Giving phase 1 a
     window table is the next step and a bigger one.
 
+  - [x] **PHASE 1 AND SECTIONING OFF NOW KNOW THE EMISSION DIRECTION — DONE
+    2026-08-17, `analysis/059`, polyline.cfg 1.62.** The last ordering gap.
+    Both sweeps no window table covers — phase 1 (`w_idx < 0`) and Sectioning
+    OFF's own full-length window — are ordered by a Python-emitted table of
+    PEAKS with their thresholds (`build_level_split_gcode`, `#3160`–`#3200`),
+    which the runtime walks back-most sub-span first.
+    - **The scan stays the authority.** A split point is only a bound handed to
+      it; it still finds where each cut starts and stops. Deliberate, from
+      `analysis/058`: the scan's resume answer can land just inside a rise
+      (−34.171 where clear ground starts at −35.000), so Python boundaries and
+      scan boundaries are NOT interchangeable. A peak sits safely inside the
+      blocked gap, where they cannot disagree.
+    - **Measured, front-first → 0 everywhere**: sectioning ON 15/1 → **16/0**
+      on 15_6, 15_5 and 11; sectioning OFF **0/15 → 15/0** and **0/16 → 16/0**.
+      Sectioning OFF was never in the ask — it was front-first on every
+      multi-interval level and is fixed by the same change.
+    - **Cut SET unchanged**: 8 project × sectioning × direction combinations,
+      **lost 0, gained 0**, no duplicates; `cuts == distinct` still holds.
+      Standing metal bit-identical. Front to back byte-identical bar the one
+      new `#<_pl_p1s_n> = 0.0` default.
+    - **A near-miss made permanent**: the table was going into "the free gap at
+      3140", which two briefs specified. Only **3160–3200** was ever free —
+      `polyline.cfg` stages its own CALL arguments at **#3141–#3159**, a block
+      between two declared windows that `cam_map`'s overlap check could not
+      see, so a table at 3140 would have silently overwritten them. `cam_map`
+      gained a `cfg_scratch()` extractor so it cannot happen twice.
+    - **Known limit**: the table holds twenty peaks. Overflow refuses the split
+      rather than corrupting anything, so a very complex profile would silently
+      keep the old front-first order — it would look like "back to front is
+      right on my other parts but not this one".
+
     Nothing already won moved: cut SET identical between directions on
     15_6 / 15_5 / 15_2 / 15_4 / 9 (45/44, 47/46, 30/29, 29/29, 25/25, 0 unique
     either way), front to back **byte-identical across all 39 projects**,

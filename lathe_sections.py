@@ -1331,6 +1331,94 @@ def _split_level_intervals(windows, points, sections, allowance):
     return out
 
 
+def build_level_split_gcode(polyline_feature):
+    """The #3160 table of split points a level's intervals are ordered by.
+
+    Back to front, the interval order inside one level is Python's decision
+    everywhere a WINDOW carries it - `_sections_back_to_front` orders windows
+    and `_split_level_intervals` gives each interval of a split level its own
+    window. Two sweeps are not window-driven and so were out of that fix's
+    reach, and both emitted their intervals front-first (`analysis/057`):
+
+    - Sectioning ON, phase 1 - the unsectioned full-length pass, `w_idx < 0`,
+      with its own multi-crossing loop;
+    - Sectioning OFF - one full-length window `poly_lathe_mill` builds itself.
+
+    Both discover a boss's two intervals sequentially - cut,
+    `lathe_level_next_start`, cut - so nothing knows the second one exists
+    until the first has been written.
+
+    THE GEOMETRY IS THE SAME ONE `_split_level_intervals` RUNS ON. The gap a
+    boss opens in a level is `{ z : profile(z) + allowance >= level }`, which
+    can only GROW as the level drops, so the gaps at every level below a peak
+    are nested around the peak's own Z: one split point per peak serves every
+    level it blocks, and `peak height + allowance` is the radius at or below
+    which it certainly does - a normal offset at a vertex is never nearer the
+    profile than the radial one. Above that the level may run straight
+    through and must NOT be split, or a span that was cut as one would be cut
+    as two and the cut set would move.
+
+    So this emits the peaks, each with its own threshold, and the runtime
+    walks the level in sub-spans between the ones that are active at that
+    level, back-most first. **The scan still finds where every cut actually
+    starts and stops** - a split point is only a bound handed to it, and it
+    sits at the peak, safely inside the blocked gap, not at the scan's own
+    resume answer which can land just inside a rise (`analysis/058`).
+
+    Peaks only, as in `_split_level_intervals`: a step or a flat-to-rise
+    blocks a level just as well, but everything past it is above the level
+    too, so a sub-span behind it would cut nothing.
+
+    Returns '' - and changes nothing at all - for front to back, for a profile
+    with no peak, and if the table would overflow its 40 slots - 3160 to 3200,
+    twenty peaks. NOT 3140: cfg/lathe/polyline.cfg stages its own CALL
+    arguments in #3141-#3159, which is why cam_map now has a cfg_scratch check.
+    """
+    dir_param = polyline_feature.get_param('param_dir')
+    rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
+    if rough_dir != 1 or rough_frame_dir(rough_dir) == rough_dir:
+        return ''
+
+    allowance = level_allowance(polyline_feature)
+    if allowance <= EPS:
+        return ''
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2:
+        return ''
+    sections = detect_sections(points)
+    if not sections or len(sections) < 2:
+        return ''
+    peaks = [(z_b, h_b) for z_b, h_b, peak in _boundary_list(sections, points)
+             if peak]
+    if not peaks:
+        return ''
+    # a truncated table is a level split at the wrong place, which is metal
+    # left standing - refuse it and keep the front-first order instead
+    if LVLSPLIT_BASE + 2 * len(peaks) > LVLSPLIT_TOP:
+        return ''
+
+    lines = [
+        '(peaks that split a roughing level into more than one interval, with)',
+        '(the radius at or below which each certainly blocks one - its own)',
+        '(height plus the floor allowance. Read only back to front, and only)',
+        '(by the sweeps no window table orders: Sectioning off, and phase 1.)',
+        '#<_pl_p1s_n> = %d' % len(peaks),
+    ]
+    for i, (z_b, h_b) in enumerate(peaks):
+        slot = LVLSPLIT_BASE + i * 2
+        lines.append('#%d = %s' % (slot, _fmt(z_b)))
+        lines.append('#%d = %s' % (slot + 1, _fmt(h_b + allowance)))
+    return '\n'.join(lines) + '\n'
+
+
+# The level-split table: peaks and the radius each blocks below, two slots per
+# peak. 3160-3200, the gap between cfg/lathe/polyline.cfg's own CALL scratch -
+# #3141-#3159, and NOT free despite sitting between two declared windows - and
+# the entry-ramp table. 20 peaks; every demo project measured has at most 3.
+LVLSPLIT_BASE = 3160
+LVLSPLIT_TOP = 3200
+
+
 # Stand-in for "no upper limit" on a window's radius band, in the diameter
 # units the whole module works in. Larger than any real workpiece.
 BAND_ALL = 1.0e6

@@ -2669,6 +2669,11 @@ class Preferences(object):
             # lathe_level_pass to cut each interval from its back end toward
             # the front. 0 is front to back and is the untouched path.
             self.default += ("#<_pl_cut_rev>              = 0.0\n")
+            # how many peaks the #3160 level-split table holds. Non-zero only
+            # back to front - lathe_sections.build_level_split_gcode emits
+            # nothing otherwise - so front to back and every file generated
+            # before this existed walk each level in one span, as they did.
+            self.default += ("#<_pl_p1s_n>                = 0.0\n")
             self.default += ("#<_pl_level_z_end>          = 0.0\n")
             self.default += ("#<_pl_resume_found>         = 0.0\n")
             self.default += ("#<_pl_resume_z>             = 0.0\n")

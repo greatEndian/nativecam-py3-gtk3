@@ -694,15 +694,106 @@ o<poly_lathe_mill> sub
                                 (ends mid-window at a block point rather than at w_to, so)
                                 (there is nothing structurally different about a later)
                                 (interval also ending at a block point found by the scan)
-                                #<l_fr> = #<w_from>
                                 (has any pass of THIS level actually cut yet. Phase 1's)
                                 (blocked branch below hands the whole radius back to)
                                 (phase 2, and that is only right when nothing was cut)
                                 (here at all - on a LATER iteration the first interval)
                                 (was already cut and only the continuation is blocked)
                                 #<p1_cut> = 0
-                                o<wh_lvl> while [1]
-                                        o<lathe_level_pass> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
+                                (INTERVAL ORDER INSIDE ONE LEVEL, BACK TO FRONT.)
+                                (The walk below finds a boss's intervals one at a)
+                                (time - cut, scan, cut - so the front one is always)
+                                (written first and Python is never handed two things)
+                                (to order. Where a WINDOW carries the split that is)
+                                (already fixed, in lathe_sections' own)
+                                (_split_level_intervals; these two sweeps are not)
+                                (window-driven and were out of its reach - Sectioning)
+                                (OFF, which has one full-length window built here, and)
+                                (phase 1, which has none. See analysis/057 and 059.)
+                                (So walk the level in SUB-SPANS between the peaks that)
+                                (block it, back-most first, and let the same scan find)
+                                (each interval's true start and end inside its own)
+                                (sub-span. A split point is only a bound handed to the)
+                                (scan, and it sits AT the peak - safely inside the)
+                                (blocked gap - not at the scan's own resume answer,)
+                                (which can land just inside a rise. Python emits the)
+                                (peaks and the radius each certainly blocks below, so)
+                                (a level above that keeps ONE span and is cut exactly)
+                                (as it was: the cut set never moves, only the order.)
+                                (Front to back leaves _pl_p1s_n at 0 and takes one)
+                                (span, which is this loop's single-iteration case.)
+                                #<sg_use> = 0
+                                o<sg_on> if [[#<_pl_cut_rev> GT 0] AND [#<_pl_p1s_n> GT 0] AND [[#<_pl_sectioning> LE 0] OR [#<w_idx> LT 0]]]
+                                        #<sg_use> = 1
+                                o<sg_on> endif
+                                #<sg_hit> = 0
+                                #<sg_to> = #<w_to>
+                                #<sg_i>  = [#<_pl_p1s_n> - 1]
+                                (how far along this level anything has actually been)
+                                (cut. In one span that is just the last pass's end;)
+                                (walked back to front it is the FIRST sub-span's, and)
+                                (phase 1 hands that on as where it finished)
+                                #<p1_zend> = #<w_from>
+                                o<wh_seg> while [1]
+                                        (the next split still inside this sub-span and)
+                                        (low enough for this level, walking the table)
+                                        (from its back end; with none left the sub-span)
+                                        (runs to the window's own front and is the last)
+                                        #<sg_from> = #<w_from>
+                                        o<sg_find> while [[#<sg_use> GT 0] AND [#<sg_i> GE 0]]
+                                                #<sg_p> = [3160 + #<sg_i> * 2]
+                                                #<sg_i> = [#<sg_i> - 1]
+                                                o<sg_act> if [[#<current_radius> LE [#[#<sg_p> + 1] / #<_diameter_mode>]] AND [[#<z_dirw> * [#[#<sg_p>] - #<w_from>]] LT -0.0001] AND [[#<z_dirw> * [#[#<sg_p>] - #<sg_to>]] GT 0.0001]]
+                                                        #<sg_from> = #[#<sg_p>]
+                                                        #<sg_hit> = 1
+                                                        o<sg_find> break
+                                                o<sg_act> endif
+                                        o<sg_find> endwhile
+                                        #<lv_to> = #<sg_to>
+                                        (WHERE THE RESUME SCANS SEARCH FROM, back to)
+                                        (this sub-span's own start. _pl_level_z_end is)
+                                        (how far the last pass cut and is what those)
+                                        (scans read; left at the PREVIOUS sub-span's)
+                                        (value it sits behind this one, every candidate)
+                                        (is refused as no progress, and the sub-span)
+                                        (cuts nothing. In one span this is w_from, which)
+                                        (the first pass overwrites before anything reads)
+                                        (it - so front to back cannot see this line.)
+                                        #<_pl_level_z_end> = #<sg_from>
+                                        (repeat this level while a re-entrant profile still has)
+                                        (more disjoint safe intervals to cut - a plain level, or)
+                                        (with multi-crossing off, always takes exactly one)
+                                        (iteration. every interval - first or a later one found)
+                                        (past a boss - passes the user's configured lead-in/out)
+                                        (exactly the same way: lathe_level_pass already runs the)
+                                        (identical lead-out mechanism unconditionally on a first)
+                                        (interval that itself ends mid-window at a block point)
+                                        (rather than at lv_to, so there is nothing structurally)
+                                        (different about a later interval also ending at a block)
+                                        (point found by the scan)
+                                        #<l_fr> = #<sg_from>
+                                        o<wh_lvl> while [1]
+                                                o<lathe_level_pass> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<lv_to>] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [#<li_rad>] [#<lo_rad>]
+                                                (DID THIS PASS CUT - asked of the pass's own end,)
+                                                (not of the blocked flag. _level_blocked is set by)
+                                                (lathe_level_pass and never cleared by it, so once)
+                                                (any pass of a level comes back blocked every later)
+                                                (one reads as blocked too, even when it cut its whole)
+                                                (interval. Harmless in one span, where the blocked)
+                                                (branch walks forward on _pl_level_z_end anyway; not)
+                                                (harmless per sub-span, where a sub-span's cut went)
+                                                (unrecorded and phase 1 handed the radius over as if)
+                                                (nothing had been cut, losing everything behind the)
+                                                (boss - testing_11 lost Z-51.2 to -79.1 at r29.)
+                                                (p1_zend is the furthest the level reached, which)
+                                                (back to front is the FIRST sub-span's end and not)
+                                                (the last pass's. The same number in one span.)
+                                                o<p1c_chk> if [[#<z_dirw> * [#<_pl_level_z_end> - #<l_fr>]] LT -0.0001]
+                                                        #<p1_cut> = 1
+                                                        o<zend_p1> if [[#<z_dirw> * [#<_pl_level_z_end> - #<p1_zend>]] LT 0]
+                                                                #<p1_zend> = #<_pl_level_z_end>
+                                                        o<zend_p1> endif
+                                                o<p1c_chk> endif
 
                                         o<ph1_chk> if [[#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]
                                                 (phase 1: no resume-and-continue attempt at all - the)
@@ -719,7 +810,17 @@ o<poly_lathe_mill> sub
                                                 (offset short by that same reservation, even with)
                                                 (nothing blocking it - must not be mistaken for this)
                                                 o<blk_lvl_p1> if [#<_level_blocked>]
-                                                        o<p1_none> if [#<p1_cut> EQ 0]
+                                                        (nothing cut anywhere on this level AND this is)
+                                                        (the sub-span that starts at the window's own)
+                                                        (start. A sub-span that begins at a split point)
+                                                        (begins ON the peak, so the profile is above the)
+                                                        (level there by construction and being blocked)
+                                                        (means only "resume past this peak", not "there)
+                                                        (is nothing here" - handing the radius over from)
+                                                        (there loses everything behind it. sg_from EQ)
+                                                        (w_from in one span, so this reads as it always)
+                                                        (did when the level is not split)
+                                                        o<p1_none> if [[#<p1_cut> EQ 0] AND [#<sg_from> EQ #<w_from>]]
                                                                 (nothing reachable from w_from itself - stop)
                                                                 (here, nothing was cut at all so phase 2 must)
                                                                 (still do this exact radius fresh)
@@ -750,8 +851,14 @@ o<poly_lathe_mill> sub
                                                         (half of it over - which also keeps the fix)
                                                         (independent of the window table, so it holds in)
                                                         (both roughing directions)
-                                                        o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
-                                                        o<pick_p1b> if [#<_pl_res_n> GT 1]
+                                                        o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<lv_to>]
+                                                        (the envelope answers ONE resume z for the whole)
+                                                        (level, so in a sub-span behind the first boss it)
+                                                        (lands in front of the sub-span and is refused,)
+                                                        (leaving the sub-span uncut. Fall back to the)
+                                                        (scan's own answer there. sg_from EQ w_from in a)
+                                                        (single span, so this reads exactly as before.)
+                                                        o<pick_p1b> if [[#<_pl_res_n> GT 1] AND [[#<_pl_env_found> GT 0] OR [#<sg_from> EQ #<w_from>]]]
                                                                 #<r_found> = #<_pl_env_found>
                                                                 #<r_z>     = #<_pl_env_z>
                                                         o<pick_p1b> else
@@ -773,7 +880,7 @@ o<poly_lathe_mill> sub
                                                         #<p1_cut> = 1
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mc_p1> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<lv_to>]
                                                                 o<p1_more> if [#<_pl_resume_found> EQ 0]
                                                                         o<wh_lvl> break
                                                                 o<p1_more> else
@@ -829,9 +936,17 @@ o<poly_lathe_mill> sub
                                         o<ph1_chk> else
                                                 o<blk_lvl> if [#<_level_blocked>]
                                                         o<mx_chk> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<l_fr>] [#<lv_to>]
                                                                 (where an interval STARTS comes from the envelope; whether phase 1)
                                                                 (stops here is answered by the scan above and is left alone)
+                                                                (NOT given pick_p1b's fall-back to the scan. The)
+                                                                (envelope's single answer per level is refused in)
+                                                                (a sub-span behind the first boss here too, but)
+                                                                (this branch already starts its search at l_fr -)
+                                                                (the sub-span's own start - and taking the scan)
+                                                                (instead opened 14 extra spans on testing_11)
+                                                                (with Sectioning off, against 0 with the)
+                                                                (envelope. Measured, not assumed.)
                                                                 o<pick_more_blk> if [#<_pl_res_n> GT 1]
                                                                 	#<r_found> = #<_pl_env_found>
                                                                 	#<r_z>     = #<_pl_env_z>
@@ -853,7 +968,7 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl> else
                                                         #<_pl_prev_lvl> = #<current_radius>
                                                         o<mx_chk2> if [#<_pl_multi_cross> GT 0]
-                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<w_to>]
+                                                                o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<lv_to>]
                                                                 (where an interval STARTS comes from the envelope; whether phase 1)
                                                                 (stops here is answered by the scan above and is left alone)
                                                                 o<pick_more> if [#<_pl_res_n> GT 1]
@@ -874,6 +989,30 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl> endif
                                         o<ph1_chk> endif
                                 o<wh_lvl> endwhile
+                                        (the front end of the window ends the level -)
+                                        (there is nothing in front of the first)
+                                        (sub-span to cut. Front to back and any level)
+                                        (no peak blocks take this on the first pass,)
+                                        (which is why one span is the untouched case)
+                                        o<sg_done> if [#<sg_from> EQ #<w_from>]
+                                                o<wh_seg> break
+                                        o<sg_done> endif
+                                        #<sg_to> = #<sg_from>
+                                o<wh_seg> endwhile
+                                (A LEVEL THE SPLIT TABLE BROKE IN TWO IS THE)
+                                (OBSTRUCTION phase 1 stops on. Its own scan finds)
+                                (that when it sweeps the level in one span; walked)
+                                (in sub-spans there is no resume to find inside)
+                                (either of them, so the split itself is the signal -)
+                                (and it is a sound one, since a sub-span boundary is)
+                                (only taken where the peak certainly blocks this)
+                                (level. Without this phase 1 ran on below the)
+                                (section ceiling.)
+                                o<sg_ph1> if [[#<sg_hit> GT 0] AND [#<p1_cut> GT 0] AND [#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]
+                                        #<sect_top_r> = #<current_radius>
+                                        #<_pl_ph1_front_cut> = 1
+                                        #<ph1_fin> = 1
+                                o<sg_ph1> endif
                                 (phase 1 handed over on this level, and it is)
                                 (now cut along its whole length - so this is)
                                 (where it really finished, and every section)
@@ -882,8 +1021,12 @@ o<poly_lathe_mill> sub
                                 (reset per level, so without this every phase-2)
                                 (window broke out after its first level and the)
                                 (sectioned program fell from 44 level cuts to 9)
+                                (p1_zend, not _pl_level_z_end: back to front the)
+                                (LAST pass of the level is the front-most one, and)
+                                (what phase 2 needs is how far along phase 1 got.)
+                                (They are the same number in one span.)
                                 o<ph1_brk> if [[#<ph1_fin>] AND [#<w_idx> LT 0]]
-                                        #<_pl_ph1_z_end> = #<_pl_level_z_end>
+                                        #<_pl_ph1_z_end> = #<p1_zend>
                                         o<wh_00> break
                                 o<ph1_brk> endif
                         o<lvl_ok> endif
