@@ -68,10 +68,18 @@ PROJECTS = (
 )
 
 
+# The limit the option used to resolve to when it was a bool: 5.0 x the demo
+# tool's 0.4 nose RADIUS. It is a typed length now - greatEndian, 2026-08-26,
+# asked for the same behaviour Skip thin roughing passes has - so the test
+# asks for that same number explicitly and goes on measuring what it always
+# measured. Anything above 1.0 keeps the 'a real limit' check below honest.
+ON_LIMIT = 2.0
+
+
 def generate(project, extra, out, skip):
     r = subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
                         project, '--out', out, '--config-copy',
-                        '--set', 'polyline:param_skip_short=%d' % skip]
+                        '--set', 'polyline:param_min_pass=%g' % skip]
                        + [a for e in extra for a in ('--set', e)],
                        capture_output=True, text=True)
     return out if (r.returncode == 0 and os.path.isfile(out)) else None
@@ -97,7 +105,7 @@ def run(project, extra, must_skip):
     d = tempfile.mkdtemp(prefix='skip_short_')
     try:
         off = generate(project, extra, os.path.join(d, 'off.ngc'), 0)
-        on = generate(project, extra, os.path.join(d, 'on.ngc'), 1)
+        on = generate(project, extra, os.path.join(d, 'on.ngc'), ON_LIMIT)
         check('both variants generate', off is not None and on is not None)
         if off is None or on is None:
             return
@@ -111,6 +119,14 @@ def run(project, extra, must_skip):
               'limit is %s' % limit(off))
         check('and with it on the gate has a real limit', (limit(on) or 0) > 1.0,
               'limit is %s - nothing would ever be skipped' % limit(on))
+        # IT IS THE TYPED NUMBER, NOT A SWITCH RESOLVING TO ONE. A bool that
+        # evaluated to 5.0 * the nose radius would answer 2.0 here too, so
+        # this asserts the value ARRIVED rather than that it is merely
+        # non-zero - set it to something the old bool could never produce.
+        odd = generate(project, extra, os.path.join(d, 'odd.ngc'), 3.7)
+        check('   and the limit is the number the operator typed',
+              odd is not None and limit(odd) == 3.7,
+              'limit is %s, wanted 3.7' % (limit(odd) if odd else None))
 
         tp_off = P.parse_program(off, INI)
         tp_on = P.parse_program(on, INI)

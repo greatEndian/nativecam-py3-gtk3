@@ -996,6 +996,11 @@ def ceiling(points, stock_x=None):
     letting the profile's own highest real feature (e.g. a boss) set it.
     Falls back to every point if the profile is nothing but stock-diameter
     points (nothing would be excluded from an already-empty set).
+
+    THE ROUGHING ALLOWANCE IS NOT ADDED HERE - the caller adds it. This is the
+    contour's own peak and nothing else, which is what makes it testable
+    against the drawn profile; build_sections_gcode adds level_allowance() to
+    turn it into the radius at which a roughing LEVEL first touches something.
     """
     candidates = [x for _z, x in points]
     if stock_x is not None:
@@ -1112,7 +1117,21 @@ def build_sections_gcode(polyline_feature):
 
     b_x_param = polyline_feature.get_param('param_b_x')
     stock_x = _to_float(b_x_param.get_ngc_value()) if b_x_param is not None else None
-    top_x = ceiling(points, stock_x)
+    # PLUS THE ALLOWANCE. The ceiling is a question about the ROUGHING FLOOR,
+    # not about the finished part: a roughing level stops at the profile
+    # offset by fin_off + prefin_off, so nothing anywhere has reached that
+    # floor until the level drops below the profile's highest point PLUS that
+    # offset. Read off the raw contour it stopped 1.508 mm (in radius) too
+    # high on testing_15_6 - 65.3182 instead of 68.3342 in diameter - and
+    # every one of those levels was sectioned when a full-length pass was
+    # still safe. greatEndian, 2026-08-18: *"we are going full long length
+    # passes deeper, till level of the highest spot of part contour and just
+    # then we splitting it to sections"*. build_level_split_gcode already
+    # asks the same geometric question the same way, peak + level_allowance -
+    # see _boundary_list - so the two agree by construction now instead of by
+    # coincidence. poly_lathe_mill.ngc clamps the result against start_radius,
+    # so a ceiling the allowance lifts above the stock costs no passes.
+    top_x = ceiling(points, stock_x) + level_allowance(polyline_feature)
 
     if sect_mode == 0:
         windows = band_windows(sections, ordered, points)
@@ -2223,15 +2242,41 @@ def front_flank_envelope(points, front_deg, rough_dir=0, flank_len=0.0,
     the wedge would have meant a second, untested copy of geometry that took
     this project five stacked faults to get right - see analysis/032.
 
-    THE ANGLE CONVENTION. The tool table's I and J are absolute edge
-    directions, not clearances: the sim tools carry `T2 I15 J75`, and
-    `flank_slope(75)` is tan(15 degrees), which is what a J75 insert ramps at.
-    The front edge is read the same way, so the ramp is `90 - I - clearance`.
-    greatEndian confirmed both the reading and the limitation against the
-    reference package on 2026-08-13, which is what let this leave
-    lathe_front_flank.py and come in here beside the function it mirrors.
+    THE ANGLE CONVENTION, AND THE COMPLEMENT THIS USED TO TAKE TWICE.
+    `flank_slope(deg, clr)` is `tan(90 - deg - clr)`: it is written for the
+    BACK column, where `J75` correctly becomes a 13 degree ramp at the 2 degree
+    default clearance. Handing it the raw `I` complements an angle that is
+    already the other edge of the same wedge, so T2's `I15` came out at
+    `90 - 15 - 2 = 73` degrees where its own back edge ramps at 13.
+
+    That is wrong on the insert's own symmetry, whichever axis the table
+    measures from. T2 is `I15 J75`: centre line 45, included angle 60, so the
+    two edges are mirror images 30 degrees either side of the bisector. A
+    symmetric insert cannot have one flank ramp at 13 degrees and the other at
+    73 - the leading and trailing shadows must be the same size. greatEndian
+    reported it as the angle being counted "from opposite side", 2026-08-24,
+    `photo/frontAngleRespectIssue_0.png`, and that is exactly a complement.
+
+    So the front angle is turned into the same kind of number the back column
+    already is before `flank_slope` takes its complement: `90 - I` in, `tan(I -
+    clearance)` out. On T2 both flanks now ramp at 13.00 degrees.
+
+    None of `test_front_flank`'s fixtures move - the steep wall is still
+    reported, the rising taper and the cylinder are still silent, and an
+    unusable 105 still resolves to None because `90 - 105` is negative and
+    `flank_slope` refuses it just the same. What changes is the middle of the
+    range, which is where a shadow is a shadow rather than a wall: a 45 degree
+    front face went from silent to 2.314 mm of unreachable radius.
+
+    greatEndian confirmed the limitation itself against the reference package
+    on 2026-08-13, which is what let this leave lathe_front_flank.py and come
+    in here beside the function it mirrors. That confirmation was about
+    WHETHER the leading flank limits the part, not about the size of the ramp.
     """
-    return flank_envelope(points, front_deg, mirror_dir(rough_dir),
+    if front_deg is None:
+        return flank_envelope(points, front_deg, mirror_dir(rough_dir),
+                              flank_len, clearance)
+    return flank_envelope(points, 90.0 - front_deg, mirror_dir(rough_dir),
                           flank_len, clearance)
 
 
@@ -3841,3 +3886,197 @@ def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
         lines.append('#%d = %s' % (FC_BASE + 2 * i, _fmt(z)))
         lines.append('#%d = %s' % (FC_BASE + 2 * i + 1, _fmt(x / DIAMETER_MODE)))
     return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# perpendicular X walls: cut from outside, and clean what stopping short left
+# ---------------------------------------------------------------------------
+# greatEndian, 2026-08-26, on testing_15_8. The old "Outside to inside" branch
+# in g123_lathe.ngc ran the pass right into the wall, RAPIDED out over metal
+# that was still there, dived back toward centre and led out - the wrong shape,
+# and a rapid through material.
+#
+# The wanted shape, in their words: stop in front of the wall, lead out, lift
+# in X to the lead-in level from OUTSIDE the envelope, come back down the wall
+# face by the contour rule, and when the pass X level is reached feed along Z
+# to take the strip that stopping short left, then lead out and retract.
+#
+# THE STOP-SHORT IS WHY THIS IS IN PYTHON AT ALL. g123_lathe sees one segment
+# at a time, so by the time the wall record arrives the Z move that should have
+# stopped short has already been cut. Only generation time can see a wall
+# coming, which is the standing Python-first rule reaching the same answer.
+
+
+def x_wall_indices(points, tol_deg, rising_only=True):
+    """Indices i where points[i] -> points[i+1] is a perpendicular X wall.
+
+    PERPENDICULARITY IS AN ANGLE, NOT A LENGTH. The branch this replaces tested
+    `ABS[to_z - from_z] LT 0.0005`, which does not scale with the wall: 1 degree
+    off perpendicular over a 5 mm rise is 0.087 in Z, seventeen times that
+    limit, so a wall a machinist would call perpendicular read as a taper.
+    `tol_deg` is measured off the X axis, so 0 is exactly perpendicular and
+    greatEndian's 2 degrees admits the quasi-perpendicular ones.
+
+    `rising_only` keeps the original branch's `to_x GT from_x` sense: a wall
+    that ASCENDS is the one the tool has to come at from outside.
+    """
+    if tol_deg is None or tol_deg < 0:
+        return []
+    out = []
+    for i, ((z0, x0), (z1, x1)) in enumerate(zip(points, points[1:])):
+        dz, dx = z1 - z0, x1 - x0
+        if abs(dx) < EPS:
+            continue                      # no X travel: not a wall at all
+        if rising_only and dx <= 0:
+            continue
+        if math.degrees(math.atan2(abs(dz), abs(dx))) > tol_deg + 1e-9:
+            continue
+        out.append(i)
+    return out
+
+
+def x_wall_moves(z_wall, x_base, x_top, approach, front, lead_x):
+    """The detour for one perpendicular X wall, as (kind, z, x) in order.
+
+    `approach` is +1 when the pass travels toward increasing Z into the wall
+    and -1 the other way, so the stop always lands on the side the tool came
+    from. `kind` is 'feed' or 'rapid' and maps straight onto the record `dir`
+    field g123_lathe already branches on - 1 feeds, 0 rapids.
+
+    THE CLEAN-UP IS TWICE THE STAND-OFF, and that is greatEndian's correction
+    rather than a rounding choice: a move of one stand-off ends exactly on the
+    stop point, leaving the two cuts merely touching, and anything the nose
+    radius does there leaves a sliver standing. Two carries it a full stand-off
+    PAST the stop, so the strip is covered with overlap.
+    """
+    d = 1 if approach >= 0 else -1
+    z_stop = z_wall - d * front
+    return [
+        # 1. stop short of the wall - the pass's own feed ends here
+        ('feed', z_stop, x_base),
+        # 2. out in X to the lead-in level. Rapid: this is clear of the work
+        ('rapid', z_stop, lead_x),
+        # 3. across to the wall, still outside the envelope
+        ('rapid', z_wall, lead_x),
+        # 4. down the wall face to the corner - cutting, so a feed
+        ('feed', z_wall, x_base),
+        # 5. and back along Z at the corner radius, twice the stand-off, so it
+        #    sweeps through the stop point and a stand-off beyond it
+        ('feed', z_wall - d * 2.0 * front, x_base),
+    ]
+
+
+def check_x_wall_moves(moves, z_wall, x_base, x_top, approach, front, lead_x):
+    """Every rule the detour has to obey. [] means it holds; else the failures.
+
+    This is the validator greatEndian asked to be built alongside the geometry
+    rather than after it. It states the rules the shape has to satisfy so a
+    change that breaks one is caught by a number instead of by eye.
+    """
+    bad = []
+    d = 1 if approach >= 0 else -1
+    z_stop = z_wall - d * front
+
+    def near(a, b):
+        return abs(a - b) < 1e-6
+
+    if len(moves) != 5:
+        return ['expected 5 moves, got %d' % len(moves)]
+    (k1, z1, x1), (k2, z2, x2), (k3, z3, x3), (k4, z4, x4), (k5, z5, x5) = moves
+
+    if not (near(z1, z_stop) and near(x1, x_base)):
+        bad.append('stop is at Z%.4f X%.4f, wanted Z%.4f X%.4f'
+                   % (z1, x1, z_stop, x_base))
+    if k1 != 'feed':
+        bad.append('the stop move is %s, must be a feed - it is still cutting'
+                   % k1)
+    # the tool must never rapid while inside the material
+    if k2 != 'rapid' or k3 != 'rapid':
+        bad.append('the lift and traverse are %s/%s, both must be rapids' % (k2, k3))
+    if lead_x <= x_top + 1e-9:
+        bad.append('lead level X%.4f is not outside the wall top X%.4f'
+                   % (lead_x, x_top))
+    if not (near(x2, lead_x) and near(x3, lead_x)):
+        bad.append('the traverse leaves the lead level: X%.4f then X%.4f'
+                   % (x2, x3))
+    if not near(z2, z_stop):
+        bad.append('the lift moved in Z as well as X, to Z%.4f' % z2)
+    if k4 != 'feed':
+        bad.append('the descent down the wall face is %s, must be a feed' % k4)
+    if not (near(z4, z_wall) and near(x4, x_base)):
+        bad.append('the descent ends at Z%.4f X%.4f, wanted the corner Z%.4f X%.4f'
+                   % (z4, x4, z_wall, x_base))
+    if k5 != 'feed':
+        bad.append('the clean-up is %s, must be a feed' % k5)
+    if not near(x5, x_base):
+        bad.append('the clean-up left the corner radius, at X%.4f' % x5)
+    # THE RULE THAT MATTERS: twice the stand-off, and past the stop point
+    travel = abs(z5 - z4)
+    if not near(travel, 2.0 * front):
+        bad.append('the clean-up travels %.4f, wanted twice the %.4f stand-off'
+                   % (travel, front))
+    if d * (z_stop - z5) <= 0:
+        bad.append('the clean-up stops at Z%.4f without passing the stop at '
+                   'Z%.4f, so the strip is only touched, not overlapped'
+                   % (z5, z_stop))
+    return bad
+
+
+def split_contour_at_walls(points, tol_deg, front, lead_x, rising_only=True):
+    """The contour cut into sub-paths at every perpendicular X wall.
+
+    Returns a list of point lists. One entry means no wall was found and the
+    contour is unchanged - the caller then emits exactly what it emitted
+    before, so a profile without walls cannot move.
+
+    WHY SUB-PATHS AND NOT A PER-POINT RAPID FLAG. greatEndian, 2026-08-27:
+    *"there could come any files with any number of points .. therefore the
+    should not be limit that low"*. Carrying a feed/rapid flag would have meant
+    three slots per point instead of two, and the finish-contour table lives in
+    a FIXED 200-slot window - 100 points would have become 66. A cap that low
+    on arbitrary input is not acceptable, and any fixed table caps it.
+
+    Splitting costs 2 slots per sub-path in a directory instead, and walls are
+    few. The point tables keep stride 2, so no profile gets a smaller ceiling
+    than it has today.
+
+    It is also a better fit for what was asked for. The described motion ends
+    *"lead out and retract to property selected retraction behaviour"* - that
+    IS a pass ending and another starting, so each sub-path runs through the
+    existing lead-in, lead-out and retract machinery and no new motion concept
+    is needed. The rapids between sub-paths are the existing inter-pass
+    retract, which is already outside the material by construction.
+
+    Sub-path B is the wall itself: lead in at the wall TOP from outside, feed
+    down the face to the corner, then feed along Z by twice the stand-off - the
+    2x being greatEndian's correction, since one ends exactly on the stop point
+    and leaves the two cuts merely touching.
+    """
+    if front <= 0 or tol_deg is None or tol_deg < 0 or len(points) < 2:
+        return [list(points)]
+    walls = x_wall_indices(points, tol_deg, rising_only)
+    if not walls:
+        return [list(points)]
+
+    out, start = [], 0
+    for i in walls:
+        (z0, x0), (z1, x1) = points[i], points[i + 1]
+        # which way the pass is travelling into the wall, from the segment
+        # before it. With no earlier segment there is no approach to stop.
+        if i == 0:
+            continue
+        z_prev = points[i - 1][0]
+        if abs(z0 - z_prev) < EPS:
+            continue                      # arrived radially: nothing to stop
+        d = 1.0 if z0 > z_prev else -1.0
+        z_stop = z0 - d * front
+        # the stop must stay inside the segment it shortens, or the pass would
+        # end behind where it began
+        if abs(z_stop - z_prev) > abs(z0 - z_prev):
+            continue
+        out.append(list(points[start:i]) + [(z_stop, x0)])
+        out.append([(z0, x1), (z0, x0), (z0 - d * 2.0 * front, x0)])
+        start = i + 1
+    if start < len(points):
+        out.append(list(points[start:]))
+    return [p for p in out if len(p) >= 2] or [list(points)]

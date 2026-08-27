@@ -2652,6 +2652,10 @@ class Preferences(object):
             self.default += ("#<_cut_phys_z>              = 0.0\n")
             self.default += ("#<_pass_z_dir>              = 1.0\n")
             self.default += ("#<_x_wall_dir>              = 0.0\n")
+            # the perpendicular-X-wall detour. Globals, not CALL arguments:
+            # the poly_lathe_mill call is already at the 30 argument limit.
+            self.default += ("#<_pl_xw_front>             = [0.5 * #<_mm>]\n")
+            self.default += ("#<_pl_xw_tol>               = 2.0\n")
             self.default += ("#<_level_blocked>           = 0.0\n")
             self.default += ("#<_lo_rad_cap>              = 0.0\n")
             self.default += ("#<_pl_ret_mode>             = 0.0\n")
