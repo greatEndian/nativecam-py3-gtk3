@@ -19,6 +19,719 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
 
 ---
 
+## Building 2026-08-26 — the perpendicular X wall detour
+
+greatEndian specified the shape and confirmed every assumption: degrees for the
+tolerance, 2 degrees and 0.5 mm as defaults, moved to Python, rapid on the way
+out, the existing lead settings, mode 2 only. And one correction that changed
+the geometry: **the clean-up move is TWICE the stand-off**, *"because the will
+stay some non removed material"* - at one it ends exactly on the stop point and
+the two cuts only touch.
+
+- [x] **STAGE 1 - the geometry and its validator, in Python.** `x_wall_indices`
+  detects walls by ANGLE off the X axis, replacing a hard-coded `ABS[to_z -
+  from_z] LT 0.0005` that does not scale: **2 degrees over a 5 mm rise is
+  0.1746 in Z, 349 times that limit**, so a wall any machinist would call
+  perpendicular read as a taper. `x_wall_moves` returns the five-move detour
+  as (kind, z, x) with kind feed or rapid - which maps straight onto the record
+  `dir` field `g123_lathe` already branches on, 1 feeds and 0 rapids, so no new
+  runtime concept is needed.
+  **Why Python at all**: the stop-short has to happen on the move BEFORE the
+  wall, and `g123_lathe` sees one segment at a time - by the time the wall
+  record arrives, that move is already cut. Only generation time can see a wall
+  coming.
+  `check_x_wall_moves` is the validator greatEndian asked for, stating the
+  rules rather than the coordinates. `test_x_wall.py` runs both approach
+  directions through it and **also feeds it four deliberately broken shapes** -
+  a one-stand-off clean-up, a rapid where the face is cut, a feed for the lift,
+  a stop that is not short - and requires each to be REJECTED. A validator that
+  cannot fail proves nothing, which is what `test_ladder`'s skip-thin control
+  had been doing. All 23 checks pass.
+
+- [x] **STAGE 2 - the parameters.** `PARAM_XW_FRONT` 0.5 mm and `PARAM_XW_TOL`
+  2.0 degrees, both `minimum_value = 0.0`, travelling as the globals
+  `_pl_xw_front` / `_pl_xw_tol` because the `poly_lathe_mill` CALL is already
+  at the 30 argument limit, with defaults in `create_defaults` or the file will
+  not load. `polyline.cfg` 1.63 -> 1.64. `cam_map` 6/6; testing_15_7 and 15_8
+  still generate and run at `param_dir` 0, 1 and 2.
+
+- [x] **THE RESOURCE PROBLEM IS SOLVED BY NOT HAVING A FLAG AT ALL - option
+  (d), and greatEndian's objection is what produced it.** They rejected the
+  per-point flag outright, 2026-08-27: *"there could come any files with any
+  number of points .. therefore the should not be limit that low"*. That is
+  right, and it rules out (b) as well - ANY fixed table caps the profile.
+
+  **Their own description contains the answer.** The sequence ends *"lead out
+  and retract to property selected retraction behaviour"*: that IS a pass
+  ending and another starting. So `split_contour_at_walls` splits the contour
+  into sub-paths at each wall -
+  **A** the contour up to the stop, **B** wall top -> corner -> clean-up,
+  **C** the remainder - and each runs through the EXISTING lead-in, lead-out
+  and retract machinery. No new motion concept, and the rapids between
+  sub-paths are the existing inter-pass retract, already outside the material.
+  Cost is **2 slots per sub-path in a directory** against walls that are few,
+  the point tables keep stride 2, and **no profile gets a smaller ceiling than
+  it has today**. `build_cam_comp_gcode` already emits a directory of
+  `(base, count)` pairs that `cam_load` walks one at a time, so this extends a
+  proven concept.
+  Guarded by assertion: a profile with no wall, and the feature switched off,
+  both come back **untouched** - which is what makes it safe to enable.
+  32 checks pass in `test_x_wall.py`.
+
+  - [x] **One of my own checks was wrong and the code was right**, recorded
+    because it is the instrument trap CLAUDE.md names. "The clean-up passes
+    the stop" was tested as `abs(-9.0) > abs(-9.5)`, which is false: Z is
+    negative here, so bare magnitudes said the clean-up ended NEARER the wall
+    when it ends a full stand-off further from it. Measured from the wall it
+    is 1.0000 against 0.5000. The assertion now measures from the wall.
+
+- [ ] **STAGE 3 REMAINDER - emitting the directory and running sub-passes.**
+  Python splits correctly; what is left is emitting the sub-path directory
+  from the contour builders and having the pass loop run each entry with its
+  own leads. The old `o<xw_00>` branch in `g123_lathe.ngc:38` - the one that
+  rapided out through standing metal - comes out at the same time.
+  ~~STAGE 3 - the .ngc has to walk it, and there is a RESOURCE PROBLEM.~~ `cam_load` hard-codes `dir = 1` for every point, so nothing
+  can currently emit the two rapids. The point tables are (z, x) PAIRS.
+  **The numbered-parameter space is full**: windows run to `CAM_TOP = 4984` and
+  `poly_add_item` owns #4984-#4999, so a new parallel flag table has nowhere to
+  live. Three options, none of them free:
+  - **(a) stride 2 -> 3 on the PATH tables only** - FC, PF and the CAM paths
+    carry `dir` per point. No new window, but capacity halves: the FC window is
+    200 slots, so 100 points becomes 66. **Measured on the real projects:
+    `_pl_fc_n` is 21 on testing_15_7 and 15_8**, so there is room today - but
+    66 is a real ceiling on a denser profile.
+  - **(b) shrink another window** to make space for a parallel flag table.
+  - **(c) keep pairs and send a tiny wall-INDEX table**, a slot per wall, with
+    the O-code deriving which two records are rapids. Cheapest in slots but it
+    puts the detour's shape back into O-code, against "moved to python".
+  Not chosen unilaterally: the parameter-slot budget is exactly what cost four
+  rounds on the anisotropic stock-to-leave, one of them an overflow that
+  emitted a WARNING and silently fell back.
+
+- [x] **A FALSE ALARM, recorded so it is not re-investigated.** testing_15_8
+  dropped from 444 to 436 moves across the cfg edit and I suspected the
+  migration had reset a parameter. It had not: `#3157`, `param_xw_dir`, went
+  from 2 to 0 because **greatEndian re-saved the project at 09:44:07**, between
+  the two runs. Check the file's mtime before blaming a migration.
+
+## Reported 2026-08-26 — Save, the Both-directions crash, and the X wall
+
+- [x] **A PLAIN SAVE, ABOVE SAVE AS, ON Ctrl+S — DONE.** greatEndian: *"add to
+  Bar menu above Save Project As.. just Save to save only right open project
+  with not pop up window"*, and *"Crtl+S is Save and Save as.. is selected from
+  drop down menu"*. `actionSave` now writes back to `ncam.CURRENT_PROJECT`
+  with no dialog and keeps Ctrl+S; `actionSaveAs` carries the chooser and sits
+  below it in the menu with no accelerator.
+  A project that has never been saved has no file to write back to -
+  `new_project` sets `CURRENT_PROJECT` to the bare name `Untitle.xml`, not a
+  path - so Save hands over to the dialog rather than inventing a location.
+  The Ctrl+S key handler at `ncam_treeview.py:260` activates `actionSave` and
+  needed no change; `set_actions_sensitives` now enables both.
+  Gates: `test_menu_layout` walked 41 items with **0 dead actions**,
+  `test_ui_panel` all pass.
+
+- [ ] **"BOTH DIRECTIONS" + REGENERATE CRASHES, AND IT IS RANDOM.** greatEndian
+  confirmed 2026-08-26 that it is intermittent, so it will not fall out of a
+  single run. **It is NOT a generation fault**: testing_15_8 and testing_15_7
+  both generate AND run clean at `param_dir` 0, 1 and 2 - 444 and 458 moves,
+  no interpreter error, all three the same count. So it is GUI-side, in
+  NativeCAM or AXIS. **Needs the Python traceback from the terminal that
+  launched linuxcnc, captured when it actually happens** - without it any fix
+  is a guess, and two GUI guesses have already been wrong this week.
+
+## Changed 2026-08-26 — Skip short roughing passes is a typed length
+
+- [x] **IT WAS A BOOL RESOLVING TO ONE FIXED LIMIT; IT IS A THRESHOLD NOW.**
+  greatEndian: *"We have there property skip short roughing passes .. its radio
+  buttion with fixed values .. change it to same like behaviour as is skip thin
+  roughing passes"*. The switch evaluated to `5.0 * tip_comp_inputs()[0]` -
+  5 x the nose RADIUS, 2.0 mm on the demo tool - so the only way to ask for a
+  different limit was to change the tool. Now `type = float`,
+  `minimum_value = 0.0`, 0 = off, and the `.cfg` reads
+  `#<_pl_min_pass> = #param_min_pass` with no `<eval>` at all. `version`
+  1.62 -> 1.63 so saved projects migrate.
+
+  - [x] **THE RENAME IS THE LOAD-BEARING PART, and it was found by measuring
+    rather than by reasoning.** A float parameter's stored `value` is in
+    **INCHES** - `skip_thin` carries `value 0.0118110236` against
+    `metric_value 0.3`. The old bool stored `1`, so keeping the id
+    `param_skip_short` made that **1 inch = 25.400000 mm**. Measured on
+    testing_15_6, the one project that had the switch ON: it generated with
+    `_pl_min_pass 25.400000` against a longest pass of 69.59 mm, which would
+    have skipped most of its ladder **in silence**. A bool and a float cannot
+    share an id across this change, so it became `param_min_pass`.
+    After the rename, testing_15_6 / 15_7 / 11 all come back at
+    **`_pl_min_pass 0.000000`** - off, the cfg default, to be retyped
+    deliberately. The DISPLAYED name is unchanged, so the panel looks the same.
+
+  - [x] `test_skip_short.py` asks for the old bool's 2.0 explicitly so it goes
+    on measuring what it always measured, and gained a check that the limit is
+    **the number the operator typed** - it sets 3.7 and asserts 3.7 arrives.
+    Without that, a switch resolving to 2.0 would still have passed "the gate
+    has a real limit". All checks pass on both projects.
+
+  - [ ] **testing_15_6 loses its setting.** It was the only saved project with
+    the switch on and it now comes back off. greatEndian retypes a length
+    there if it is still wanted - about 2.5 x the nose diameter is what the
+    switch used to mean.
+
+## Decided 2026-08-26 — phase 1 cuts at full depth, and nothing is spread
+
+- [x] **PHASE 1 NO LONGER THINS EVERY PASS TO SUIT THE ROUNDING — DONE.**
+  greatEndian asked why the first three full-length passes were thinner than
+  the ones below. **Measured**: the section ceiling is radius **33.4671**,
+  which is exactly where the change happens.
+
+  | | span | ÷ doc | passes | step |
+  |---|---|---|---|---|
+  | phase 1, stock 35.0000 -> ceiling 33.4671 | 1.5329 | **3.017** | ceil -> 4 | 0.3832, 0.75 doc |
+  | phase 2, ceiling -> floor 20.3139 | 13.1532 | 25.892 | ceil -> 26 | 0.5059, 1.00 doc |
+
+  Phase 1 divided its own span evenly so it would land exactly on the ceiling.
+  **1.5329 / 0.508 = 3.017** - it cleared three passes by 0.017 mm, rounded up
+  to four, and every pass lost a quarter of its depth for that.
+
+  greatEndian, 2026-08-26: *"we need to let full depth of cut"* and *"do not
+  apply spreading leftover depth into other passes"*.
+
+  **Built as: whole depths of cut, leftover on the FIRST pass at the stock,
+  nothing redistributed.** Every phase-1 level now sits exactly one doc from
+  its neighbour and the ladder still ends precisely on the ceiling.
+
+  | | levels | phase-1 levels | stock -> first | phase-1 gaps |
+  |---|---|---|---|---|
+  | before | 30 | 34.6168 / 34.2336 / 33.8503 / 33.4671 | 0.3832 | 0.3832 x4 |
+  | after, skip thin OFF | 30 | 34.9911 / 34.4831 / 33.9751 / 33.4671 | **0.0089** | **0.5080 x3** |
+  | after, skip thin doc/2 | 29 | 34.4831 / 33.9751 / 33.4671 | 0.5169 | **0.5080 x2** |
+
+  **No new control was added** - the thin first pass is removed by the shipped
+  *Skip thin roughing passes*, measured doing exactly this in `analysis/062`.
+  `_pl_prev_lvl` is `stock_r` at a window head, so the first pass is judged
+  against the bar and the guard sees it. greatEndian was offered an automatic
+  bounded absorb instead and chose the setting.
+
+  **Why the leftover may sit at the stock when the identical leftover was
+  ruled unacceptable at the ceiling two days before** - what lies under the
+  pass differs. At the ceiling it is the part, so a dropped level leaves the
+  next cutting over the doc into a measured surface, and phase 2 spreads. Here
+  it is oversize bar: skipping leaves 0.5169, 1.02 of a doc, through raw
+  stock, which the unsectioned ladder has always done at this same envelope.
+  **Phase 2 keeps its spread** - that ruling is untouched.
+
+  Gates: `cam_map` 6/6, `test_ladder` all pass, `test_x_continuity` all pass
+  with its delete-a-pass control still firing.
+
+  - [ ] **With Skip thin at 0 the rubbing pass IS emitted** - 0.0089 mm on
+    testing_15_7. That is the operator's call by greatEndian's decision, taken
+    after being shown the consequence. The cfg default is still 0.0 while the
+    parameter's own tooltip recommends half the depth of cut; whether that
+    default should change is not mine to decide and has not been changed.
+
+## Reported 2026-08-26 — the tiny backwards pass behind the boss
+
+- [x] **A LEVEL PASS THAT RUNS BACKWARDS ALONG ITS OWN WINDOW — FIXED**,
+  `lathe_level_pass.ngc`. greatEndian, on testing_15_7,
+  `photo/extraSmallSegmentBehindBossIssue_0.png`: *"really shot pass roughing
+  under the roughing and prefinish passing behind the boss segment ... it
+  basically connects very bottom tip of orange dot dashed contour in
+  horizontal direction with finish contour ... this tiny pass is senseless it
+  should not be there even with property off skipp short passes .. it has
+  wrong location"*.
+
+  **Measured before touching anything.** Roughing on this project is
+  `param_dir` 1, back to front, so every real cut runs toward increasing Z.
+  One did not:
+
+  | X | length | Z from -> to | |
+  |---|---|---|---|
+  | **25.3728** | **0.3304** | **-69.5918 -> -69.9222** | **backwards** |
+  | 25.8787 | 1.8609 | -69.5918 -> -67.7309 | |
+  | 26.3846 | 4.0522 | -69.5918 -> -65.5396 | |
+  | 26.8905 | 6.2435 | -69.5919 -> -63.3484 | |
+
+  The ladder steps 0.5059 in X and each level gains **2.1913** mm of length, so
+  the next level down is **-0.33 mm**: it has no material at all. The scan
+  handed back a start from the ENTRY contour and an end from the STOP contour
+  that had **crossed**, and the crossed interval was emitted instead of
+  nothing - which is exactly greatEndian's "connects the bottom tip of the
+  orange dot-dashed contour to the finish contour".
+
+  **Why skip-short could never catch it**: that guard measures
+  `ABS[z_end_cut - z_start]`, and an absolute value cannot see a sign. It is
+  also opt-in, and this is a geometric impossibility rather than a saving - so
+  the new guard is **unconditional**: a cut with
+  `z_dir * [z_start - z_end_cut] LE 0` emits nothing. Returning there was
+  already a supported path, since `_pl_level_z_end` is set above it and the
+  disjoint-interval scan still knows where the level reached.
+
+  **Measured after**: 46 -> **45** constant-X level cuts on testing_15_7, and
+  exactly the one removed - 1.8609 / 4.0522 / 6.2435 / 8.4348 / 10.6261 /
+  12.8173 and the 69.5920 longest are all identical to the digit. The 0.4065 mm
+  pass at X20.3139 SURVIVES, because it runs the right way at the front face:
+  the guard discriminates on direction, not on length, which is the whole point.
+
+  **Gates**: `cam_map` 6/6; `test_x_continuity` worst gap **0.0000** with its
+  delete-a-pass control still firing, so nothing was left uncovered;
+  **`test_leftover` reports no metal standing proud, its control firing on 22
+  of 22 projects** - which is the measurement that proves the removed pass was
+  not cutting metal.
+
+  - [ ] **Python-first debt, noted not paid.** The decision is still made at
+    runtime because the crossed interval comes out of the runtime scan. The
+    real repair is that the scan should not PRODUCE a crossed interval, and
+    that scan is the "ramp and stop machinery is still runtime O-code" item
+    further down this file.
+
+## Reported 2026-08-25 — the plot's scroll wheel
+
+- [x] **SCROLL-TO-ZOOM ONLY WORKED WITH THE WHEEL HELD DOWN — FIXED**,
+  `ncam_preview_ui.py`. greatEndian: *"scrolling function is now not just midle
+  wheel scroll but I need to hold down whell and then scroll .. zooming then
+  working well"*.
+
+  **That symptom names the fault on its own.** A button press takes an implicit
+  pointer grab, and a grab routes scroll to the grab window whatever its mask
+  says - which is why the zoom behaved perfectly once held. So the handler and
+  `zoom_at` were never in question; the events were not reaching the drawing
+  area at all.
+
+  `add_events` sets the WIDGET mask, and GTK copies that onto the GdkWindow
+  when the window is created - **and only then**. A widget already realized
+  when the mask is added keeps its old window mask. This pane is reparented
+  into a `Paned` after the panel exists, which is exactly that case.
+
+  Fixed by re-applying the mask at realize, on the window that actually reads
+  it. One `_EVENT_MASK` constant now feeds both `add_events` and the realize
+  handler so the two cannot drift.
+
+  **Measured, with a control**: a built pane's plot window carries mask
+  **10486562**; stripping the scroll bits leaves **802**; the realize handler
+  returns it to **10486562**. The strip is the point - asserting the bits are
+  present on a fresh pane proves nothing, since `add_events` alone would pass
+  that. Guarded permanently in `test_preview_ui.py`, which now also had to
+  build its own pane because the panel the earlier checks use is destroyed by
+  the timer test.
+
+  - [ ] **STILL NOT CONFIRMED, AND THE FIRST FIX DID NOT CURE IT.**
+    greatEndian, 2026-08-26: *"scrolling in the preview and also scrolling in
+    properties does not work"* - so it is BOTH panes, which the plot-only
+    repair could never have covered.
+    The two treeviews carry the same `add_events` pattern
+    (`ncam_treeview.py:19-21` and `71-73`), and `create_treeview` packs itself
+    into the builder's `feat_scrolledwindow` **before** calling `add_events`,
+    while the parameters view is later repacked into `feature_Hpane` by
+    `set_layout`'s deferred pass. `8a0bf34 fix(ui): mouse wheel scrolling` had
+    already had to chase this once. Both now re-arm at realize through a
+    shared `TV_EVENT_MASK` / `arm_scroll_events` in `ncam_treeview.py`.
+    **Measured**: stripping the bits off a live treeview window gives
+    4326160, and the realize handler returns 10617088 with SCROLL and SMOOTH
+    both back. The plot's own check still passes, 802 -> 10486562.
+
+  - [ ] **WHAT IS STILL NOT PROVEN, SAID PLAINLY.** The FAULT has never been
+    reproduced outside the running panel. Packing a treeview into an already
+    realized ScrolledWindow and only then calling `add_events` still left the
+    bits present - **14811920, SCROLL True** - so the "too late" ordering does
+    NOT lose the mask in isolation, and the bits had to be stripped by hand to
+    exercise the repair. Three widgets are now robust against a mask that goes
+    missing; whether that is what greatEndian's GTK is actually doing is
+    unknown.
+    The panel defers `show_all()` to AXIS for XEMBED, so realize happens under
+    the host - which is when these handlers fire - and the whole panel is a
+    reparented X client, where an ancestor eating the wheel is the other live
+    candidate.
+    **A diagnostic ships with the fix rather than another guess**:
+    `NCAM_SCROLL_DEBUG=1` prints each widget's real mask before and after the
+    re-arm, at realize, in the running panel. If the wheel is still dead, that
+    output says whether the bits are missing or whether something above the
+    widget is consuming the event - and the next step follows from it instead
+    of from a fourth reading.
+
+## Reported 2026-08-24 — greatEndian's three, on testing_15_6 / 15_7
+
+- [ ] **1. RESPECT TOOL FRONT ANGLE MEASURES THE ANGLE FROM THE WRONG AXIS.**
+  greatEndian: *"respect tool front angle counts angle from opposite side ..
+  T2 has 15deg and code generates restriced area as like there is -15"*,
+  `photo/frontAngleRespectIssue_0.png`, testing_15_6 with Respect tool front
+  angle ticked.
+  `flank_slope(deg, clearance)` is `tan(90 - deg - clearance)`, written for the
+  BACK angle where `J75` correctly becomes a 15 degree ramp.
+  `front_flank_envelope` at `lathe_sections.py:2253` hands it the raw `I`, so
+  T2's `I15` becomes a ramp of **90 - 15 - 2 = 73 degrees** where its
+  symmetric back edge gets **15 - 2 = 13**. The insert is symmetric about its
+  CL45 centre line - `J` is 30 above it, `I` is 30 below - so both flanks must
+  ramp the same, and the leading one is coming out five times steeper.
+  **FIXED 2026-08-24, `analysis/064`** - `90 - front_deg` in, so `tan(I -
+  clearance)` out; both flanks now ramp at 13.00 degrees. Nothing in
+  `test_front_flank`'s fixtures moves, because both sit at the ENDS of the
+  range - an 89.7 degree wall is unreachable at either ramp and a 26.6 degree
+  taper is on the unshadowed side either way. The band where the two
+  conventions disagree was untested: a 45 degree front face went from silent
+  to 2.314 mm of unreachable radius. Gates: `test_front_flank` all pass,
+  `test_front_flank_path` all pass with off-by-default intact - testing_15_2
+  341 moves `3f98389e76f7` and testing_15_5 484 moves `f1e3e5026d7a`
+  unchanged, each still moving when asked, 341 -> 320 and 484 -> 461.
+  - [ ] **Still open**: if the region is now the right SIZE but the wrong
+    SIDE, the side comes from `mirror_dir` and is next. And the 2 degree
+    `back_clear` default is applied to the leading flank too, under a name
+    that means the trailing one - nobody has said they want the same number.
+
+- [ ] **2. BACK TO FRONT: THE PRE-FINISH PASS AT THE PART BACK HAS A MIRRORED
+  LEAD-IN AND A WRONG X, CUTTING AN UNDERCUT.** greatEndian: *"again I
+  reporting issue with Direction Back to front, where prefinish pass at real
+  part back has mirrored lead in direction and it also has wrong X
+  position(undercut present)"*, `photo/backToFrontPathDirection.png`,
+  testing_15_6, Direction = Back to front, pre-finish offset 0.300.
+  "Again" - this is the same area as `photo/prefinishLeadOutBackToFrontError_0.png`
+  of 2026-08-18 and the lead-out fix in the uncommitted `lathe_poly_pass.ngc`
+  hunk, which pinned the RETREAT to +Z. The LEAD-IN was not touched, and the X
+  fault is new: an undercut means the pass is at a radius inside the finished
+  surface, which is a gouge, not a cosmetic direction problem.
+
+  **MEASURED 2026-08-24, and the fault is entirely in the LEAD-IN.** The
+  pre-finish CONTOUR is innocent: its closest approach to the finish contour is
+  **0.5079 at Z-24.4632 X30.1798 in BOTH directions**, the same point and the
+  same number, so the offset geometry does not care about the emission
+  direction. The lead-in does: front to back its endpoints stay **0.5080**
+  clear, back to front they come within **0.3660** - 0.142 mm closer to the
+  finished surface than the pass they lead into.
+  The lead-in also swaps ends with `param_dir` while the FINISH pass does not:
+  pre-finish leads in at Z+0.7071 -> Z0.0000 front to back and at Z-70.5991 ->
+  Z-69.8920 back to front, whereas finish leads in at Z+0.7071 -> Z0.0000 in
+  both. `lathe_poly_pass.ngc:222` still has `#<li_bz> = [#<z_dir> * COS...]`,
+  the exact form the lead-OUT was moved off in the uncommitted hunk.
+  - [ ] **NEEDS A CALL before the fix.** "Mirrored" admits two readings and
+    they want opposite changes:
+    - **Pin the lead-in to +Z**, exactly as the lead-out was pinned. The
+      approach then always comes from the free end. At a back entry that means
+      rapiding to Z-69.1849 and feeding back down over the part.
+    - **Leave the end-following as is and fix only the magnitude.** The
+      approach at the back already comes from Z-70.5991, which is PAST the
+      part's back end at Z-70.4 and so in free air; on that reading the
+      direction is right and only the 0.3660 encroachment is wrong.
+    A first instrument here reported a 10.5286 mm undercut in BOTH directions -
+    a ray cast taking the outermost X across the vertical back face. It was
+    wrong and was replaced by a true point-to-polyline distance. Recorded
+    because it is exactly the trap CLAUDE.md names. A SECOND correction
+    followed: measuring the lead-in's ENDPOINTS gave 0.3660, but sampling
+    ALONG the move gives **0.0768** - the ends are clear and the middle grazes
+    the back-face corner. Always sample the move, not its ends.
+
+  **BOTH VARIANTS BUILT AND MEASURED 2026-08-24**, testing_15_6 `param_dir=1`,
+  at greatEndian's request to see them before anything is committed:
+
+  | | lead-in | min clearance to the finished surface | inside profile |
+  |---|---|---|---|
+  | B, current | Z-70.5991 X35.3071 -> Z-69.8920 X34.6000 | **0.0768** at Z-70.3516 X35.0596 | 0 of 41 |
+  | A, pinned +Z | Z-69.1849 X35.3071 -> Z-69.8920 X34.6000 | **0.5080** at the entry | 0 of 41 |
+
+  468 moves either way. B starts past the back end at Z-70.5991 - the part
+  spans -70.4000 .. 0.0000 - so it enters in free air and then sweeps ACROSS
+  the back-face corner at 0.0768. A starts within the part's Z span but a full
+  pre-finish offset clear of the surface the whole way, and never enters the
+  profile.
+  **Front to back does not move under A**: testing_15_6 472 moves
+  `f27eaf129627` and testing_15_2 341 moves `3f98389e76f7`, identical hashes
+  before and after, because front to back already has `z_dir` 1. A is
+  therefore the same shape of change the lead-out fix already was.
+  Recommendation is A; awaiting greatEndian's pick.
+
+  **RE-MEASURED ON testing_15_7 2026-08-25 at greatEndian's instruction** -
+  *"measure them with the testing_15_7.xml there is actual"*. The project is
+  saved with **`param_dir` = 0, FRONT TO BACK**, `param_sectioning` 1,
+  `param_skip_short` 0, `_pl_skip_thin` 0.300, `_pl_pass_from` 0. Part Z span
+  -70.4000 .. 0.0000.
+
+  | lead | end | move | clearance |
+  |---|---|---|---|
+  | pre-finish IN | **BACK** | Z-70.5991 X35.3071 -> Z-69.8920 X34.6000 | **0.0768** |
+  | pre-finish OUT | FRONT | Z+0.2421 X19.6421 -> Z+0.9492 X20.3492 | 0.7909 |
+  | finish IN | FRONT | Z+0.7071 X19.4728 -> Z0.0000 X18.7657 | 0.0000 - on the contour, correct |
+  | finish OUT | BACK | Z-70.4000 X35.0000 -> Z-69.6929 X35.7071 | 0.0000 - on the contour, correct |
+
+  **THIS IS TWO FAULTS, NOT ONE, AND THEY NEED DIFFERENT FIXES.**
+
+  - [x] **2a. THE UNDERCUT - APPLIED AND VERIFIED 2026-08-25.** On
+    testing_15_7 the pre-finish lead-in at the back now runs Z-69.1849 ->
+    Z-69.8920 and clears the finished surface by **0.5080**, up from 0.0768.
+    Every other lead is unchanged to the digit. `#<li_zs> = 1` at
+    `lathe_poly_pass.ngc:225`, taken by BOTH entry branches - the straight
+    lead-in and the arc-entry approach in the elseif, which carried the same
+    `z_dir`. The no-lead PLUNGE approach at `:316` still uses `z_dir`; it is
+    the same class but a different path with no coverage in any project I can
+    measure, so it was deliberately left and is recorded here instead.
+    ~~**2a. THE UNDERCUT - variant A fixes it.**~~ On testing_15_7 the
+    pre-finish lead-in at the back grazes the finished surface at **0.0768**
+    where the pass it leads into keeps 0.5080. Variant A - pinning `li_bz` to
+    +Z at `lathe_poly_pass.ngc:222`, the same change the lead-OUT already had -
+    takes it to **0.5080** exactly. 480 moves either way, every other lead
+    unchanged to the digit, and front to back on testing_15_6/15_2 is
+    hash-identical. Ready to apply.
+  - [ ] **PRE-EXISTING, FOUND BY THE 2a GATE - `testing_13_arcs.xml` does not
+  generate in nose-comp mode OFF.** `test_leads` reports
+  `{'Off': False, 'Native': True, 'In CAM': True}`. **Not caused by 2a**:
+  measured by reverting `lathe_poly_pass.ngc` to the pre-2a state and
+  re-running, which gives the identical failure. It is the only red in that
+  suite; testing_15_2 passes all twelve checks in all three modes. Recorded
+  2026-08-25, not chased.
+
+- [ ] **2b. THE MIRRORING - variant A does NOT fix it, and this is the
+    bigger one.** `param_dir` is **0, front to back**, yet the PRE-FINISH pass
+    leads in at the **BACK** while the FINISH pass leads in at the FRONT. The
+    two contour passes run the part in opposite directions on the same job.
+    And **setting `param_dir=1` produces byte-identical leads** - the
+    pre-finish pass is not following Direction at all on this project.
+    That is about which END the pass starts at, not about the lead vector, so
+    it is a different fix in a different place.
+
+    **MEASURED 2026-08-25, on the traversal rather than on the leads.** The
+    two contour passes run the part in opposite directions on the same job:
+
+    | pass | feeds | Z travelled | net | runs |
+    |---|---|---|---|---|
+    | pre-finish | 74 | -69.8920 .. +0.9492 | **+70.1341** | **BACK to FRONT** |
+    | finish | 75 | -70.4000 .. +0.7071 | **-70.4000** | FRONT to BACK |
+
+    testing_15_7 is saved `param_dir` 0 and `param_f_dir` 0 - front to back
+    BOTH - so the pre-finish is the one going the wrong way.
+
+    **The structural asymmetry, found and worth fixing on its own merits:**
+    the pre-finish pass takes its direction from **`rough_dir`**, the ROUGHING
+    parameter - all three of its `cam_load` calls at
+    `poly_lathe_mill.ngc:1209/1218/1224` pass `[#<rough_dir> EQ 1]` - while the
+    finish pass takes it from **`fin_dir`**, the FINISHING parameter, through
+    `#<f_rev>` at `:1254`. `rough_dir` is `#12` = `param_dir` and `fin_dir` is
+    `#15` = `param_f_dir`. Two passes that trace the same contour should not
+    read two different parameters to decide which way round.
+
+    **But that asymmetry does not explain THIS flip, and saying so matters.**
+    Both parameters are 0 here, so both flags resolve to 0, and
+    `param_n_comp` is 0 with `_pl_pf_n` 0 and `_pl_fc_n` 21, which should put
+    both passes in the same `_pl_fc_n` branch with the same flag. They still
+    traverse oppositely. The feed counts - 74 and 75 against a 21-point table -
+    say neither pass is tracing the table I think it is.
+  - [x] **2c. "LEAD-OUT ENDING SUNK UNDER THE STOCK ENVELOPE" IS THE SAME BUG
+    AS 2b - MEASURED 2026-08-25, NOT A SEPARATE FIX.** greatEndian:
+    *"lead out prefinish direction is right now, but its ending sinked under
+    stock envelope not as should at X"*. testing_15_7 stock is
+    `_wp_dia_od = 70/2`, so the envelope is **X35.0**.
+
+    | pass | lead-out ends | vs envelope |
+    |---|---|---|
+    | pre-finish | Z+0.9492 **X20.3492** | **14.65 under** |
+    | finish | Z-69.6929 X35.7071 | 0.71 above |
+
+    The pre-finish ends at X20.35 because it ENDS AT THE FRONT, where the
+    profile is X~19.6, and it ends at the front because it runs back to front -
+    2b. The finish pass ends at the BACK where the profile is X35, so its
+    lead-out clears the envelope on its own.
+    **Confirmed against a case where the pre-finish runs the right way**: on
+    testing_15_6 the pre-finish lead-out ends at **X35.7071**, above the
+    envelope, exactly like the finish pass. So the lead-out length and angle
+    are innocent and must NOT be given a separate "extend to the envelope"
+    fix - that would paper over 2b and break the case that is already correct.
+    The rapid after the pre-finish already retracts to X36.8160, clear of
+    stock, so nothing is being cut; the complaint is about where the FEED
+    stops, and 2b is why.
+
+  - [x] **2b FIXED 2026-08-25 — THE PRE-FINISH NOW TAKES THE FINISHING
+    DIRECTION.** `#<pf_rev>` from `fin_dir` replaces `[#<rough_dir> EQ 1]` in
+    all three pre-finish `cam_load` calls. `rough_dir` keeps its OTHER use at
+    the roughing level-array pick - roughing's emission is still roughing's to
+    choose - which is why the replacement was scoped to the `cam_load` lines
+    and not done by name.
+
+    **FOUND BY INSTRUMENTING, and two of the facts I had asserted from reading
+    were wrong.** The run reported `PFBRANCH 1 rev=1.000000 fcn=21 pfn=0`
+    against `FNBRANCH 1 frev=0.000000 fcn=21`. So both passes take branch ONE,
+    the `nose_comp EQ 2` In-CAM branch - not the `_pl_fc_n` branch I had
+    claimed twice - and `rough_dir` is **1**, not the 0 I read out of the XML.
+    Confirmed against the generated program, which is authoritative:
+    `#3143` = **1** back to front for ROUGHING, `#3146` = **0** front to back
+    for FINISHING, `#3159` = **2** In CAM. Both settings legitimate; the
+    pre-finish was simply obeying the wrong one of them.
+    My XML greps were unreliable throughout - those lines carry several
+    `value=` attributes and the pattern kept matching the wrong one. **Read
+    the generated program, not the project file.**
+
+    **Measured after, testing_15_7:**
+
+    | | before | after |
+    |---|---|---|
+    | pre-finish lead-IN | BACK, Z-70.5991, clear 0.0768 | **FRONT, Z+0.7071, clear 0.5080** |
+    | pre-finish lead-OUT | FRONT, X20.3492 | **BACK, X35.0000 -> X35.7071** |
+    | pre-finish traversal | net +70.1341, back to front | **net -69.8920, FRONT to BACK** |
+    | finish traversal | net -70.4000, front to back | unchanged |
+
+    The lead-out now leaves from **X35.0000, the stock envelope**, and then
+    angles to X35.7071 - identical in form to the finish pass's X35.0000 ->
+    X35.7071. That is exactly what greatEndian asked for against
+    `photo/prefinishLeadOutBackToFrontError_2.png`: *"it have to be at outside
+    same ending as light blue one and then it continue in the lead out angled
+    and beside finish pass orange one"*.
+    **2c closed with it** - the 14.65 mm under-envelope ending is gone, with no
+    separate lead-out change, exactly as predicted.
+    Gates: `cam_map` 6/6, `test_x_continuity` all pass with its delete-a-pass
+    control still firing, `test_leads` unchanged apart from the pre-existing
+    testing_13_arcs Off failure.
+    ~~**NEXT STEP for 2b, and it is instrumentation, not reading.**~~ Emit the
+    branch taken and the resolved rev flag for each of the two passes at
+    runtime and read them back from the generated program. Three readings of
+    this code have now each looked conclusive and each been wrong about which
+    branch runs; the next claim about it should come from the interpreter.
+
+- [ ] **3. FRONT TO BACK + SECTIONING 5 mm PRODUCES BAD SECTIONS**, on the new
+  `testing_15_7.xml`. greatEndian lists four:
+  - wrong shape of sectioning;
+  - the lead-in collides with the part face, sunk inside the raw stock, and
+    they suspect **Skip short roughing passes** is involved;
+  - the sectioning's tangential contact with the boss front face is messed up,
+    passes skipped, again possibly Skip short roughing passes;
+  - the whole thing appears only with Sectioning on at a 5 mm Z section length,
+    i.e. ARTIFICIAL sectioning, `_pl_sect_mode` 1.
+  Note the live session in `frontAngleRespectIssue_0.png` also has **Skip thin
+  roughing passes at 0.300** and Skip short ticked - the saved testing_15_6 has
+  both off, so the reports are from a session with them ON.
+
+  **FIRST MEASUREMENT 2026-08-24 - it generates and runs clean, so the faults
+  are geometric, not a crash.** testing_15_7 as saved: 2012 moves, 1172 feeds,
+  840 rapids, **no WARNING comments and no interpreter error**. Its globals:
+  `_pl_sectioning` 1, **`_pl_sect_mode` 1 - ARTIFICIAL**, **`_pl_sect_count`
+  17**, `_pl_sect_top_dia` 66.93423409, `_pl_pass_from` **0 - Stock**, and
+  `_pl_skip_thin` **0.300**.
+  Two of these bear on greatEndian's own suspicion:
+  - **`_pl_min_pass` is 0.0** - Skip short roughing passes is OFF in the saved
+    project, whatever the screenshot's tick showed. So it cannot be the cause
+    of the skipped passes unless the report came from a different session
+    state. Worth confirming with greatEndian before hunting it.
+  - `_pl_skip_thin` 0.300 is below the Stock ladder's own step, so it should
+    not be alternating the way the 2026-08-24 hazard entry describes - but that
+    hazard is measured on the FINAL CONTOUR anchoring and this project is on
+    Stock. Check the step before ruling it out.
+  - [ ] Still to measure: the section shape itself, the lead-in that sinks into
+    raw stock at the face, and the tangential contact at the boss front face.
+    840 rapids against 1172 feeds on 17 windows is a lot of repositioning and
+    is the first thing to look at.
+
+## Reported 2026-08-21 — the thin pass at the boss top
+
+- [x] **A ROUGHING PASS TANGENT TO THE BOSS TOP, PRESENT AT EVERY OFFSET —
+  FIXED**, 2026-08-21, `analysis/061`. greatEndian: *"there is tangential top
+  boss point pass which is present across any offset values.. which is wrong it
+  should be present only if it depth is equal or higher then 1/2 of depth of
+  cut"*, and *"now position is at roughing 4th from the outside envelope, but it
+  is floating with increasting or decreasing the prefinish offset"*.
+
+  It is phase 2's **first** pass. With *Space passes from = Final contour* that
+  ladder takes whole depths of cut from the floor and puts the leftover on its
+  own first pass — which, with Sectioning on, sits ON the section ceiling, i.e.
+  against the boss top. The ceiling floats continuously with the pre-finish
+  offset while the ladder is anchored on the floor, so the remainder is
+  `span mod doc`: on testing_15_6, 0.89 / 0.21 / 0.51 / **0.10** / 0.89 × doc
+  at offsets 0.00 / 0.15 / 0.30 / 0.60 / 1.00, and the pass wanders 5th → 4th →
+  3rd from the envelope.
+
+  **Fixed by spreading, not dropping** — deleting the level would leave the one
+  below it taking `remainder + doc`, over the depth of cut and against the
+  finished surface. When the remainder is under half a depth of cut the span is
+  divided evenly into the same `p2_n` steps, so every step stays under the doc,
+  the last still lands exactly on the floor, and no even step can be under
+  doc/2. **Measured**: 0.1091 → 0.4920 and 0.0511 → 0.4897; level counts
+  unchanged in every column (44/44/44/43/41); testing_15_6 at default settings
+  byte-identical.
+
+  - [x] **FIXED 2026-08-24, `analysis/063` — the threshold is gone entirely.**
+    greatEndian checked `testing_15_6.xml` and reported the pass still there;
+    the project's saved `param_pf_off` is 0.30, so this was the 0.2591 case
+    that survived by 0.0051. ~~At the default offset 0.30 the pass survives at
+    0.51 × doc — NEEDS A CALL, the threshold is the dial.~~ **The threshold was
+    never the question.** The remainder-on-the-first-pass rule belongs to the
+    ladder that starts AT THE STOCK, where the leftover lands in oversize
+    material; phase 2 starts at the section ceiling, against the part, so a
+    partial pass is misplaced there at ANY size. Phase 2 is spaced evenly
+    unconditionally now and `Space passes from` no longer reaches it — the
+    setting keeps its meaning through `lad_tgt`, which anchoring still
+    reassigns to `anch_floor` at `poly_lathe_mill.ngc:231`.
+    **Measured on testing_15_6, thinnest gap in the whole ladder**: 0.4582 /
+    0.4207 / **0.3832** / 0.4109 / 0.4165 at offsets 0.00 / 0.15 / 0.30 / 0.60
+    / 1.00 — from 0.10-0.51 × doc up to **0.75-0.90 × doc**, with **no level
+    dropped at any offset** (29/29/29/28/27 unchanged). The pass also stops
+    wandering 5th → 4th → 3rd from the envelope.
+    Gates: `cam_map` 6/6, `test_x_continuity` worst over-step 0.0000 with its
+    delete-a-pass control still firing, `test_sections` all pass, `test_ladder`
+    all pass. The `o<p2_an>` if/else, the `o<p2_thin>` conditional and the dead
+    `#<p2_sgn>` initialiser are all gone.
+
+- [x] **`#<p1_cut>` READ BEFORE IT IS ASSIGNED — FIXED**, 2026-08-21. The
+  uncommitted `o<p1_end>` block reads `#<p1_cut>` at `poly_lathe_mill.ngc:1118`,
+  outside `o<lvl_ok>`, while the assignment at `:723` is inside it — so a level
+  that is out of band, thin, or past stock and sitting on `lvl_floor` aborted
+  the program at run time with *Named parameter #<p1_cut> not defined*. **16 of
+  55 tests were red on this alone.** Now initialised at the level-loop head,
+  which is also what the flag means. Generation was never affected, only the
+  run.
+
+- [x] **CORRECTED 2026-08-24, `analysis/062` — `_pl_skip_thin` IS NOT INERT.**
+  ~~`_pl_skip_thin` IS INERT — the shipped setting drops nothing.~~ It works:
+  on testing_15_2 a 0.400 threshold drops the 29.6520 envelope level, 18 → 17,
+  every surviving gap still a whole 0.5080. It dropped nothing at `doc/2`
+  because **nothing was eligible** — every in-ladder gap is 0.5080 and the only
+  smaller one is the stock handover at **0.3480, above the 0.2540 threshold**.
+  The wrong finding came from an uncalibrated control; `test_ladder` asserted a
+  drop the geometry never warranted. Control replaced, all 26 checks pass.
+
+- [ ] **BUT IT IS BLIND AT WINDOW BOUNDARIES, and that is now MEASURED.** The
+  `analysis/061` hypothesis was right on a different project: on testing_15_6
+  the 0.2591 ceiling gap survives thresholds of **0.300 and 0.350**, because it
+  is the FIRST level of its phase-2 window and `#<_pl_prev_lvl>` has just been
+  reset to `stock_r` at `poly_lathe_mill.ngc:649` — judged 4.6 mm thick instead
+  of 0.2591. Within a window every step is a whole doc and nothing is ever
+  eligible, so **the check is blind in exactly the place thin passes come
+  from**. Lower priority now that greatEndian ruled SPREAD, which removes those
+  passes structurally — but it is a shipped setting with a real gap.
+  The fix is to **separate the two uses**, not to change what `:649` assigns:
+  a per-region thickness reference for the thin check, a safe-radius reference
+  for the retract at `lathe_level_pass.ngc:999`. Designed, not built.
+
+- [ ] **A `skip_thin` threshold above the LADDER STEP halves the ladder — and
+  the step is under the depth of cut, so a clamp at the doc is not enough.**
+  Measured 2026-08-24 on testing_15_2: at 0.600 with doc 0.508, **13 levels and
+  a 1.0160 gap**; and after the phase-2 spread made the ladder uniform at
+  0.4991, a threshold of **0.5070 — under the 0.5080 doc — already does it**,
+  13 levels and a 0.9983 gap. It alternates: a level is thin against the last
+  one cut and skipped, `_pl_prev_lvl` stays, the next is two steps away and is
+  kept. Gaps past the doc against a part surface is the failure
+  `test_x_continuity` exists to prevent. `cfg/lathe/polyline.cfg:76` has
+  `minimum_value = 0.0` and **no maximum**, so a user can type it. The
+  recommended `doc/2` is safe and `test_ladder` now asserts that much; the
+  clamp has to be against the ladder's own step, which is a runtime number, so
+  the honest fix is to make the skip refuse to open a gap larger than the doc
+  rather than to bound the input.
+
+- [x] **RULED 2026-08-24 — SPREAD, not drop.** greatEndian chose the spread on
+  being shown both with their numbers: nothing is removed, no step exceeds the
+  depth of cut, and no step falls under `doc/2`. The uncommitted change of
+  2026-08-21 IS the answer; `_pl_skip_thin` is not the mechanism for this.
+  ~~**NEEDS A CALL — drop the thin pass, or spread it?** greatEndian's rule
+  ("present only if its depth is at least half the depth of cut") admits two
+  readings and the codebase already contains the first:
+  - **Drop** — repair `skip_thin` and default it to `doc/2`, which is what its
+    own tooltip already recommends. The pass disappears; the level below it
+    then takes `remainder + doc` — 0.5591 against a 0.5080 doc at pf 0.60, 10%
+    over, against the finished surface.
+  - **Spread** — the change made 2026-08-21: divide the span evenly so every
+    step is 0.4897 and none is under `doc/2`. Nothing is removed and no step
+    exceeds the doc, but every level in that ladder moves.~~
+
+- [ ] **THE LADDER BEHIND THE BOSS IS TRUNCATED AGAIN** on testing_15_6 with
+  `param_sectioning=0`: last pass cuts 2.8021 mm against a 2.3247 step. Same
+  class as the 2026-08-12 fix. Hidden until 2026-08-21 by the `#<p1_cut>`
+  abort, which truncated the program the test was measuring.
+
+- [ ] **A test that passes on an aborted program is not passing.** Neither
+  `test_behind_boss_ladder` nor `test_ladder` checks that rs274 reached the end
+  of the file; both take whatever moves were emitted before it stopped, which
+  is how two real faults sat green. Fix the harness before chasing either.
+
 ## Reported 2026-08-15 — greatEndian's three issues
 
 > Written down late, and that is the point of the entry. The sweep `0a60d80`
