@@ -72,6 +72,14 @@ class PreviewPane(object):
     TICK_MS = 40
     BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
+    # One definition, used both by add_events at construction and by
+    # _arm_events at realize - the two must not be able to drift apart.
+    _EVENT_MASK = (Gdk.EventMask.SCROLL_MASK
+                   | Gdk.EventMask.SMOOTH_SCROLL_MASK
+                   | Gdk.EventMask.BUTTON_PRESS_MASK
+                   | Gdk.EventMask.BUTTON_RELEASE_MASK
+                   | Gdk.EventMask.BUTTON1_MOTION_MASK)
+
     def __init__(self, ini_path=None, plane='ZX', stock_cb=None,
                  profile_cb=None, soft_cb=None, comp_cb=None, rough_cb=None, surf_cb=None,
                  comp_mode_cb=None):
@@ -116,11 +124,20 @@ class PreviewPane(object):
         # GTK3 does not deliver these to a DrawingArea unless they are asked
         # for explicitly - the same omission the treeviews had to fix for the
         # scroll wheel
-        self.area.add_events(Gdk.EventMask.SCROLL_MASK
-                             | Gdk.EventMask.SMOOTH_SCROLL_MASK
-                             | Gdk.EventMask.BUTTON_PRESS_MASK
-                             | Gdk.EventMask.BUTTON_RELEASE_MASK
-                             | Gdk.EventMask.BUTTON1_MOTION_MASK)
+        self.area.add_events(self._EVENT_MASK)
+        # AND AGAIN ON THE GdkWindow AT REALIZE. add_events sets the WIDGET
+        # mask, which GTK copies onto the GdkWindow when that window is
+        # created - and only then. A widget that is already realized when the
+        # mask is added keeps its old window mask, and this pane is reparented
+        # into a Paned after the panel exists, which is exactly that case.
+        # greatEndian, 2026-08-25: scroll-to-zoom only worked while the wheel
+        # was held DOWN. That is the signature of this fault and of nothing
+        # else - a button press takes an implicit pointer grab, and a grab
+        # routes scroll to the grab window whatever its mask says, which is
+        # why the zoom itself "works well" once held. Re-applying the mask
+        # where it is actually read is idempotent: an OR onto a window that
+        # already carries these bits changes nothing.
+        self.area.connect('realize', self._arm_events)
         self.area.connect('scroll-event', self._on_scroll)
         self.area.connect('button-press-event', self._on_button)
         self.area.connect('motion-notify-event', self._on_motion)
@@ -924,6 +941,16 @@ class PreviewPane(object):
                 'flank_len': self.flank_len, 'shank_h': self.shank_h}
 
     # -- zoom and pan -------------------------------------------------------
+    def _arm_events(self, area):
+        win = area.get_window()
+        if win is None:
+            return
+        before = int(win.get_events())
+        win.set_events(win.get_events() | self._EVENT_MASK)
+        if os.environ.get('NCAM_SCROLL_DEBUG'):
+            print('NCam scroll mask: %-14s before %d after %d'
+                  % ('plot', before, int(win.get_events())))
+
     def _on_scroll(self, area, ev):
         d = ev.direction
         if d == Gdk.ScrollDirection.SMOOTH:

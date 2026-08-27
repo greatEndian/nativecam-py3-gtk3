@@ -10,15 +10,59 @@ from ncam import (
 )
 
 
+# THE MASK HAS TO REACH THE GdkWindow, NOT JUST THE WIDGET.
+# gtk_widget_add_events sets the WIDGET mask, and GTK copies that onto the
+# GdkWindow when the window is created - and only then. A widget already
+# realized when the mask is added keeps its old window mask, and the wheel
+# then does nothing over it.
+#
+# Both treeviews here are exposed to that. create_treeview adds itself to the
+# builder's "feat_scrolledwindow" BEFORE calling add_events, so if that
+# container is already realized the mask lands too late; and the parameters
+# view is repacked into feature_Hpane by set_layout's deferred pass, which is
+# a reparent.
+#
+# greatEndian, 2026-08-25 and 2026-08-26: scroll-to-zoom needed the wheel held
+# DOWN - the signature of a missing SCROLL_MASK, since a button press takes an
+# implicit pointer grab and a grab routes scroll to the grab window whatever
+# its mask says - and then scrolling failed in the preview AND the properties.
+# `8a0bf34 fix(ui): mouse wheel scrolling` had already had to chase this once.
+#
+# So the mask is re-applied at realize, where it is actually read. Idempotent:
+# an OR onto a window that already carries these bits changes nothing.
+TV_EVENT_MASK = (gdk.EventMask.BUTTON_PRESS_MASK
+                 | gdk.EventMask.SCROLL_MASK
+                 | gdk.EventMask.SMOOTH_SCROLL_MASK)
+
+
+def arm_scroll_events(widget):
+    """Put TV_EVENT_MASK on the widget's own GdkWindow. Safe before realize.
+
+    Set NCAM_SCROLL_DEBUG=1 to have the real masks printed as each widget is
+    realized. The repair below is proven - stripping the bits off a live
+    window and firing realize puts them back - but the FAULT has never been
+    reproduced outside the running panel, so if the wheel is still dead this
+    says whether the bits are actually missing or whether something above the
+    widget is eating the event.
+    """
+    win = widget.get_window()
+    if win is None:
+        return
+    before = int(win.get_events())
+    win.set_events(win.get_events() | TV_EVENT_MASK)
+    if os.environ.get('NCAM_SCROLL_DEBUG'):
+        print('NCam scroll mask: %-14s before %d after %d'
+              % (type(widget).__name__, before, int(win.get_events())))
+
+
 class NCamTreeviewMixin:
     def create_treeview(self):
         self.treeview = gtk.TreeView(model=self.treestore)
         self.treeview.set_grid_lines(gtk.TreeViewGridLines.VERTICAL)
         self.builder.get_object("feat_scrolledwindow").add(self.treeview)
 
-        self.treeview.add_events(gdk.EventMask.BUTTON_PRESS_MASK |
-                                 gdk.EventMask.SCROLL_MASK |
-                                 gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.treeview.add_events(TV_EVENT_MASK)
+        self.treeview.connect('realize', arm_scroll_events)
         self.treeview.connect('button-press-event', self.pop_menu)
         self.treeview.connect('row_activated', self.tv_row_activated)
         self.treeview.connect('key_press_event', self.tv_key_pressed_event)
@@ -68,9 +112,8 @@ class NCamTreeviewMixin:
 
     def create_second_treeview(self):
         self.treeview2 = gtk.TreeView()
-        self.treeview2.add_events(gdk.EventMask.BUTTON_PRESS_MASK |
-                                  gdk.EventMask.SCROLL_MASK |
-                                  gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.treeview2.add_events(TV_EVENT_MASK)
+        self.treeview2.connect('realize', arm_scroll_events)
         self.treeview2.connect('button-press-event', self.pop_menu)
         self.treeview2.connect('cursor-changed', self.tv2_selected)
         self.treeview2.connect('row_activated', self.tv_row_activated)

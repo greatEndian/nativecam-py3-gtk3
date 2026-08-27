@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gi                                             # noqa: E402
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk as gtk                  # noqa: E402
+from gi.repository import Gdk                          # noqa: E402
 
 FAILED = []
 
@@ -266,6 +267,48 @@ def main():
     pump()
     check('and the overlay drops out of the legend when it is turned off',
           'reachable' not in p._legend(), p._legend())
+
+    # --- the plot's own scroll mask, on the GdkWindow that reads it -------
+    # greatEndian, 2026-08-25: scroll-to-zoom only worked while the wheel was
+    # held DOWN. That is the signature of a missing SCROLL_MASK and of nothing
+    # else - a button press takes an implicit pointer grab, and a grab routes
+    # scroll to the grab window whatever its mask says, which is why the zoom
+    # itself behaved perfectly once held.
+    #
+    # add_events sets the WIDGET mask, which GTK copies onto the GdkWindow
+    # when that window is created and only then; a widget already realized
+    # when the mask is added keeps its old window mask. This pane is
+    # reparented into a Paned after the panel exists, which is exactly that
+    # case, so the mask is re-applied at realize.
+    #
+    # THE CONTROL IS THE POINT. Asserting the bits are present on a
+    # freshly-built pane proves nothing - add_events alone would pass that.
+    # So the fault is reproduced first by stripping the bits off the live
+    # window, and only then is the handler asked to put them back.
+    # A FRESH PANE IN ITS OWN WINDOW: the panel `p` lives in was destroyed by
+    # the timer check above, so its drawing area no longer has a GdkWindow to
+    # read a mask from.
+    p2 = PreviewPane(ini_path=None, soft_cb=lambda: [(0.0, 0.0), (1.0, 1.0)])
+    win2 = gtk.OffscreenWindow()
+    win2.add(p2.box)
+    win2.show_all()
+    pump()
+    gw = p2.area.get_window()
+    check('the plot has a window to carry the mask', gw is not None)
+    if gw is not None:
+        want = int(Gdk.EventMask.SCROLL_MASK) | int(
+            Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        check('the plot window carries the scroll masks',
+              (int(gw.get_events()) & want) == want,
+              'mask %d' % int(gw.get_events()))
+        gw.set_events(Gdk.EventMask(int(gw.get_events()) & ~want))
+        stripped = int(p2.area.get_window().get_events())
+        check('   the control strips them, so the re-arm is not a no-op',
+              (stripped & want) == 0, 'mask %d' % stripped)
+        p2.area.emit('realize')
+        rearmed = int(p2.area.get_window().get_events())
+        check('   and realize puts exactly those bits back',
+              (rearmed & want) == want, 'mask %d' % rearmed)
 
     print()
     if FAILED:
