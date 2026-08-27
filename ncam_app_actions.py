@@ -698,7 +698,13 @@ class NCamAppActionsMixin:
         self.actionNew = ca("New", 'gtk-new', _("_New Project"), "<control>N", None, self.action_new_project)
         self.actionOpen = ca("Open", 'gtk-open', _("_Open Project"), "<control>O", None, self.action_open_project, 0)
         self.actionOpenExample = ca("OpenExample", None, _('Open Example'), '', _('Open Example Project'), self.action_open_project, 1)
-        self.actionSave = ca("Save", 'gtk-save', _("_Save Project As..."), "<control>S", _("Save project as xml file"), self.action_save_project)
+        # SAVE AND SAVE AS ARE TWO ACTIONS NOW. Ctrl+S writes back to the open
+        # project without a dialog; Save As keeps the chooser and lives in the
+        # menu below it, unaccelerated. The Ctrl+S key handler in
+        # ncam_treeview activates actionSave, so it follows this split with no
+        # change of its own.
+        self.actionSave = ca("Save", 'gtk-save', _("_Save Project"), "<control>S", _("Save to the open project file"), self.action_save_current_project)
+        self.actionSaveAs = ca("SaveAs", 'gtk-save-as', _("Save Project _As..."), None, _("Save project as xml file"), self.action_save_project)
         self.actionSaveTemplate = ca("SaveTemplate", None, _('Save as Default Template'), '', _("Save project as default template"), self.action_save_template)
         self.actionSaveNGC = ca("SaveNGC", None, _('Export gcode as RS274NGC'), '', _('Export gcode as RS274NGC'), self.action_save_ngc)
 
@@ -1370,6 +1376,7 @@ class NCamAppActionsMixin:
         self.actionCollapse.set_enabled(self.selected_feature is not None)
 
         self.actionSave.set_enabled(self.selected_feature is not None)
+        self.actionSaveAs.set_enabled(self.selected_feature is not None)
         self.actionSaveTemplate.set_enabled(self.selected_feature is not None)
         self.actionSaveNGC.set_enabled(self.selected_feature is not None)
 

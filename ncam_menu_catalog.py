@@ -146,6 +146,7 @@ class NCamMenuCatalogMixin:
         file_menu.append(self._create_menu_item(self.actionOpenExample))
         file_menu.append(gtk.SeparatorMenuItem())
         file_menu.append(self._create_menu_item(self.actionSave))
+        file_menu.append(self._create_menu_item(self.actionSaveAs))
         self.mi_current = self._create_menu_item(self.actionCurrent)
         self.mi_current_list.append(self.mi_current)
         file_menu.append(self.mi_current)

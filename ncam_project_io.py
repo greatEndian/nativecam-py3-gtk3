@@ -540,6 +540,30 @@ class NCamProjectIOMixin:
 
 
 
+    def action_save_current_project(self, *arg) :
+        """Write straight back to the open project file, with no dialog.
+
+        greatEndian, 2026-08-26: a plain Save above Save As, on Ctrl+S, for the
+        project already open. Save As keeps the dialog and moves into the menu
+        without an accelerator.
+
+        A project that has never been saved has no file to write back to -
+        `new_project` sets CURRENT_PROJECT to the bare name 'Untitle.xml', not
+        a path - so this hands over to the dialog rather than inventing a
+        location. That is also what makes the very first Ctrl+S on a new
+        project behave the way Save As always did.
+        """
+        path = ncam.CURRENT_PROJECT
+        if not os.path.isabs(path) or not os.path.isdir(os.path.dirname(path)) :
+            return self.action_save_project(*arg)
+        try :
+            xml = self.treestore_to_xml()
+            etree.ElementTree(xml).write(path, pretty_print = True)
+            self.file_changed = False
+        finally :
+            self.display_proj_name()
+
+
     def action_save_project(self, *arg) :
         filechooserdialog = gtk.FileChooserDialog(_("Save project as..."), None,
                 gtk.FileChooserAction.SAVE, ('gtk-cancel', \
