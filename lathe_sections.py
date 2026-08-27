@@ -2862,7 +2862,7 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     xw_mode, xw_front, xw_tol = xw_settings(polyline_feature)
     subs, owner = [], []
     for k, p in enumerate(paths):
-        parts = (split_contour_at_walls(p, xw_tol, xw_front)
+        parts = (split_contour_at_walls(p, xw_tol, xw_front, 2.0 * nose_r)
                  if xw_mode == 2 and xw_front > 0 else [p])
         for part in parts:
             subs.append(part)
@@ -3944,7 +3944,7 @@ def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 # coming, which is the standing Python-first rule reaching the same answer.
 
 
-def x_wall_indices(points, tol_deg, rising_only=True):
+def x_wall_indices(points, tol_deg, min_rise=0.0, rising_only=True):
     """Indices i where points[i] -> points[i+1] is a perpendicular X wall.
 
     PERPENDICULARITY IS AN ANGLE, NOT A LENGTH. The branch this replaces tested
@@ -3956,6 +3956,21 @@ def x_wall_indices(points, tol_deg, rising_only=True):
 
     `rising_only` keeps the original branch's `to_x GT from_x` sense: a wall
     that ASCENDS is the one the tool has to come at from outside.
+
+    `min_rise` IS WHAT SEPARATES A WALL FROM A CORNER, and it is not optional
+    on real geometry. An offset path carries short exactly-perpendicular
+    connectors where one feature runs into the next: on testing_15_8 the
+    cylinder meets the boss arc through a **0.626 mm** vertical step, against
+    real walls of 19.24 and 20.52 mm. That step is dead perpendicular - dz is
+    0.0000, so no angle tolerance can tell it apart - and treating it as a wall
+    put a whole detour in the middle of an arc. greatEndian, 2026-08-27:
+    "at boss segment start point of arc it generates infinite long orange stand
+    still line".
+
+    The threshold is physical rather than tuned: callers pass the tool's nose
+    DIAMETER. A step shorter than that is not a wall the tool could cut from
+    outside anyway - the nose rolls through it as a corner blend - so there is
+    nothing for the detour to do there.
     """
     if tol_deg is None or tol_deg < 0:
         return []
@@ -3966,6 +3981,8 @@ def x_wall_indices(points, tol_deg, rising_only=True):
             continue                      # no X travel: not a wall at all
         if rising_only and dx <= 0:
             continue
+        if abs(dx) < min_rise - 1e-9:
+            continue                      # a corner blend, not a wall
         if math.degrees(math.atan2(abs(dz), abs(dx))) > tol_deg + 1e-9:
             continue
         out.append(i)
@@ -4073,7 +4090,8 @@ def xw_settings(polyline_feature):
     return int(_f('param_xw_dir')), _f('param_xw_front'), _f('param_xw_tol')
 
 
-def split_contour_at_walls(points, tol_deg, front, rising_only=True):
+def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
+                           rising_only=True):
     """The contour cut into sub-paths at every perpendicular X wall.
 
     Returns a list of point lists. One entry means no wall was found and the
@@ -4111,7 +4129,7 @@ def split_contour_at_walls(points, tol_deg, front, rising_only=True):
     """
     if front <= 0 or tol_deg is None or tol_deg < 0 or len(points) < 2:
         return [list(points)]
-    walls = x_wall_indices(points, tol_deg, rising_only)
+    walls = x_wall_indices(points, tol_deg, min_rise, rising_only)
     if not walls:
         return [list(points)]
 

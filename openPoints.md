@@ -118,6 +118,38 @@ the two cuts only touch.
     `test_x_continuity` and `test_sections` pass, `check_tangent` **[VERDICT:
     PASS]** on testing_15_8, min |dot| 1.00000 over 136562 canon events.
 
+- [x] **A DETOUR LANDED IN THE MIDDLE OF THE BOSS ARC — FIXED**, 2026-08-27.
+  greatEndian: *"at boss segment start point of arc it generates infinite long
+  orange stand still line in the tangential diraction to boss arc"*,
+  `photo/infrontOfInfiniteLongLine_0.png`.
+
+  **The culprit was already in my own validation output and I read past it**:
+  `detour sub 3: top Z-20.0062 X40.6260, corner X40.0000` - a **0.626 mm**
+  "wall" against real ones of 19.24 and 20.52. It is where the offset path runs
+  the cylinder into the boss arc, and it is **exactly** perpendicular, dz
+  0.0000, so no angle tolerance could ever separate it. My first theory - a
+  near-perpendicular arc CHORD - was wrong, and measuring the chords is what
+  showed it: they run 26.57, 33.09, 50.36, 75.25 degrees off X, none of them
+  near the tolerance.
+
+  **The discriminator is size, and a physical one was available**: a step
+  shorter than the tool's nose DIAMETER is not a wall the tool could cut from
+  outside - the nose rolls through it as a corner blend. `x_wall_indices` takes
+  a `min_rise` and the caller passes `2 * nose_r`. No new user parameter.
+
+  **The runaway, measured**: the longest feed in the program was **455.9729 mm,
+  reaching X-435.1979**, ending at Z-20.0121 - the spurious wall. After the fix
+  the longest feed is **69.5920** at X34.4831, an ordinary full-length pass.
+  testing_15_8 goes from 6 sub-paths to 4, testing_15_7 from 495 moves to 480.
+  Gates: `check_tangent` PASS min |dot| 1.00000, `test_leads` green,
+  testing_15_2 `3f98389e76f7` and 15_5 `2e60740fdab8` still hash-identical.
+
+  - [ ] **A LEAD THAT RUNS 455 mm IS ITSELF A FAULT**, and it is only masked
+    now. An invalid detour triggered it, but nothing in the lead code refuses
+    to emit a lead longer than the part. A guard there would have turned this
+    into an error instead of a picture. Not built - there is no reproducing
+    case any more, and a speculative clamp could hide a real geometry problem.
+
 - [ ] **STILL OPEN on the X wall.** Native compensation and the no-comp path
   do NOT get the detour - only In CAM does, because only the CAM branch has a
   path directory. `_pl_pf_*` and `_pl_fc_*` are single tables. The old

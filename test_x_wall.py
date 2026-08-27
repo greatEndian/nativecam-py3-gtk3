@@ -109,6 +109,28 @@ def main():
               L.x_wall_moves(Z_WALL, X_BASE, X_TOP, 1, FRONT, X_TOP - 1.0),
               Z_WALL, X_BASE, X_TOP, 1, FRONT, X_TOP - 1.0)))
 
+    # --- 3b. a step shorter than the nose diameter is a corner, not a wall -
+    # greatEndian, 2026-08-27: "at boss segment start point of arc it generates
+    # infinite long orange stand still line". On testing_15_8 the offset path
+    # runs the cylinder into the boss arc through a 0.626 mm EXACTLY
+    # perpendicular step - dz is 0.0000, so no angle tolerance separates it
+    # from a real wall - and a detour landed in the middle of the arc.
+    NOSE_DIA = 0.8
+    check('a 0.626 step is rejected at the nose diameter',
+          L.x_wall_indices(wall(0.0, 0.626), TOL, NOSE_DIA) == [])
+    check('   and the real 19.24 wall beside it is still found',
+          L.x_wall_indices(wall(0.0, 19.24), TOL, NOSE_DIA) == [1])
+    check('   the boundary is the nose diameter itself',
+          L.x_wall_indices(wall(0.0, NOSE_DIA + 0.01), TOL, NOSE_DIA) == [1]
+          and L.x_wall_indices(wall(0.0, NOSE_DIA - 0.01), TOL, NOSE_DIA) == [])
+    check('   with no minimum, the step reads as a wall - which is the bug',
+          L.x_wall_indices(wall(0.0, 0.626), TOL) == [1],
+          'the control does not reproduce the fault, so it proves nothing')
+    check('a short step does not split the contour either',
+          len(L.split_contour_at_walls(
+              [(0.0, 20.0), (-10.0, 20.0), (-10.0, 20.626), (-20.0, 20.626)],
+              TOL, FRONT, NOSE_DIA)) == 1)
+
     # --- 4. the split into sub-passes, which is how it is actually built --
     # greatEndian rejected a per-point rapid flag: it would have cost a third
     # slot per point and dropped the finish-contour table from 100 points to
