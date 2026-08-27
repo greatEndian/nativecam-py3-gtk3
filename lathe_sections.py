@@ -4090,6 +4090,44 @@ def xw_settings(polyline_feature):
     return int(_f('param_xw_dir')), _f('param_xw_front'), _f('param_xw_tol')
 
 
+def _back_along(points, i, dist):
+    """Walk back along the path from points[i], covering `dist` measured in Z.
+
+    Returns (walked, keep) - the points travelled, points[i] first and the far
+    end interpolated onto the segment it falls in; and `keep`, the number of
+    ORIGINAL points from the start of the path that are still in front of it.
+
+    THE SURFACE INTO A WALL IS NOT ALWAYS A CYLINDER. greatEndian, 2026-08-27:
+    behind a boss the tool meets the artificial back-angle ramp, and elsewhere
+    an arc or a taper - *"movement have to be in all axis together"*. Holding X
+    at the corner radius and moving in pure Z, which is what this did, is right
+    only where the incoming surface is parallel to Z; on a ramp it leaves the
+    stop point off the contour and drags the clean-up through the material or
+    through air. So both ends of the detour are interpolated ALONG the path.
+
+    Segments with no Z extent are stepped over rather than measured: they make
+    no progress toward `dist` and dividing by their length would not end well.
+    """
+    walked = [points[i]]
+    acc, j = 0.0, i
+    while j > 0:
+        z1, x1 = points[j]
+        z0, x0 = points[j - 1]
+        seg = abs(z1 - z0)
+        if seg <= 1e-12:
+            walked.append((z0, x0))
+            j -= 1
+            continue
+        if acc + seg >= dist - 1e-12:
+            t = (dist - acc) / seg
+            walked.append((z1 + (z0 - z1) * t, x1 + (x0 - x1) * t))
+            return walked, j
+        acc += seg
+        walked.append((z0, x0))
+        j -= 1
+    return walked, 0
+
+
 def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
                            rising_only=True):
     """The contour cut into sub-paths at every perpendicular X wall.
@@ -4143,14 +4181,21 @@ def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
         z_prev = points[i - 1][0]
         if abs(z0 - z_prev) < EPS:
             continue                      # arrived radially: nothing to stop
-        d = 1.0 if z0 > z_prev else -1.0
-        z_stop = z0 - d * front
-        # the stop must stay inside the segment it shortens, or the pass would
-        # end behind where it began
-        if abs(z_stop - z_prev) > abs(z0 - z_prev):
+        # BOTH ENDS FOLLOW THE CONTOUR - see _back_along. The stop is the point
+        # `front` back along the surface, carrying whatever X that surface has
+        # there, and the clean-up retraces twice that distance the same way, so
+        # a ramp, an arc or a taper is cut along rather than across.
+        approach, keep = _back_along(points, i, front)
+        clean, _k2 = _back_along(points, i, 2.0 * front)
+        if len(approach) < 2 or len(clean) < 2:
             continue
-        out.append(list(points[start:i]) + [(z_stop, x0)])
-        out.append([(z0, x1), (z0, x0), (z0 - d * 2.0 * front, x0)])
+        prefix = list(points[start:keep]) + [approach[-1]]
+        if len(prefix) < 2:
+            continue
+        out.append(prefix)
+        # the wall top first, so the pass leads in from outside and cuts the
+        # face down to the corner; then back out along the surface
+        out.append([(z0, x1)] + clean)
         start = i + 1
     if start < len(points):
         out.append(list(points[start:]))

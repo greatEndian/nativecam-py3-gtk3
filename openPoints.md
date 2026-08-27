@@ -150,6 +150,40 @@ the two cuts only touch.
     into an error instead of a picture. Not built - there is no reproducing
     case any more, and a speculative clamp could hide a real geometry problem.
 
+- [x] **THE DETOUR HELD X CONSTANT AND GOUGED THE BACK-ANGLE RAMP — FIXED**,
+  2026-08-27. greatEndian: *"behind boss artificial angled tool back respected
+  area where we need respect not just Z axis but X axis also in the final move
+  back movement ... if there is arc or taper present movement have to be in all
+  axis together"*.
+
+  Both ends of the detour - the stop-short and the 2x clean-up - held X at the
+  corner radius and moved in pure Z. That is right only where the surface into
+  the wall is parallel to Z. Behind a boss it is the **artificial back-angle
+  ramp**, and elsewhere an arc or a taper.
+
+  **Measured on testing_15_8, and it was a gouge, not a cosmetic error.** The
+  ramp rises **0.4617 mm of diameter over the 1.0 mm clean-up**:
+
+  | detour | corner X | clean-up ends X | before |
+  |---|---|---|---|
+  | pre-finish | 49.9592 | **50.4209** | 49.9592 |
+  | finish | 48.6819 | **49.1436** | 48.6819 |
+
+  Holding X at the corner put the tool BELOW that rising surface for the whole
+  move - up to **0.2308 mm of radius into the finished ramp**, on both passes.
+
+  `_back_along` walks the path backwards by a Z distance and interpolates onto
+  the segment the end falls in, so the stop carries whatever X the surface has
+  there and the clean-up retraces the real vertices. Segments with no Z extent
+  are stepped over rather than measured.
+  Tested on a taper - stop at X21.9 and clean-up at X21.8 where the corner is
+  22.0 - and on a multi-segment ramp, where the clean-up keeps every vertex it
+  crosses instead of cutting the chord across them. The flat case is unchanged.
+  Gates: `check_tangent` PASS min |dot| 1.00000, `test_leads` green,
+  testing_15_2 `3f98389e76f7` and 15_5 `2e60740fdab8` hash-identical;
+  testing_15_7 keeps 480 moves with new coordinates, which is the clean-ups
+  following the surface.
+
 - [ ] **STILL OPEN on the X wall.** Native compensation and the no-comp path
   do NOT get the detour - only In CAM does, because only the CAM branch has a
   path directory. `_pl_pf_*` and `_pl_fc_*` are single tables. The old

@@ -167,6 +167,54 @@ def main():
               c[-1] == prof[-1], 'C is %s' % (c,))
         print('      A %s  B %s  C %s' % (a, b, c))
 
+    # --- 4b. the surface into the wall is not always a cylinder ----------
+    # greatEndian, 2026-08-27: behind a boss the tool meets the artificial
+    # back-angle ramp, and elsewhere an arc or a taper - "movement have to be
+    # in all axis together". Holding X at the corner radius is right only on a
+    # surface parallel to Z; on a ramp the stop lands off the contour and the
+    # clean-up runs through material or through air.
+    #
+    # A TAPER rising 2.0 over 10.0 into a wall: dx/dz is 0.2, so the stop at
+    # 0.5 back must sit at X21.9 and the clean-up at 1.0 back at X21.8 - NOT
+    # at the corner's 22.0.
+    tap = [(0.0, 20.0), (-10.0, 22.0), (-10.0, 27.0), (-20.0, 27.0)]
+    parts = L.split_contour_at_walls(tap, TOL, FRONT, 0.0)
+    check('a taper into a wall still splits', len(parts) == 3,
+          '%d parts' % len(parts))
+    if len(parts) == 3:
+        a, b, _c = parts
+        print('      taper: A ends %s   B %s' % (a[-1], b))
+        check('   the stop follows the taper in X, not the corner radius',
+              abs(a[-1][0] + 9.5) < 1e-9 and abs(a[-1][1] - 21.9) < 1e-9,
+              'stop is %s, wanted (-9.5, 21.9)' % (a[-1],))
+        check('   and the clean-up follows it too',
+              abs(b[-1][0] + 9.0) < 1e-9 and abs(b[-1][1] - 21.8) < 1e-9,
+              'clean-up ends %s, wanted (-9.0, 21.8)' % (b[-1],))
+        check('   the clean-up moves in BOTH axes',
+              abs(b[-1][1] - b[-2][1]) > 1e-9,
+              'X did not change: %s -> %s' % (b[-2], b[-1]))
+
+    # A RAMP OF SEVERAL SHORT SEGMENTS - an arc, or the back-angle shadow -
+    # where the clean-up spans more than one of them and has to keep every
+    # vertex between, or it cuts the chord instead of the surface.
+    ramp = [(0.0, 20.0), (-9.0, 21.0), (-9.4, 21.2), (-9.8, 21.5),
+            (-10.0, 21.8), (-10.0, 27.0), (-20.0, 27.0)]
+    parts = L.split_contour_at_walls(ramp, TOL, FRONT, 0.0)
+    check('a multi-segment ramp into a wall splits', len(parts) == 3,
+          '%d parts' % len(parts))
+    if len(parts) == 3:
+        a, b, _c = parts
+        print('      ramp:  A ends %s   B %s' % (a[-1], b))
+        check('   the clean-up keeps the vertices it crosses',
+              len(b) >= 4, 'B has only %d points: %s' % (len(b), b))
+        zs = [pt[0] for pt in b[1:]]
+        check('   and it travels twice the stand-off along Z',
+              abs(abs(zs[-1] - zs[0]) - 2.0 * FRONT) < 1e-9,
+              'travelled %.4f' % abs(zs[-1] - zs[0]))
+        check('   every clean-up point sits on the ramp, none at one radius',
+              len({round(pt[1], 6) for pt in b[1:]}) > 1,
+              'all at one X: %s' % (b[1:],))
+
     # A PROFILE WITHOUT A WALL MUST NOT MOVE AT ALL - that is what makes this
     # safe to switch on, and it is asserted rather than assumed.
     plain = [(0.0, 20.0), (-10.0, 22.0), (-20.0, 22.0)]
