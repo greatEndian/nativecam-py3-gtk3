@@ -85,11 +85,50 @@ the two cuts only touch.
     when it ends a full stand-off further from it. Measured from the wall it
     is 1.0000 against 0.5000. The assertion now measures from the wall.
 
-- [ ] **STAGE 3 REMAINDER - emitting the directory and running sub-passes.**
-  Python splits correctly; what is left is emitting the sub-path directory
-  from the contour builders and having the pass loop run each entry with its
-  own leads. The old `o<xw_00>` branch in `g123_lathe.ngc:38` - the one that
-  rapided out through standing metal - comes out at the same time.
+- [x] **STAGE 3 - DONE for In-CAM, and verified on testing_15_8.** The CAM
+  directory is a flat list of sub-paths; both pass loops walk it and run the
+  entries they own, backwards when the pass is reversed - cam_load reverses
+  points INSIDE a path, so the order the pieces are cut in has to turn round
+  with them.
+  **Measured on testing_15_8**, all three detours: face at one Z, descending
+  from outside, clean-up **1.0000 = 2 x 0.5000**, the previous sub-path ending
+  **exactly 0.5000** short and the clean-up passing it by **0.5000**.
+  Directory: 6 sub-paths - pre-finish 2 parts, finish 4.
+
+  - [x] **A REGRESSION I CAUSED AND CAUGHT, and it is the slot budget again.**
+    The first cut put the owner in the directory itself, three slots per entry.
+    That cost one slot on EVERY project, and **testing_13_arcs was already at
+    384 of 384**: it needed **386** and In CAM refused to compensate at all -
+    *"the offset path needs 386 parameter slots and only 384 are safe"*.
+    `test_leads` caught it. The owners now live in a separate table that only
+    exists when something actually split, so the directory stays two slots per
+    entry and **a project without walls pays nothing**. `_pl_cam_own` is 0
+    there and entry k IS pass k, exactly as before.
+    This is the fourth time the parameter-slot budget has bitten in this
+    codebase. It is not a place to spend a slot casually.
+
+  - [x] **The untouched case is PROVEN, not assumed**: testing_15_2 341 moves
+    `3f98389e76f7` and testing_15_5 478 moves `2e60740fdab8`, hash-identical
+    across the change, both with `#3157 = 0`. testing_15_7 has `#3157 = 2` and
+    moves 472 -> 495, which is the feature working. Only projects with X wall
+    cut on change at all.
+    Gates: `cam_map` 6/6, `test_x_wall` 32 checks, `test_leads` **fully green**
+    - including the testing_13_arcs case that was red before this work, which
+    I have no proven explanation for and am not claiming credit for -
+    `test_x_continuity` and `test_sections` pass, `check_tangent` **[VERDICT:
+    PASS]** on testing_15_8, min |dot| 1.00000 over 136562 canon events.
+
+- [ ] **STILL OPEN on the X wall.** Native compensation and the no-comp path
+  do NOT get the detour - only In CAM does, because only the CAM branch has a
+  path directory. `_pl_pf_*` and `_pl_fc_*` are single tables. The old
+  `o<xw_00>` branch in `g123_lathe.ngc:38` is therefore LEFT IN PLACE: it is
+  still the only X-wall handling those modes have. It cannot fire on a split
+  sub-path - the wall segment there descends, and that branch requires
+  `to_x GT from_x` - so the two do not collide.
+  - [ ] A second measured probe worth keeping: my own directory reader went on
+    using stride 3 after the layout changed and printed nonsense - owners of
+    4776, counts of 4758. The generated file was right and the instrument was
+    stale. Re-read the layout before trusting a probe across a format change.
   ~~STAGE 3 - the .ngc has to walk it, and there is a RESOURCE PROBLEM.~~ `cam_load` hard-codes `dir = 1` for every point, so nothing
   can currently emit the two rapids. The point tables are (z, x) PAIRS.
   **The numbered-parameter space is full**: windows run to `CAM_TOP = 4984` and

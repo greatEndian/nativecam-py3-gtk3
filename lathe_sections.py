@@ -2853,13 +2853,41 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
         return _refuse('the offset path collapsed - the nose radius is too '
                        'large for this profile')
 
+    # EACH PASS MAY BECOME SEVERAL SUB-PATHS, split where the contour meets a
+    # perpendicular X wall - see split_contour_at_walls. The directory below is
+    # a flat list of sub-paths and `owner` says which pass each belongs to, so
+    # the pass loops walk their own entries and nothing else changes shape. A
+    # profile with no wall, or the feature off, yields exactly one sub-path per
+    # pass and the identical directory this emitted before.
+    xw_mode, xw_front, xw_tol = xw_settings(polyline_feature)
+    subs, owner = [], []
+    for k, p in enumerate(paths):
+        parts = (split_contour_at_walls(p, xw_tol, xw_front)
+                 if xw_mode == 2 and xw_front > 0 else [p])
+        for part in parts:
+            subs.append(part)
+            owner.append(k)
+
+    # THE OWNER TABLE ONLY EXISTS WHEN SOMETHING SPLIT, and that is not tidiness
+    # - it is the slot budget. Carrying an owner slot in the directory itself
+    # cost one per entry on EVERY project, and testing_13_arcs was already at
+    # 384 of 384: it needed 386 and refused to compensate at all. So the
+    # directory stays two slots per sub-path exactly as it was, entry k is
+    # pass k when nothing split, and the owners are appended after the points
+    # only when they are needed. A project without walls pays nothing.
+    split = len(subs) != len(paths)
+
     # directory first, then the points; the base of each table depends on how
     # long every table before it turned out to be
-    ptr = CAM_BASE + 2 * len(paths)
+    ptr = CAM_BASE + 2 * len(subs)
     ptrs = []
-    for p in paths:
+    for p in subs:
         ptrs.append(ptr)
         ptr += 2 * len(p)
+    own_base = 0
+    if split:
+        own_base = ptr
+        ptr += len(subs)
     if ptr > CAM_TOP:
         return _refuse('the offset path needs %d parameter slots and only %d '
                        'are safe to use - reduce the number of finish passes, '
@@ -2869,18 +2897,27 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     lines = ['(nose compensation done in CAM: these are already-offset control)',
              '(point paths, so the machine runs uncompensated - see _tip_cam)',
              '#<_pl_cam_dir> = %d' % CAM_BASE,
-             '#<_pl_cam_n>   = %d' % len(paths),
-             '#<_pl_cam_max> = %d' % max(len(p) for p in paths)]
-    for k, (p, base) in enumerate(zip(paths, ptrs)):
+             '#<_pl_cam_n>   = %d' % len(subs),
+             '#<_pl_cam_own> = %d' % own_base,
+             '#<_pl_cam_max> = %d' % max(len(p) for p in subs)]
+    for k, (p, base) in enumerate(zip(subs, ptrs)):
         lines.append('#%d = %d' % (CAM_BASE + 2 * k, base))
         lines.append('#%d = %d' % (CAM_BASE + 2 * k + 1, len(p)))
-    for k, (p, base) in enumerate(zip(paths, ptrs)):
-        lines.append('(%s, allowance %s + nose %s, %d points)'
-                     % ('pre-finish pass' if k == 0 else 'finish pass %d' % k,
-                        _fmt(offsets[k]), _fmt(nose_r), len(p)))
+    for k, (p, base) in enumerate(zip(subs, ptrs)):
+        lines.append('(%s%s, allowance %s + nose %s, %d points)'
+                     % ('pre-finish pass' if owner[k] == 0
+                        else 'finish pass %d' % owner[k],
+                        '' if owner.count(owner[k]) == 1
+                        else ' part %d of %d' % (owner[:k + 1].count(owner[k]),
+                                                 owner.count(owner[k])),
+                        _fmt(offsets[owner[k]]), _fmt(nose_r), len(p)))
         for i, (z, x) in enumerate(p):
             lines.append('#%d = %s' % (base + 2 * i, _fmt(z)))
             lines.append('#%d = %s' % (base + 2 * i + 1, _fmt(x / DIAMETER_MODE)))
+    if split:
+        lines.append('(which pass each sub-path belongs to, 0 the pre-finish)')
+        for k, o in enumerate(owner):
+            lines.append('#%d = %d' % (own_base + k, o))
     return '\n'.join(lines)
 
 
@@ -4022,7 +4059,21 @@ def check_x_wall_moves(moves, z_wall, x_base, x_top, approach, front, lead_x):
     return bad
 
 
-def split_contour_at_walls(points, tol_deg, front, lead_x, rising_only=True):
+def xw_settings(polyline_feature):
+    """(mode, stand-off, tolerance) for the perpendicular-X-wall detour.
+
+    mode is param_xw_dir: 0 "With pass" leaves the contour alone, 2 "Outside to
+    inside" is the one greatEndian asked to fix and the only one this touches.
+    A stand-off of 0 is off, so an existing project that has never seen these
+    parameters keeps exactly the contour it has today.
+    """
+    def _f(name, default=0.0):
+        p = polyline_feature.get_param(name)
+        return _to_float(p.get_ngc_value()) if p is not None else default
+    return int(_f('param_xw_dir')), _f('param_xw_front'), _f('param_xw_tol')
+
+
+def split_contour_at_walls(points, tol_deg, front, rising_only=True):
     """The contour cut into sub-paths at every perpendicular X wall.
 
     Returns a list of point lists. One entry means no wall was found and the
@@ -4051,6 +4102,12 @@ def split_contour_at_walls(points, tol_deg, front, lead_x, rising_only=True):
     down the face to the corner, then feed along Z by twice the stand-off - the
     2x being greatEndian's correction, since one ends exactly on the stop point
     and leaves the two cuts merely touching.
+
+    There is deliberately no lead level argument. B simply STARTS at the wall
+    top, and the pass machinery's own lead-in brings the tool onto that point
+    from outside with the configured length and angle - which is what "yes
+    existing" meant. A lead level passed in here would be a second opinion
+    about geometry the lead code already owns.
     """
     if front <= 0 or tol_deg is None or tol_deg < 0 or len(points) < 2:
         return [list(points)]

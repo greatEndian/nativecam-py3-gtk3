@@ -116,7 +116,7 @@ def main():
     # costs 2 slots per sub-path in a directory and leaves the point stride
     # alone, so no profile gets a smaller ceiling than it has today.
     prof = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-20.0, 25.0)]
-    parts = L.split_contour_at_walls(prof, TOL, FRONT, 26.0)
+    parts = L.split_contour_at_walls(prof, TOL, FRONT)
     check('a wall splits the contour into three sub-paths', len(parts) == 3,
           '%d: %s' % (len(parts), parts))
     if len(parts) == 3:
@@ -149,19 +149,19 @@ def main():
     # safe to switch on, and it is asserted rather than assumed.
     plain = [(0.0, 20.0), (-10.0, 22.0), (-20.0, 22.0)]
     check('a profile with no wall comes back untouched',
-          L.split_contour_at_walls(plain, TOL, FRONT, 26.0) == [plain])
+          L.split_contour_at_walls(plain, TOL, FRONT) == [plain])
     check('   and so does one with the feature switched off',
-          L.split_contour_at_walls(prof, TOL, 0.0, 26.0) == [prof])
+          L.split_contour_at_walls(prof, TOL, 0.0) == [prof])
     # a wall as the very first segment has no approach to stop
     check('a wall with no segment before it is left alone',
           L.split_contour_at_walls([(0.0, 20.0), (0.0, 25.0), (-10.0, 25.0)],
-                                   TOL, FRONT, 26.0)
+                                   TOL, FRONT)
           == [[(0.0, 20.0), (0.0, 25.0), (-10.0, 25.0)]])
     # and one approached radially - no Z travel to shorten
     check('a wall reached without Z travel is left alone',
           len(L.split_contour_at_walls(
               [(0.0, 18.0), (0.0, 20.0), (0.0, 25.0), (-10.0, 25.0)],
-              TOL, FRONT, 26.0)) == 1)
+              TOL, FRONT)) == 1)
 
     print()
     if FAILED:

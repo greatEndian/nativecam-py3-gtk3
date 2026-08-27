@@ -1267,8 +1267,41 @@ o<poly_lathe_mill> sub
                 (folded into that path's own geometry, so asking cutter comp for)
                 (it as well would apply it twice)
                 o<pf_cam> if [#<nose_comp> EQ 2]
-                        o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir>]] [#[#<_pl_cam_dir> + 1]] [#<pf_rev>]
-                        o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                        (ONE PASS MAY BE SEVERAL SUB-PATHS. The CAM directory is)
+                        (a flat list of them now, three slots each - base, count)
+                        (and the pass they belong to - because a contour that)
+                        (meets a perpendicular X wall is split there, so the)
+                        (wall gets its own lead-in from outside and its own)
+                        (retract. Slot 2 is that owner, 0 being the pre-finish.)
+                        (A profile with no wall yields one sub-path per pass and)
+                        (this loop runs exactly once, as it always did.)
+                        (REVERSING WALKS THE SUB-PATHS BACKWARDS TOO. cam_load)
+                        (reverses the points INSIDE a path; the order the paths)
+                        (are cut in has to turn round with them or a reversed)
+                        (pass would cut its pieces in the wrong sequence.)
+                        (_pl_cam_own is 0 when nothing split, and then entry k)
+                        (IS pass k - the directory is the two-slot one it has)
+                        (always been and no project without a wall pays a slot)
+                        (for this. testing_13_arcs was at 384 of 384 and an)
+                        (owner slot in the directory itself took it to 386, so)
+                        (In CAM refused to compensate at all.)
+                        #<sb_i> = 0
+                        o<pf_sub> while [#<sb_i> LT #<_pl_cam_n>]
+                                o<pf_ord> if [#<pf_rev> GT 0]
+                                        #<sb_k> = [#<_pl_cam_n> - 1 - #<sb_i>]
+                                o<pf_ord> else
+                                        #<sb_k> = #<sb_i>
+                                o<pf_ord> endif
+                                #<sb_o> = #<sb_k>
+                                o<pf_owt> if [#<_pl_cam_own> GT 0]
+                                        #<sb_o> = #[#<_pl_cam_own> + #<sb_k>]
+                                o<pf_owt> endif
+                                o<pf_own> if [#<sb_o> EQ 0]
+                                        o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir> + #<sb_k> * 2]] [#[#<_pl_cam_dir> + #<sb_k> * 2 + 1]] [#<pf_rev>]
+                                        o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                                o<pf_own> endif
+                                #<sb_i> = [#<sb_i> + 1]
+                        o<pf_sub> endwhile
                 o<pf_cam> elseif [#<_pl_pf_n> GT 0]
                         (native: the allowance is IN THIS CONTOUR, not in the D)
                         (word - with a non-zero L the interpreter takes D/2 to)
@@ -1331,8 +1364,27 @@ o<poly_lathe_mill> sub
                         (is already baked into each one, so this asks cutter comp)
                         (for no offset and no nose)
                         o<fn_cam> if [#<nose_comp> EQ 2]
-                                o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir> + #<fin_i> * 2]] [#[#<_pl_cam_dir> + #<fin_i> * 2 + 1]] [#<f_rev>]
-                                o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                                (the same flat sub-path directory the pre-finish)
+                                (walks - see there. This pass owns the entries)
+                                (whose slot 2 is fin_i, and takes them backwards)
+                                (when f_rev is set for the same reason.)
+                                #<sb_i> = 0
+                                o<fn_sub> while [#<sb_i> LT #<_pl_cam_n>]
+                                        o<fn_ord> if [#<f_rev> GT 0]
+                                                #<sb_k> = [#<_pl_cam_n> - 1 - #<sb_i>]
+                                        o<fn_ord> else
+                                                #<sb_k> = #<sb_i>
+                                        o<fn_ord> endif
+                                        #<sb_o> = #<sb_k>
+                                        o<fn_owt> if [#<_pl_cam_own> GT 0]
+                                                #<sb_o> = #[#<_pl_cam_own> + #<sb_k>]
+                                        o<fn_owt> endif
+                                        o<fn_own> if [#<sb_o> EQ #<fin_i>]
+                                                o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir> + #<sb_k> * 2]] [#[#<_pl_cam_dir> + #<sb_k> * 2 + 1]] [#<f_rev>]
+                                                o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
+                                        o<fn_own> endif
+                                        #<sb_i> = [#<sb_i> + 1]
+                                o<fn_sub> endwhile
                         o<fn_cam> elseif [#<_pl_fc_n> GT 0]
                                 o<cam_load> CALL [#<c_pds>] [#<_pl_fc_base>] [#<_pl_fc_n>] [#<f_rev>]
                                 o<lathe_poly_pass> CALL [#<c_pds>] [#<fin_shift>] [0] [0] [0] [#<_finish_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]

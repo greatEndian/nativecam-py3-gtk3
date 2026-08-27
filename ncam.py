@@ -2654,6 +2654,9 @@ class Preferences(object):
             self.default += ("#<_x_wall_dir>              = 0.0\n")
             # the perpendicular-X-wall detour. Globals, not CALL arguments:
             # the poly_lathe_mill call is already at the 30 argument limit.
+            # 0 means the CAM directory carries no owner table - entry k is
+            # pass k, which is every project that has no X wall to split at.
+            self.default += ("#<_pl_cam_own>              = 0.0\n")
             self.default += ("#<_pl_xw_front>             = [0.5 * #<_mm>]\n")
             self.default += ("#<_pl_xw_tol>               = 2.0\n")
             self.default += ("#<_level_blocked>           = 0.0\n")
