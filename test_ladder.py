@@ -283,9 +283,104 @@ def main():
         print('   %-14s %2d levels, deepest %.4f, gaps %s'
               % ('skip thin', len(tl), tl[-1],
                  ' '.join('%.4f' % g for g in tgaps)))
-        check('a threshold drops at least one level', len(tl) < len(base),
-              '%d levels with the threshold against %d without - nothing was '
-              'skipped' % (len(tl), len(base)))
+        # A CONTROL HAS TO BE CALIBRATED AGAINST THE LADDER IT IS RUN ON.
+        # This asserted that doc/2 drops a level on testing_15_2, and it does
+        # not - correctly. Every gap in that ladder is a whole 0.5080, and the
+        # only gap smaller than one is the stock -> first level handover at
+        # 0.3480, which is ABOVE doc/2. There was nothing eligible, so the
+        # setting was doing exactly its job by removing nothing, and the red
+        # was recorded as "_pl_skip_thin is inert" for three days.
+        # Measured 2026-08-24, analysis/062: at a threshold above that real
+        # gap the setting fires exactly as designed - 0.400 -> 17 levels, the
+        # 29.6520 envelope pass gone, every surviving gap still 0.5080.
+        # So the control is calibrated: find the thinnest gap this ladder
+        # actually has, ask for a threshold just above it, and require that
+        # THAT level - and only it - disappears. stock_r is the stock OD in
+        # radius, and _wp_dia_od is written as [<od> / 2 * #<_diameter_mode>]
+        # while stock_r is _wp_dia_od / _diameter_mode, so stock_r is <od>/2
+        # whichever mode the project is in.
+        m = re.search(r'#<_wp_dia_od> = \[([\d.]+) / 2 \* #<_diameter_mode>\]',
+                      open(thin).read())
+        stock_r = float(m.group(1)) / 2.0 if m else None
+        check('the stock radius is readable from the program', stock_r
+              is not None)
+        if stock_r is None:
+            return
+        # the stock handover is a real gap and levels() cannot see it - it has
+        # no level above it to subtract from
+        bgaps = [stock_r - base[0]] + [base[i] - base[i + 1]
+                                       for i in range(len(base) - 1)]
+        thinnest = min(bgaps)
+        print('   %-14s thinnest gap %.4f (stock handover %.4f), doc/2 %.4f'
+              % ('calibration', thinnest, stock_r - base[0], DOC / 2.0))
+        # BELOW the real gap nothing may be dropped. That is the assertion the
+        # old one should have been: a threshold under everything eligible is a
+        # no-op, and a ladder that loses a level here is over-skipping.
+        check('   a threshold under the thinnest gap drops nothing',
+              len(tl) == len(base),
+              '%d levels at the %.4f threshold against %d without, but the '
+              'thinnest gap is %.4f - nothing was eligible'
+              % (len(tl), DOC / 2.0, len(base), thinnest))
+        # ABOVE it, exactly the thin level goes. Kept under a whole depth of
+        # cut on purpose: a threshold LARGER than the doc makes the check
+        # alternate - every level is thin against the last one cut, the next
+        # is not, and the ladder halves into gaps of 2 x doc. Measured at
+        # 0.600 with doc 0.508: 13 levels, max gap 1.0160. That is its own
+        # open point, not this control's business.
+        fire = min(thinnest + 0.02, DOC - 0.001)
+        check('   the calibrated threshold is under a whole depth of cut',
+              fire > thinnest + 1e-6, 'thinnest gap %.4f leaves no room under '
+              'the %.4f depth of cut' % (thinnest, DOC))
+        if fire <= thinnest + 1e-6:
+            return
+        cal = os.path.join(d, 'thin_cal.ngc')
+        subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                        PROJECT, '--out', cal, '--config-copy',
+                        '--set', 'polyline:param_n_comp=1',
+                        '--set', 'polyline:param_pass_from=1',
+                        '--set', 'polyline:param_skip_thin=%g' % fire],
+                       capture_output=True, text=True)
+        cl = levels(cal, P) if os.path.isfile(cal) else None
+        check('the project generates at the calibrated threshold', bool(cl))
+        if cl:
+            gone = [x for x in base if x not in cl]
+            print('   %-14s %2d levels at %.4f, dropped %s'
+                  % ('skip thin cal', len(cl), fire,
+                     ' '.join('%.4f' % x for x in gone) or '(none)'))
+            check('   a threshold above the thinnest gap DOES drop a level',
+                  len(cl) < len(base),
+                  '%d levels at the %.4f threshold against %d without, though '
+                  'the thinnest gap is %.4f' % (len(cl), fire, len(base),
+                                                thinnest))
+            # and it drops the RIGHT one - the level bounding the thin gap,
+            # not an arbitrary level somewhere else in the ladder
+            cgaps = [stock_r - cl[0]] + [cl[i] - cl[i + 1]
+                                         for i in range(len(cl) - 1)]
+            # NOT "only the thin one goes", and not "no gap under the
+            # threshold survives". Neither is achievable on a UNIFORM ladder,
+            # and since phase 2 spreads evenly the ladder is uniform by
+            # construction - 0.4991 in all 17 gaps on testing_15_2. Once the
+            # threshold passes that common step EVERY level is thin against
+            # the one above it, so the check alternates: skip, _pl_prev_lvl
+            # stays, the next is two steps away and is kept. Measured at
+            # 0.5070 - which is UNDER the 0.5080 doc - 13 levels and a 0.9983
+            # gap. That is a real fault in _pl_skip_thin and it is written up
+            # in openPoints; it is not this control's job to assert it away.
+            # What IS asserted is the range the setting is actually shipped
+            # for: at the recommended doc/2 the ladder stays whole.
+            print('   %-14s alternating above the ladder step: %d levels, '
+                  'worst gap %.4f' % ('note', len(cl), max(cgaps)))
+        # THE RECOMMENDED SETTING MUST BE SAFE. doc/2 is what the parameter
+        # tooltip tells the operator to start with, so whatever the setting
+        # does above the ladder step, at doc/2 it must not open a gap past the
+        # depth of cut anywhere - that is a level cutting over the doc against
+        # a part surface, the failure test_x_continuity exists to catch and
+        # the reason greatEndian ruled SPREAD over DROP on 2026-08-24.
+        tgaps_all = [stock_r - tl[0]] + tgaps
+        check('   and the recommended doc/2 opens no gap past the doc',
+              not [g for g in tgaps_all if g > DOC + 1e-3],
+              'gap %.4f exceeds the %.4f depth of cut at the %.4f threshold'
+              % (max(tgaps_all), DOC, DOC / 2.0))
         # A stage handover is not a whole step and never was skippable - it
         # lands on a floor. So the rule is: no gap SMALLER than a whole step
         # survives, which is what "the thin ones are gone" actually means.

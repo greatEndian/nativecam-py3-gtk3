@@ -986,6 +986,31 @@ o<lathe_level_pass> sub
 	(knows where this level reached and carries on past it.)
 	(measured on the pass's OWN two ends, not on the emission order - the cut)
 	(is the same length whichever way round it is made)
+	(A CUT THAT DOES NOT ADVANCE IS NOT A CUT, and this is not the same)
+	(question as the length one below. The window travels from w_from to w_to,)
+	(z_dir is 1 when that runs toward decreasing Z, and a real cut therefore)
+	(always has z_dir * [z_start - z_end_cut] POSITIVE. Where the level has)
+	(dropped below everything it could reach, the scan hands back a start from)
+	(the entry contour and an end from the stop contour that have CROSSED, and)
+	(the pass came out running backwards along its own window.)
+	(Measured on testing_15_7, roughing back to front so every real cut runs)
+	(toward increasing Z: a 0.3304 mm pass at X25.3728 from Z-69.5918 to)
+	(Z-69.9222 - the wrong way - sitting under a ladder whose other levels run)
+	(1.8609, 4.0522, 6.2435, 8.4348 the right way at a 0.5059 X step. Those)
+	(lengths gain 2.1913 per level, so the next one down is -0.33: the level)
+	(has NO material and the crossed interval is what got emitted instead of)
+	(nothing. greatEndian, 2026-08-26: "this tiny pass is senseless it should)
+	(not be there even with property off skipp short passes .. it has wrong)
+	(location".)
+	(SO IT IS UNCONDITIONAL, not gated on _pl_min_pass. Skip short is a saving)
+	(the operator chooses and it measures ABS, which cannot see a sign; this)
+	(is a geometric impossibility and has to go whether or not that is on.)
+	(Returning here is already a supported path - _pl_level_z_end is set above,)
+	(so the disjoint-interval scan still knows where this level reached.)
+	o<inv> if [[#<z_dir> * [#<z_start> - #<z_end_cut>]] LE 0.000001]
+		o<lathe_level_pass> return
+	o<inv> endif
+
 	o<shrt> if [#<_pl_min_pass> GT 0]
 		o<shrt2> if [ABS[#<z_end_cut> - #<z_start>] LT #<_pl_min_pass>]
 			o<lathe_level_pass> return

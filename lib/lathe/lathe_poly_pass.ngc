@@ -204,6 +204,25 @@ o<lathe_poly_pass> sub
 		o<ae_dir> endif
 	o<ae_chk> endif
 
+	(THE APPROACH BELONGS TO THE END OF THE PROFILE IT ENTERS AT, and +Z is)
+	(the way in to the work on a front-loaded lathe for the same reason it is)
+	(the way out - see the lead-out below, and analysis/055 for the roughing)
+	(lead. z_dir comes from the record array, which back to front IS reversed,)
+	(so it carried the EMISSION as well as the frame and dragged the approach)
+	(round with it, exactly as it did the retreat before that was pinned.)
+	(Measured on testing_15_7, which is saved FRONT TO BACK: the pre-finish)
+	(lead-in at the part back started past the back end at Z-70.5991 and then)
+	(swept ACROSS the back-face corner, clearing the finished surface by)
+	(0.0768 where the pass it leads into holds 0.5080. Pinned it comes from)
+	(Z-69.1849 instead and holds the full 0.5080 the whole way. greatEndian,)
+	(2026-08-24: "wrong X position, undercut present".)
+	(Front to back has z_dir 1 already, so that case is unchanged to the byte -)
+	(testing_15_6 472 moves f27eaf129627 and testing_15_2 341 moves)
+	(3f98389e76f7, identical before and after.)
+	(Both entry branches take it: the straight lead-in below and the arc-entry)
+	(approach in the elseif, which is the same approach on a contour that)
+	(starts on an arc and had the same z_dir in it.)
+	#<li_zs> = 1
 	o<lead_in> if [[[#<li_len> GT 0] OR [#<li_rad> GT 0]] AND [#<arc_entry> EQ 0]]
 		(lead-in line direction: unit vector pointing from the entry toward)
 		(the far rapid point - deliberately measured from the fixed Z axis)
@@ -219,12 +238,12 @@ o<lathe_poly_pass> sub
 		(into the stock, with a 135 degree sweep; the Z-axis baseline used)
 		(here places it at Z>0, safely in front, with the correct 45 degree)
 		(sweep matching li_ang. 0 degrees continues along Z, 90 breaks radial)
-		#<li_bz> = [#<z_dir> * COS[#<li_ang>]]
+		#<li_bz> = [#<li_zs> * COS[#<li_ang>]]
 		#<li_bx> = [#<_pl_x_sgn> * SIN[#<li_ang>]]
 
 		#<_flt_ok> = 0
 		o<li_geom> if [#<li_rad> GT 0]
-			o<fillet_lead> CALL [#<comp_ez>] [#<comp_ex>] [#<_line_cos>] [#<_line_sin>] [#<li_bz>] [#<li_bx>] [#<li_rad>] [#<z_dir>]
+			o<fillet_lead> CALL [#<comp_ez>] [#<comp_ex>] [#<_line_cos>] [#<_line_sin>] [#<li_bz>] [#<li_bx>] [#<li_rad>] [#<li_zs>]
 		o<li_geom> endif
 
 		o<li_base> if [#<_flt_ok>]
@@ -269,11 +288,11 @@ o<lathe_poly_pass> sub
 		(move. It lands on the RAW entry point: compensation applies the offset)
 		(itself, instead of the pre-shift the straight-entry path above needs)
 		o<ae_len> if [#<li_len> GT 0]
-			#<ae_bz>  = [#<z_dir> * COS[#<li_ang>]]
+			#<ae_bz>  = [#<li_zs> * COS[#<li_ang>]]
 			#<ae_bx>  = SIN[#<li_ang>]
 			#<ae_dst> = #<li_len>
 		o<ae_len> else
-			#<ae_bz>  = #<z_dir>
+			#<ae_bz>  = #<li_zs>
 			#<ae_bx>  = 0
 			#<ae_dst> = #<_pl_z_clear>
 		o<ae_len> endif
@@ -393,14 +412,29 @@ o<lathe_poly_pass> sub
 		o<ex_stk> endif
 
 		(lead-out line direction: identical to the roughing lead-out in)
-		(lathe_level_pass.ngc - retreat toward the pass start, +Z for a)
-		(front-to-back pass, lifting +X, at the user angle - so every)
-		(lead-out arc, roughing or finishing/pre-finishing, has the same)
-		(geometric direction and dimensions. Measured from the Z axis, not)
-		(the local exit segment: a roughing level always travels pure Z and)
-		(retreats this way, and the user wants the finishing passes to match)
-		(it exactly. 0 degrees continues along Z, 90 breaks fully radial)
-		#<lo_bz> = [#<z_dir> * COS[#<lo_ang>]]
+		(lathe_level_pass.ngc - retreat +Z, lifting +X, at the user angle -)
+		(so every lead-out arc, roughing or finishing/pre-finishing, has the)
+		(same geometric direction and dimensions. Measured from the Z axis,)
+		(not the local exit segment: a roughing level always travels pure Z)
+		(and retreats this way, and the user wants the finishing passes to)
+		(match it exactly. 0 degrees continues along Z, 90 breaks fully)
+		(radial)
+		(THE RETREAT BELONGS TO THE END OF THE PROFILE IT LEAVES FROM, NOT TO)
+		(THE TRAVERSAL - analysis/055 for the same rule on the roughing lead.)
+		(In lathe_level_pass.ngc z_dir is the WINDOW's own frame and)
+		(_pl_cut_rev swaps which lead is approach and which is retreat, so)
+		(both leads keep pointing +Z whichever way the level is emitted. Here)
+		(z_dir comes from the record array, which back to front IS reversed,)
+		(so it carried the emission as well as the frame and dragged the)
+		(lead-out round with it: on testing_15_6 the back-to-front pre-finish)
+		(retreat left the front face at -Z, back along the body into rising)
+		(material, clearing by 0.3999 where front to back clears by 10.5643.)
+		(+Z is the way out of the work on a front-loaded lathe - off the)
+		(face, out of a bore, and back along the falling OD at the shoulder -)
+		(so the retreat takes it at both ends. Front to back has z_dir 1 and)
+		(is unchanged to the byte)
+		#<lo_zs> = 1
+		#<lo_bz> = [#<lo_zs> * COS[#<lo_ang>]]
 		#<lo_bx> = [#<_pl_x_sgn> * SIN[#<lo_ang>]]
 
 		#<_flt_ok> = 0
@@ -423,7 +457,7 @@ o<lathe_poly_pass> sub
 					#<_lo_reff> = #<_lo_rmax>
 				o<lo_cap2> endif
 			o<lo_cap> endif
-			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [#<_line_cos>] [#<_line_sin>] [-#<lo_bz>] [-#<lo_bx>] [#<_lo_reff>] [#<z_dir>]
+			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [#<_line_cos>] [#<_line_sin>] [-#<lo_bz>] [-#<lo_bx>] [#<_lo_reff>] [#<lo_zs>]
 		o<lo_geom> endif
 
 		o<lo_arc> if [#<_flt_ok>]

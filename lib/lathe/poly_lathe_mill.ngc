@@ -182,7 +182,6 @@ o<poly_lathe_mill> sub
         #<p2_first> = 0
         #<p1_n> = 1
         #<p2_n> = 1
-        #<p2_sgn> = 1
         #<lvl_thin> = 0
         o1001 else
                 #<rough_passes> = FUP[ABS[#<lad_tgt> - #<start_radius>] / #<_rough_cut>]
@@ -444,8 +443,10 @@ o<poly_lathe_mill> sub
         (    that range is anywhere near the finished surface, so it is spaced)
         (    EVENLY from the stock and ends exactly on the ceiling.)
         (  - PHASE 2 goes ceiling to floor, which is where the part is, so it)
-        (    takes whole depths of cut measured from the FLOOR outward and)
-        (    puts its remainder on its own first pass at the ceiling.)
+        (    is spaced EVENLY over its own span, landing exactly on the floor.)
+        (    It does NOT take the remainder onto its first pass the way the)
+        (    stock ladder does - see the block below for why that is wrong)
+        (    here whatever Space passes from is set to.)
         (One ladder shared by both left phase 2 restarting at the ceiling with)
         (a full step already spent, so it could not land on the floor: 17 gaps)
         (of 0.5080 and then 0.2374, a level grazing the finished surface. And)
@@ -462,25 +463,87 @@ o<poly_lathe_mill> sub
                 o<p1_n0> if [#<p1_n> LT 1]
                     #<p1_n> = 1
                 o<p1_n0> endif
-                #<p1_step>  = [[#<sect_top_r> - #<start_radius>] / #<p1_n>]
-                #<p1_first> = #<p1_step>
+                (PHASE 1 CUTS AT FULL DEPTH, AND ITS LEFTOVER STAYS PUT.)
+                (It divided its span evenly, which lands exactly on the section)
+                (ceiling but makes every pass thinner than the depth of cut for)
+                (the sake of the rounding. On testing_15_7 the span is 1.5329)
+                (against a 0.5080 doc - 3.017 of a pass - so it rounded up to 4)
+                (and cut 0.3832 four times, 0.75 of a depth each, where three)
+                (full passes would have done. greatEndian, 2026-08-26: *"we need)
+                (to let full depth of cut"*, and *"do not apply spreading)
+                (leftover depth into other passes"*.)
+                (So the grid is whole depths of cut and NOTHING is)
+                (redistributed: the leftover lands on the FIRST pass, at the)
+                (stock, and every other level sits exactly one doc from its)
+                (neighbour. The ladder still ends precisely on the ceiling,)
+                (which is what phase 2 anchors on.)
+                (WHY THE LEFTOVER MAY SIT AT THE STOCK when the same leftover)
+                (was ruled unacceptable at the ceiling two days earlier - the)
+                (difference is what lies under the pass. At the ceiling it is)
+                (the part, so a dropped level leaves the next one cutting over)
+                (the depth of cut into a surface that gets measured, and phase)
+                (2 spreads instead. Here it is oversize bar: a thin first pass)
+                (only rubs, and skipping it leaves the next pass taking)
+                (0.5169 - 1.02 of a doc - through raw stock, which the)
+                (unsectioned ladder has always done at this same envelope.)
+                (Removing it is the SHIPPED Skip thin roughing passes setting,)
+                (measured doing exactly this in analysis/062, and not a new)
+                (control - _pl_prev_lvl is stock_r at a window head, so the)
+                (first pass is judged against the bar and the guard sees it.)
+                (With that setting at 0 the thin pass IS emitted. That is the)
+                (operator's call, which is where greatEndian put it.)
+                #<p1_sgn> = 1
+                o<p1_sg> if [#<sect_top_r> LT #<start_radius>]
+                    #<p1_sgn> = -1
+                o<p1_sg> endif
+                #<p1_step>  = [#<p1_sgn> * #<_rough_cut>]
+                #<p1_first> = [[#<sect_top_r> - #<start_radius>] - #<p1_step> * [#<p1_n> - 1]]
             o<lad_p1> endif
             o<lad_p2> if [ABS[#<lad_tgt> - #<sect_top_r>] GT 0.000001]
-                #<p2_sgn> = 1
-                o<p2_sg> if [#<lad_tgt> LT #<sect_top_r>]
-                    #<p2_sgn> = -1
-                o<p2_sg> endif
                 #<p2_n> = FUP[ABS[#<lad_tgt> - #<sect_top_r>] / #<_rough_cut>]
                 o<p2_n0> if [#<p2_n> LT 1]
                     #<p2_n> = 1
                 o<p2_n0> endif
-                o<p2_an> if [#<_pl_pass_from> GT 0]
-                    #<p2_step>  = [#<p2_sgn> * #<_rough_cut>]
-                    #<p2_first> = [[#<lad_tgt> - #<sect_top_r>] - #<p2_step> * [#<p2_n> - 1]]
-                o<p2_an> else
-                    #<p2_step>  = [[#<lad_tgt> - #<sect_top_r>] / #<p2_n>]
-                    #<p2_first> = #<p2_step>
-                o<p2_an> endif
+                (PHASE 2 IS ALWAYS SPACED EVENLY - Space passes from does not)
+                (reach it, and that is deliberate.)
+                (The remainder-on-the-first-pass rule belongs to the ladder)
+                (that starts AT THE STOCK. There the odd leftover lands on a)
+                (full-length cut through oversize material, where a partial)
+                (depth costs nothing. Phase 2 does not start at the stock: its)
+                (first pass sits ON the section ceiling, which is the profile's)
+                (highest point plus the roughing allowance, so the leftover is)
+                (taken tangent to the boss top - against the part, with the)
+                (tool rubbing rather than cutting. That is the wrong place for)
+                (a partial pass no matter how large it happens to be.)
+                (And its size is not a property of the part at all. The ceiling)
+                (floats continuously with the pre-finish offset while this)
+                (ladder is anchored on the floor, so the leftover is span mod)
+                (doc - anything from 0 to a full depth of cut - and the pass)
+                (wanders up and down the ladder as the offset is changed: on)
+                (testing_15_6 it measured 0.89 / 0.21 / 0.51 / 0.10 / 0.89 of a)
+                (depth of cut at offsets 0.00 / 0.15 / 0.30 / 0.60 / 1.00, and)
+                (moved from 5th from the envelope to 4th to 3rd.)
+                (greatEndian, 2026-08-21: the pass belongs there only if its)
+                (own depth is at least half the depth of cut. Ruled 2026-08-24:)
+                (SPREAD it, do not drop it - dropping leaves the level below)
+                (taking remainder + doc, over the depth of cut and against the)
+                (finished surface, which is what test_x_continuity exists to)
+                (catch. First written as a spread only when the leftover fell)
+                (under half a depth of cut, which left 0.2591 standing at the)
+                (default 0.30 offset - over the threshold by 0.0051 - and)
+                (greatEndian reported the pass still there on testing_15_6.)
+                (It is unconditional now, because the threshold was never the)
+                (real question: a partial pass at the ceiling is misplaced at)
+                (every size, and an even division cannot produce one anyway -)
+                (with n GE 2 the smallest even step is exactly doc/2.)
+                (Dividing the same span into the same p2_n steps keeps every)
+                (step under the depth of cut and still lands the last one)
+                (exactly on the floor, so nothing is dropped and no level)
+                (count changes. Space passes from keeps its meaning through)
+                (lad_tgt, which anchoring still reassigns to anch_floor above,)
+                (so the two settings go on producing different ladders.)
+                #<p2_step>  = [[#<lad_tgt> - #<sect_top_r>] / #<p2_n>]
+                #<p2_first> = #<p2_step>
             o<lad_p2> endif
         o<lad2> endif
 
@@ -657,6 +720,16 @@ o<poly_lathe_mill> sub
                         o<fl_last> endif
                 o<fl_use> endif
                 o<wh_00> while [1]
+                        (p1_cut IS READ OUTSIDE o<lvl_ok>, at the floor-stage)
+                        (advance below, so it has to exist on every path through)
+                        (the loop - a level that is out of band, thin, or past)
+                        (stock never enters lvl_ok, and if that level sits on)
+                        (lvl_floor the read came first: Named parameter)
+                        (#<p1_cut> not defined, which aborts the program at run)
+                        (time with nothing wrong at generation time. Reset per)
+                        (LEVEL, which is also what it means - the copy inside)
+                        (lvl_ok is left where it is documented.)
+                        #<p1_cut> = 0
                         (a level outside this window's radius band is handled by)
                         (a different window - either the merged one above the)
                         (boundary, or the split ones below it)
@@ -760,11 +833,24 @@ o<poly_lathe_mill> sub
                                         (low enough for this level, walking the table)
                                         (from its back end; with none left the sub-span)
                                         (runs to the window's own front and is the last)
+                                        (STRICTLY below the blocking radius, by a hair.)
+                                        (The table's radius is the peak PLUS the roughing)
+                                        (allowance, and that is exactly where the section)
+                                        (ceiling now sits too - so phase 1's last level)
+                                        (lands ON it on every project instead of only by)
+                                        (accident. A level at the floor grazes the peak)
+                                        (and removes nothing there, which is what the)
+                                        (front-to-back scan already decides for itself:)
+                                        (with LE, testing_15_6 cut r34.1671 as one)
+                                        (full-length pass front to back and as two split)
+                                        (intervals back to front - 43 cuts against 44 -)
+                                        (breaking the same-cut-set-either-way property)
+                                        (analysis/055 and 059 exist to hold.)
                                         #<sg_from> = #<w_from>
                                         o<sg_find> while [[#<sg_use> GT 0] AND [#<sg_i> GE 0]]
                                                 #<sg_p> = [3160 + #<sg_i> * 2]
                                                 #<sg_i> = [#<sg_i> - 1]
-                                                o<sg_act> if [[#<current_radius> LE [#[#<sg_p> + 1] / #<_diameter_mode>]] AND [[#<z_dirw> * [#[#<sg_p>] - #<w_from>]] LT -0.0001] AND [[#<z_dirw> * [#[#<sg_p>] - #<sg_to>]] GT 0.0001]]
+                                                o<sg_act> if [[#<current_radius> LE [[#[#<sg_p> + 1] / #<_diameter_mode>] - 0.0001]] AND [[#<z_dirw> * [#[#<sg_p>] - #<w_from>]] LT -0.0001] AND [[#<z_dirw> * [#[#<sg_p>] - #<sg_to>]] GT 0.0001]]
                                                         #<sg_from> = #[#<sg_p>]
                                                         #<sg_hit> = 1
                                                         o<sg_find> break
@@ -1084,6 +1170,28 @@ o<poly_lathe_mill> sub
                                         #<cut_step> = [[#<lvl_floor> - #<current_radius>] / #<fl_n>]
                                         #<first_step> = #<cut_step>
                                 o<fl_more> else
+                                        (PHASE 1 REACHED ITS OWN FLOOR - the section)
+                                        (ceiling - instead of handing over on an)
+                                        (obstruction, and that path had to say so too.)
+                                        (Every phase-2 window starts at sect_top_r unless)
+                                        (_pl_ph1_front_cut says phase 1 already cut that)
+                                        (radius, and until the ceiling carried the)
+                                        (roughing allowance phase 1 always ran out of)
+                                        (profile before it ran out of ladder, so the)
+                                        (clean-finish path never happened. With the)
+                                        (allowance in it does: on testing_15_6 the)
+                                        (ceiling level came out as two identical)
+                                        (full-length passes at r34.1671, 44 cuts of which)
+                                        (only 43 distinct - the same double-cut)
+                                        (analysis/058 removed from the obstruction path.)
+                                        (_pl_level_z_end is how far that last level)
+                                        (actually got, the same quantity the obstruction)
+                                        (handover passes on, so a level that stopped short)
+                                        (only lets the windows it really covered skip it.)
+                                        o<p1_end> if [[#<w_idx> LT 0] AND [#<_pl_sectioning> GT 0] AND [#<p1_cut> GT 0]]
+                                                #<_pl_ph1_front_cut> = 1
+                                                #<_pl_ph1_z_end> = #<_pl_level_z_end>
+                                        o<p1_end> endif
                                         o<wh_00> break
                                 o<fl_more> endif
                         o<if_next> endif
@@ -1122,6 +1230,34 @@ o<poly_lathe_mill> sub
         (program generated from a template that predates it still runs.)
         o<prefin> if [#<_pl_pf_on> GT 0]
                 (begin pre-finish)
+                (THE PRE-FINISH IS A FINISHING PASS, SO IT TAKES THE FINISHING)
+                (DIRECTION. It reversed on rough_dir - the ROUGHING setting,)
+                (CALL arg 12 - while the finish pass below reverses on fin_dir,)
+                (arg 15. Two contour passes tracing the same contour were)
+                (reading two different parameters to decide which way round to)
+                (go, and on testing_15_7 those parameters differ: param_dir 1)
+                (back to front for roughing, param_f_dir 0 front to back for)
+                (finishing, both legitimate settings. The pre-finish followed)
+                (roughing and ran the part backwards against the finish pass.)
+                (FOUND BY INSTRUMENTING. Five readings of this branch chain)
+                (each looked conclusive and each was wrong - about which)
+                (branch runs and about what rough_dir even held. The run said)
+                (PFBRANCH 1 rev=1 against FNBRANCH 1 frev=0.)
+                (greatEndian, 2026-08-24: "mirrored lead in direction".)
+                (It also fixes two things that looked separate. The pre-finish)
+                (now ENDS at the part back like the finish does, where the)
+                (extend-to-stock block in lathe_poly_pass.ngc runs the contour)
+                (out to the stock envelope before the angled lead - so the)
+                (lead stops starting from inside the stock, and the pass stops)
+                (ending 14.65 mm under the envelope at the front.)
+                (Direction 2 alternates per pass and its FIRST finishing pass)
+                (is forward, so the pre-finish ahead of it is forward too.)
+                (rough_dir keeps its OTHER use at the level-array pick above -)
+                (roughing's own emission is still roughing's to choose.)
+                #<pf_rev> = 0
+                o<pf_rev_c> if [#<fin_dir> EQ 1]
+                        #<pf_rev> = 1
+                o<pf_rev_c> endif
                 (bracketed the way a feature is, so the preview can tell this)
                 (pass apart from the roughing levels above it and the finish)
                 (pass below - all three are plain feeds otherwise, at feeds it)
@@ -1131,7 +1267,7 @@ o<poly_lathe_mill> sub
                 (folded into that path's own geometry, so asking cutter comp for)
                 (it as well would apply it twice)
                 o<pf_cam> if [#<nose_comp> EQ 2]
-                        o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir>]] [#[#<_pl_cam_dir> + 1]] [#<rough_dir> EQ 1]
+                        o<cam_load> CALL [#<c_pds>] [#[#<_pl_cam_dir>]] [#[#<_pl_cam_dir> + 1]] [#<pf_rev>]
                         o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [2]
                 o<pf_cam> elseif [#<_pl_pf_n> GT 0]
                         (native: the allowance is IN THIS CONTOUR, not in the D)
@@ -1140,13 +1276,13 @@ o<poly_lathe_mill> sub
                         (it too, so an allowance folded into D cancels itself)
                         (on any surface parallel to an axis. Pass 0 offset and)
                         (let comp carry the bare nose. See analysis/004.)
-                        o<cam_load> CALL [#<c_pds>] [#<_pl_pf_base>] [#<_pl_pf_n>] [#<rough_dir> EQ 1]
+                        o<cam_load> CALL [#<c_pds>] [#<_pl_pf_base>] [#<_pl_pf_n>] [#<pf_rev>]
                         o<lathe_poly_pass> CALL [#<c_pds>] [0] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                 o<pf_cam> elseif [#<_pl_fc_n> GT 0]
                         (the drawn contour is not wholly reachable, so this)
                         (pass follows the soft one - the same surface the)
                         (roughing levels already stop against)
-                        o<cam_load> CALL [#<c_pds>] [#<_pl_fc_base>] [#<_pl_fc_n>] [#<rough_dir> EQ 1]
+                        o<cam_load> CALL [#<c_pds>] [#<_pl_fc_base>] [#<_pl_fc_n>] [#<pf_rev>]
                         o<lathe_poly_pass> CALL [#<c_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
                 o<pf_cam> else
                         o<lathe_poly_pass> CALL [#<r_pds>] [#<rough_target> - #<final_radius>] [0] [0] [0] [#<_rough_feed>] [#<li_len>] [#<li_ang>] [#<li_feed>] [#<lo_len>] [#<lo_ang>] [#<lo_feed>] [1] [#<li_rad>] [#<lo_rad>] [#<nose_comp>]
