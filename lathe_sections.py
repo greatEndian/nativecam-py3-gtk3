@@ -2862,7 +2862,8 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     xw_mode, xw_front, xw_tol = xw_settings(polyline_feature)
     subs, owner = [], []
     for k, p in enumerate(paths):
-        parts = (split_contour_at_walls(p, xw_tol, xw_front, 2.0 * nose_r)
+        parts = (split_contour_at_walls(p, xw_tol, xw_front, 2.0 * nose_r,
+                                        _stock_x(polyline_feature), nose_r)
                  if xw_mode == 2 and xw_front > 0 else [p])
         for part in parts:
             subs.append(part)
@@ -4076,6 +4077,12 @@ def check_x_wall_moves(moves, z_wall, x_base, x_top, approach, front, lead_x):
     return bad
 
 
+def _stock_x(polyline_feature):
+    """The stock envelope in the same units the point tables carry, or None."""
+    p = polyline_feature.get_param('param_b_x')
+    return _to_float(p.get_ngc_value()) if p is not None else None
+
+
 def xw_settings(polyline_feature):
     """(mode, stand-off, tolerance) for the perpendicular-X-wall detour.
 
@@ -4129,7 +4136,7 @@ def _back_along(points, i, dist):
 
 
 def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
-                           rising_only=True):
+                           stock_x=None, nose_r=0.0, rising_only=True):
     """The contour cut into sub-paths at every perpendicular X wall.
 
     Returns a list of point lists. One entry means no wall was found and the
@@ -4193,9 +4200,27 @@ def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
         if len(prefix) < 2:
             continue
         out.append(prefix)
-        # the wall top first, so the pass leads in from outside and cuts the
-        # face down to the corner; then back out along the surface
-        out.append([(z0, x1)] + clean)
+        # THE FACE STARTS AT THE STOCK ENVELOPE, NOT A NOSE RADIUS INSIDE IT.
+        # The stored path is control points, shifted in by the tip
+        # compensation, so a wall running out to the bar has its top at
+        # envelope - nose: the nose CONTACTS the envelope at exactly one point
+        # and the cut only touches it. greatEndian, 2026-08-28: *"from
+        # mathematical point of view we reach this point 100%, but in reality
+        # everything have some stiffness and rigidity and everything will
+        # somehow bend"* - and what is left is a small sharp tip at the
+        # outside. Measured on testing_15_8: the top sat at 34.6000 radius
+        # against a 35.0000 envelope.
+        # The pass END already does this - _ex_tgt adds the nose term to run
+        # out to the envelope - and only the start was missing it, which is
+        # the asymmetry.
+        # Guarded so it cannot lift a wall that stops INSIDE the part: the
+        # contact has to be reaching the envelope already before the control
+        # point is moved out onto it.
+        top = x1
+        if (stock_x is not None and x1 < stock_x
+                and x1 + 2.0 * nose_r >= stock_x - 1e-6):
+            top = stock_x
+        out.append([(z0, top)] + clean)
         start = i + 1
     if start < len(points):
         out.append(list(points[start:]))

@@ -215,6 +215,38 @@ def main():
               len({round(pt[1], 6) for pt in b[1:]}) > 1,
               'all at one X: %s' % (b[1:],))
 
+    # --- 4c. a wall running out to the bar starts ON the envelope --------
+    # greatEndian, 2026-08-28: the stored path is CONTROL points, shifted in by
+    # the tip compensation, so a wall reaching the bar has its top a nose
+    # radius inside the envelope - the nose contacts it at exactly one point.
+    # "from mathematical point of view we reach this point 100%, but in reality
+    # everything have some stiffness and rigidity and everything will somehow
+    # bend", and a small sharp tip is left at the outside.
+    NOSE, STOCK = 0.4, 35.0
+    reach = [(0.0, 20.0), (-10.0, 20.0), (-10.0, STOCK - NOSE), (-20.0, STOCK - NOSE)]
+    parts = L.split_contour_at_walls(reach, TOL, FRONT, 0.0, STOCK, NOSE)
+    check('a wall reaching the bar splits', len(parts) == 3, '%d' % len(parts))
+    if len(parts) == 3:
+        top = parts[1][0][1]
+        print('      face top %.4f, was %.4f, envelope %.4f, contact %.4f'
+              % (top, STOCK - NOSE, STOCK, top + NOSE))
+        check('   the face starts ON the envelope, not a nose inside it',
+              abs(top - STOCK) < 1e-9,
+              'top is %.4f, wanted %.4f' % (top, STOCK))
+        check('   so the nose over-travels past the bar instead of touching it',
+              top + NOSE > STOCK + 1e-9,
+              'contact %.4f only reaches %.4f' % (top + NOSE, STOCK))
+    # AND IT MUST NOT LIFT A WALL THAT STOPS INSIDE THE PART. Without this the
+    # rule would drag every internal step out to the bar.
+    inner = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-20.0, 25.0)]
+    parts = L.split_contour_at_walls(inner, TOL, FRONT, 0.0, STOCK, NOSE)
+    check('a wall that stops inside the part is NOT lifted to the bar',
+          len(parts) == 3 and abs(parts[1][0][1] - 25.0) < 1e-9,
+          'top is %s' % (parts[1][0][1] if len(parts) == 3 else parts,))
+    check('   and with no stock given nothing is lifted at all',
+          abs(L.split_contour_at_walls(reach, TOL, FRONT, 0.0)[1][0][1]
+              - (STOCK - NOSE)) < 1e-9)
+
     # A PROFILE WITHOUT A WALL MUST NOT MOVE AT ALL - that is what makes this
     # safe to switch on, and it is asserted rather than assumed.
     plain = [(0.0, 20.0), (-10.0, 22.0), (-20.0, 22.0)]

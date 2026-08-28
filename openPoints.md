@@ -184,6 +184,37 @@ the two cuts only touch.
   testing_15_7 keeps 480 moves with new coordinates, which is the clean-ups
   following the surface.
 
+- [x] **THE WALL FACE STARTED A NOSE RADIUS INSIDE THE BAR — FIXED**,
+  2026-08-28. greatEndian, after confirming the detour shape itself is right:
+  *"we have inlead X coordination again shifted toward the center by tool tip
+  compensation and its not starting from the stock envelope"*, on both the
+  pre-finish and the finish contour,
+  `photo/leadInIssueAtFinishPrefinishPass_0.png`.
+
+  The stored path is CONTROL points, shifted in by the tip compensation, so a
+  wall running out to the bar had its top at **34.6000 radius against a 35.0000
+  envelope** - the nose contacting the envelope at exactly one point. *"From
+  mathematical point of view we reach this point 100%, but in reality
+  everything have some stiffness and rigidity and everything will somehow
+  bend"*, and what survives is a small sharp tip at the outside.
+
+  **The asymmetry is the tell**: the pass END already adds the nose term -
+  `_ex_tgt = _cut_phys_x + _pl_rgh_ox` in `lathe_poly_pass.ngc` - to run out to
+  the envelope, and greatEndian had already approved that behaviour. Only the
+  START was missing it.
+
+  | | before | after |
+  |---|---|---|
+  | face top, control point | 34.6000 | **35.0000** - the envelope |
+  | nose contact there | 35.0000, touching | **35.4000**, 0.4 past the bar |
+
+  Guarded so it cannot drag an INTERNAL step out to the bar: the contact has to
+  be reaching the envelope already before the control point is moved onto it,
+  and a wall stopping inside the part is asserted to stay put.
+  Gates: `check_tangent` PASS min |dot| 1.00000, `test_leads` green,
+  testing_15_2 `3f98389e76f7` and 15_5 `2e60740fdab8` hash-identical,
+  testing_15_7 keeps 480 moves.
+
 - [ ] **STILL OPEN on the X wall.** Native compensation and the no-comp path
   do NOT get the detour - only In CAM does, because only the CAM branch has a
   path directory. `_pl_pf_*` and `_pl_fc_*` are single tables. The old
