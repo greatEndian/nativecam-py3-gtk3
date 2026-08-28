@@ -215,6 +215,34 @@ the two cuts only touch.
   testing_15_2 `3f98389e76f7` and 15_5 `2e60740fdab8` hash-identical,
   testing_15_7 keeps 480 moves.
 
+- [x] **THE 2x IS TWO NUMBERS NOW, BOTH SETTABLE FROM CAM**, 2026-08-28.
+  greatEndian: *"create from them Back lenght overlap UU(mm/inch) propert which
+  will able us to control this movememnt from CAM ... also create parameter
+  property in UU of before vertical segment lenght back offset"*.
+
+  The second of those **already existed** - `X wall stand-off`, `param_xw_front`
+  - and is exactly the distance before the vertical segment, so no duplicate
+  was made. The new one is `X wall back overlap`, `param_xw_back`, how far the
+  clean-up runs PAST the stop. The clean-up is **stand-off + overlap** instead
+  of 2 x stand-off; the two were locked together only because the overlap was
+  born as a correction to a 1x move.
+  `polyline.cfg` 1.64 -> 1.65, `_pl_xw_back` a global with a default in
+  `create_defaults`.
+
+  **The defaults reproduce the old behaviour to the digit**, which is what
+  makes it safe: with both at 0.5 the clean-up is still 1.0000, and
+  testing_15_2 `3f98389e76f7`, 15_5 `2e60740fdab8` and 15_7 `7601dadb411c` are
+  all hash-identical to the run before the split. Measured across the range:
+  overlap 0.0 -> 0.5000, 0.2 -> 0.7000, 0.5 -> 1.0000, 1.5 -> 2.0000, and at
+  zero the clean-up is asserted to end exactly ON the stop - the sliver case
+  the 2x existed to prevent, stated as a measurement rather than a belief.
+
+  - [x] **A signature trap caught by the tests, worth remembering.** Adding
+    `back` as the fourth positional argument silently shifted every existing
+    call: `split_contour_at_walls(pts, TOL, FRONT, 0.0)` had meant
+    `min_rise=0.0` and became `back=0.0`. All callers are keyword now past the
+    third argument.
+
 - [ ] **STILL OPEN on the X wall.** Native compensation and the no-comp path
   do NOT get the detour - only In CAM does, because only the CAM branch has a
   path directory. `_pl_pf_*` and `_pl_fc_*` are single tables. The old

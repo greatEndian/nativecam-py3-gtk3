@@ -2859,10 +2859,11 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     # the pass loops walk their own entries and nothing else changes shape. A
     # profile with no wall, or the feature off, yields exactly one sub-path per
     # pass and the identical directory this emitted before.
-    xw_mode, xw_front, xw_tol = xw_settings(polyline_feature)
+    xw_mode, xw_front, xw_back, xw_tol = xw_settings(polyline_feature)
     subs, owner = [], []
     for k, p in enumerate(paths):
-        parts = (split_contour_at_walls(p, xw_tol, xw_front, 2.0 * nose_r,
+        parts = (split_contour_at_walls(p, xw_tol, xw_front, xw_back,
+                                        2.0 * nose_r,
                                         _stock_x(polyline_feature), nose_r)
                  if xw_mode == 2 and xw_front > 0 else [p])
         for part in parts:
@@ -4088,13 +4089,18 @@ def xw_settings(polyline_feature):
 
     mode is param_xw_dir: 0 "With pass" leaves the contour alone, 2 "Outside to
     inside" is the one greatEndian asked to fix and the only one this touches.
+    The stand-off is how far SHORT of the wall the pass stops; the overlap is
+    how far the clean-up runs PAST that stop. They were one number - the
+    clean-up was twice the stand-off - until greatEndian asked for the two to
+    be settable separately, 2026-08-28.
     A stand-off of 0 is off, so an existing project that has never seen these
     parameters keeps exactly the contour it has today.
     """
     def _f(name, default=0.0):
         p = polyline_feature.get_param(name)
         return _to_float(p.get_ngc_value()) if p is not None else default
-    return int(_f('param_xw_dir')), _f('param_xw_front'), _f('param_xw_tol')
+    return (int(_f('param_xw_dir')), _f('param_xw_front'),
+            _f('param_xw_back'), _f('param_xw_tol'))
 
 
 def _back_along(points, i, dist):
@@ -4135,7 +4141,7 @@ def _back_along(points, i, dist):
     return walked, 0
 
 
-def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
+def split_contour_at_walls(points, tol_deg, front, back=None, min_rise=0.0,
                            stock_x=None, nose_r=0.0, rising_only=True):
     """The contour cut into sub-paths at every perpendicular X wall.
 
@@ -4162,9 +4168,10 @@ def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
     retract, which is already outside the material by construction.
 
     Sub-path B is the wall itself: lead in at the wall TOP from outside, feed
-    down the face to the corner, then feed along Z by twice the stand-off - the
-    2x being greatEndian's correction, since one ends exactly on the stop point
-    and leaves the two cuts merely touching.
+    down the face to the corner, then feed along Z by the stand-off plus the
+    overlap - so it sweeps through the stop point and carries on past it. With
+    no overlap it would end exactly on the stop, the two cuts would merely
+    meet, and the nose radius would leave a sliver standing there.
 
     There is deliberately no lead level argument. B simply STARTS at the wall
     top, and the pass machinery's own lead-in brings the tool onto that point
@@ -4174,6 +4181,14 @@ def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
     """
     if front <= 0 or tol_deg is None or tol_deg < 0 or len(points) < 2:
         return [list(points)]
+    # THE CLEAN-UP IS THE STAND-OFF PLUS THE OVERLAP. It was twice the
+    # stand-off, which is the same thing with the two locked together; they are
+    # separate numbers now so the overlap can be set for the material rather
+    # than inherited from where the pass stopped. `back` None keeps the old
+    # coupling, which is what every caller that has not been told about the new
+    # parameter still gets.
+    over = front if back is None else back
+    reach = front + over
     walls = x_wall_indices(points, tol_deg, min_rise, rising_only)
     if not walls:
         return [list(points)]
@@ -4193,7 +4208,7 @@ def split_contour_at_walls(points, tol_deg, front, min_rise=0.0,
         # there, and the clean-up retraces twice that distance the same way, so
         # a ramp, an arc or a taper is cut along rather than across.
         approach, keep = _back_along(points, i, front)
-        clean, _k2 = _back_along(points, i, 2.0 * front)
+        clean, _k2 = _back_along(points, i, reach)
         if len(approach) < 2 or len(clean) < 2:
             continue
         prefix = list(points[start:keep]) + [approach[-1]]

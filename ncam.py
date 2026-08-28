@@ -2658,6 +2658,7 @@ class Preferences(object):
             # pass k, which is every project that has no X wall to split at.
             self.default += ("#<_pl_cam_own>              = 0.0\n")
             self.default += ("#<_pl_xw_front>             = [0.5 * #<_mm>]\n")
+            self.default += ("#<_pl_xw_back>              = [0.5 * #<_mm>]\n")
             self.default += ("#<_pl_xw_tol>               = 2.0\n")
             self.default += ("#<_level_blocked>           = 0.0\n")
             self.default += ("#<_lo_rad_cap>              = 0.0\n")

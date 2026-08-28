@@ -129,7 +129,7 @@ def main():
     check('a short step does not split the contour either',
           len(L.split_contour_at_walls(
               [(0.0, 20.0), (-10.0, 20.0), (-10.0, 20.626), (-20.0, 20.626)],
-              TOL, FRONT, NOSE_DIA)) == 1)
+              TOL, FRONT, min_rise=NOSE_DIA)) == 1)
 
     # --- 4. the split into sub-passes, which is how it is actually built --
     # greatEndian rejected a per-point rapid flag: it would have cost a third
@@ -178,7 +178,7 @@ def main():
     # 0.5 back must sit at X21.9 and the clean-up at 1.0 back at X21.8 - NOT
     # at the corner's 22.0.
     tap = [(0.0, 20.0), (-10.0, 22.0), (-10.0, 27.0), (-20.0, 27.0)]
-    parts = L.split_contour_at_walls(tap, TOL, FRONT, 0.0)
+    parts = L.split_contour_at_walls(tap, TOL, FRONT, min_rise=0.0)
     check('a taper into a wall still splits', len(parts) == 3,
           '%d parts' % len(parts))
     if len(parts) == 3:
@@ -199,7 +199,7 @@ def main():
     # vertex between, or it cuts the chord instead of the surface.
     ramp = [(0.0, 20.0), (-9.0, 21.0), (-9.4, 21.2), (-9.8, 21.5),
             (-10.0, 21.8), (-10.0, 27.0), (-20.0, 27.0)]
-    parts = L.split_contour_at_walls(ramp, TOL, FRONT, 0.0)
+    parts = L.split_contour_at_walls(ramp, TOL, FRONT, min_rise=0.0)
     check('a multi-segment ramp into a wall splits', len(parts) == 3,
           '%d parts' % len(parts))
     if len(parts) == 3:
@@ -224,7 +224,8 @@ def main():
     # bend", and a small sharp tip is left at the outside.
     NOSE, STOCK = 0.4, 35.0
     reach = [(0.0, 20.0), (-10.0, 20.0), (-10.0, STOCK - NOSE), (-20.0, STOCK - NOSE)]
-    parts = L.split_contour_at_walls(reach, TOL, FRONT, 0.0, STOCK, NOSE)
+    parts = L.split_contour_at_walls(reach, TOL, FRONT, min_rise=0.0,
+                                     stock_x=STOCK, nose_r=NOSE)
     check('a wall reaching the bar splits', len(parts) == 3, '%d' % len(parts))
     if len(parts) == 3:
         top = parts[1][0][1]
@@ -239,13 +240,40 @@ def main():
     # AND IT MUST NOT LIFT A WALL THAT STOPS INSIDE THE PART. Without this the
     # rule would drag every internal step out to the bar.
     inner = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-20.0, 25.0)]
-    parts = L.split_contour_at_walls(inner, TOL, FRONT, 0.0, STOCK, NOSE)
+    parts = L.split_contour_at_walls(inner, TOL, FRONT, min_rise=0.0,
+                                     stock_x=STOCK, nose_r=NOSE)
     check('a wall that stops inside the part is NOT lifted to the bar',
           len(parts) == 3 and abs(parts[1][0][1] - 25.0) < 1e-9,
           'top is %s' % (parts[1][0][1] if len(parts) == 3 else parts,))
     check('   and with no stock given nothing is lifted at all',
-          abs(L.split_contour_at_walls(reach, TOL, FRONT, 0.0)[1][0][1]
+          abs(L.split_contour_at_walls(reach, TOL, FRONT, min_rise=0.0)[1][0][1]
               - (STOCK - NOSE)) < 1e-9)
+
+    # --- 4d. stand-off and overlap are two numbers now -------------------
+    # greatEndian, 2026-08-28: "create from them Back lenght overlap UU(mm/inch)
+    # propert which will able us to control this movememnt from CAM". The
+    # clean-up was twice the stand-off, which is the same thing with the two
+    # locked together; they set the distance before the wall and the distance
+    # past the stop independently now.
+    flat = [(0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-20.0, 25.0)]
+    for back, want in ((None, 2 * FRONT), (0.5, 1.0), (0.2, 0.7), (1.5, 2.0),
+                       (0.0, FRONT)):
+        parts = L.split_contour_at_walls(flat, TOL, FRONT, back)
+        b = parts[1]
+        travel = abs(b[-1][0] - b[1][0])
+        check('overlap %-4s -> clean-up %.4f' % (back, want),
+              abs(travel - want) < 1e-9, 'travelled %.4f' % travel)
+    # the defaults reproduce the old 2x exactly, which is what makes the new
+    # parameter safe to ship
+    check('   stand-off and overlap both 0.5 give the old 2x to the digit',
+          L.split_contour_at_walls(flat, TOL, FRONT, FRONT)
+          == L.split_contour_at_walls(flat, TOL, FRONT))
+    # and with no overlap the clean-up ends ON the stop, which is the sliver
+    # the 2x existed to prevent - stated as a measurement, not a belief
+    a, b, _c = L.split_contour_at_walls(flat, TOL, FRONT, 0.0)
+    check('   at zero overlap the clean-up ends exactly on the stop',
+          abs(b[-1][0] - a[-1][0]) < 1e-9,
+          'clean-up ends %.4f, stop %.4f' % (b[-1][0], a[-1][0]))
 
     # A PROFILE WITHOUT A WALL MUST NOT MOVE AT ALL - that is what makes this
     # safe to switch on, and it is asserted rather than assumed.
