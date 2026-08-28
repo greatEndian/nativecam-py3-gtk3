@@ -391,6 +391,45 @@ the two cuts only touch.
     parameter's own tooltip recommends half the depth of cut; whether that
     default should change is not mine to decide and has not been changed.
 
+## Reported 2026-08-28 — sections not touching, on testing_15_9
+
+- [x] **A 0.4 mm RING OF METAL AT EVERY SECTION BOUNDARY — FIXED.**
+  greatEndian: *"sectionning segments are not touching each other endings .. as
+  ends of first ones are in other position as fronts of second ones, which have
+  to be exactly same, i think the is comming same thing of tool tip radius
+  compensation"*, `photo/passesBeforeBossSectionninOnIsseu_2.png`. **They named
+  the cause correctly.**
+
+  `z_start` is `w_from - _pl_rgh_oz`, so the cutting EDGE begins where the
+  window does. A window-clamped `z_end` was raw `w_to` and carried nothing, so
+  one window ended at the boundary while the next began a nose radius past it
+  and the strip between was never cut.
+  **Measured by instrumenting the interpreter**: `wf=0.0 wt=-1.0 ze=-1.000000`
+  with the next window's cut starting at `-1.4000`, `oz=0.400000`. At radius
+  34.4941, 15 of 16 joins were exactly **+0.4000**. Fixed: `ze=-1.400000`, and
+  every join is now **0.0000**.
+  Only the WINDOW clamp changed; a cut stopped by the profile crossing keeps
+  its value, since the stop table has carried the nose since it was built.
+  Gates: `check_tangent` PASS min |dot| 1.00000 over 811503 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_leads`, `test_skip_short` all pass.
+
+  - [x] **THE TRAP THAT COST FOUR CONTRADICTORY MEASUREMENTS, and it is worth
+    more than the fix.** `lib/*.ngc` is a SUBROUTINE, re-read by rs274 on every
+    parse - the generated `.ngc` does not contain this behaviour at all,
+    because `z_end` is computed at runtime. So re-parsing an OLD generated file
+    measures the CURRENT lib, not the lib that produced it. Two "before/after"
+    comparisons therefore came back byte-identical and made a real fault look
+    absent; a third made a working fix look inert. **Keeping a generated file
+    as a "before" is meaningless for any lib change.** The before state has to
+    be re-measured with the lib actually reverted - `git stash`, measure,
+    restore - or read out of the interpreter with a DEBUG line, which is what
+    finally settled it.
+
+- [ ] **STILL UNANSWERED from the same report**: *"segments which are touching
+  the arc surface from the front side"*. Not investigated - the joins took the
+  whole session. No measurement has been made of it yet.
+
 ## Reported 2026-08-26 — the tiny backwards pass behind the boss
 
 - [x] **A LEVEL PASS THAT RUNS BACKWARDS ALONG ITS OWN WINDOW — FIXED**,

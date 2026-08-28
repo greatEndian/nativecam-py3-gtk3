@@ -390,17 +390,34 @@ o<lathe_level_pass> sub
 	o<blk> endif
 
 	(cut end: the crossing, clamped at the window end)
+	(A WINDOW-CLAMPED END CARRIES THE NOSE, AS THE WINDOW START ALREADY DOES.)
+	(z_start is w_from - _pl_rgh_oz so the cutting EDGE begins where the window)
+	(does. A window-clamped end was raw w_to and did not, so the two ends of one)
+	(pass were measured in different frames - which the note above z_start says)
+	(is the fault it was written for, and it was fixed at the start only.)
+	(AT A SECTION BOUNDARY THAT LEAVES A RING OF METAL. One window ends at w_to)
+	(and the next begins at the same boundary minus the nose term, so the strip)
+	(between them is never cut. Measured on testing_15_9, artificial sectioning)
+	(at 5 mm: at radius 34.4941, 15 of 16 joins were exactly 0.4000 apart, and)
+	(the nose radius is 0.4000 - one window ending Z-66.5667 where the next)
+	(began Z-66.1667. greatEndian, 2026-08-28: *"sectionning segments are not)
+	(touching each other endings .. ends of first ones are in other position as)
+	(fronts of second ones, which have to be exactly same"*, and they named the)
+	(cause as well - the tip radius shifting one end and not the other.)
+	(Only the WINDOW clamp changes. A cut stopped by the profile crossing zc)
+	(keeps that value: the stop table has carried the nose since it was built,)
+	(so compensating it again would apply the term twice.)
 	o<zend> if [#<z_dir> GT 0]
 		o<zend1> if [#<zc> GT #<w_to>]
 			#<z_end> = #<zc>
 		o<zend1> else
-			#<z_end> = #<w_to>
+			#<z_end> = [#<w_to> - #<_pl_rgh_oz>]
 		o<zend1> endif
 	o<zend> else
 		o<zend2> if [#<zc> LT #<w_to>]
 			#<z_end> = #<zc>
 		o<zend2> else
-			#<z_end> = #<w_to>
+			#<z_end> = [#<w_to> - #<_pl_rgh_oz>]
 		o<zend2> endif
 	o<zend> endif
 	(Extend the START back to the entry contour, when Python emitted one.)
