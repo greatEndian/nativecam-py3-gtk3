@@ -426,8 +426,27 @@ the two cuts only touch.
     restore - or read out of the interpreter with a DEBUG line, which is what
     finally settled it.
 
-- [ ] **THE BACK-ANGLE SEGMENTS BEHIND THE BOSS STILL DO NOT MEET, AND THE
-  METAL IS REAL.** greatEndian, 2026-08-28: *"segments behind the boss which
+- [x] **THE BACK-ANGLE SEGMENTS BEHIND THE BOSS NOW MEET — FIXED 2026-08-29.**
+  The front cut is lengthened to the point the next window will start at, which
+  greatEndian chose over relaxing the entry test. **The six ramp gaps are
+  closed**: 0.7653, 0.6162, 0.4670, 0.3178, 0.1686 and 0.0194 are all gone, and
+  the project's positive-gap count falls from 24 to 18 - the 18 being the
+  legitimate disjoint intervals either side of the boss.
+
+  **What made it work where the first attempt failed**: `e_xz` is purely
+  geometric - where the entry contour's own LINE reaches this level's radius -
+  so it does not depend on the window, and the front window can compute the
+  very number the next one will start at. Mirroring `e_best` could not, because
+  `e_have` is 0 for exactly these levels; that is WHY they take the fallback.
+  Four guards keep an ordinary boundary still: the cut must have ended ON the
+  window bound, the entry line must be known, it only ever lengthens, and it
+  never passes the level's own crossing nor three depths of cut.
+  Gates: `check_tangent` PASS min |dot| 1.00000 over 819758 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_leads`, `test_skip_short`, `test_sections` all pass.
+
+  ~~THE BACK-ANGLE SEGMENTS BEHIND THE BOSS STILL DO NOT MEET, AND THE
+  METAL IS REAL.~~ greatEndian, 2026-08-28: *"segments behind the boss which
   are artificial created from the tool back angle compensation respection are
   still not in contact"*, and 2026-08-29 on which repair to make: *"front
   before is shorter in the behind boss area then are next segments behind
@@ -460,9 +479,15 @@ the two cuts only touch.
     mirror THAT computation, not `e_best`. The attempt was reverted rather
     than left in as dead machinery.
 
-- [ ] **STILL UNANSWERED from the same report**: *"segments which are touching
-  the arc surface from the front side"*. Not investigated. No measurement has
-  been made of it yet.
+- [ ] **TWO GAPS REMAIN, AND THEY ARE ON THE BOSS FRONT - which is
+  greatEndian's other observation**: *"segments which are touching the arc
+  surface from the front side"*. Measured on testing_15_9 after the ramp fix:
+  **0.9269 at radius 28.9293, Z-21.3269 to -20.4000**, and **0.2214 at radius
+  28.4234, Z-20.6214 to -20.4000**. Both are metal - the floor runs 3.67 to
+  7.13 mm below the level across them - and both sit where the boss arc starts
+  at Z-20. A different mechanism from the ramp behind the boss: these end at a
+  window bound of -20.4000 that the next cut starts exactly on, so the
+  lengthening rule does not apply. Not yet diagnosed.
 
 ## Reported 2026-08-26 — the tiny backwards pass behind the boss
 

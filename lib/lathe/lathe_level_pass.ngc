@@ -70,6 +70,9 @@ o<lathe_level_pass> sub
 	#<e_rdx>     = 0
 	(and the entry segment the pass STARTS on, for a level that never)
 	(crosses the entry contour at all)
+	(where the entry line reaches this level, used to lengthen a window-bound)
+	(cut to the point the next window will start at - see the block below)
+	#<e_xze>     = 0
 	#<e_whave>   = 0
 	#<e_wdz>     = 0
 	#<e_wdx>     = 0
@@ -583,6 +586,45 @@ o<lathe_level_pass> sub
 	o<org_cl> if [[#<z_dir> GT 0] AND [#<w_from> GE [#<_org_z> - 0.000001]]]
 		#<z_start> = #<_org_z>
 	o<org_cl> endif
+	(AND THE END REACHES WHERE THE NEXT WINDOW WILL START.)
+	(e_xz above is purely geometric - it is where the entry contour's own line)
+	(reaches THIS level's radius - so it does not depend on the window at all,)
+	(and this window can compute the very number the next one will start at.)
+	(That is what makes the two meet exactly rather than nearly.)
+	(THE STRIP THIS CLOSES IS REAL METAL. On testing_15_9 at radius 26.3998 =)
+	(52.7996 diameter, one cut ended Z-66.5667 and the next began Z-67.3320,)
+	(while the stop contour - the roughing floor - ran 52.1103 down to 51.7569)
+	(across that strip: the floor is BELOW the level the whole way, so there)
+	(was material and no pass took it. Six such gaps, one per level, shrinking)
+	(with radius - 0.7653, 0.6162, 0.4670, 0.3178, 0.1686, 0.0194.)
+	(test_leftover cannot see them: 0.17 to 0.26 mm of radius stands, under)
+	(its one-depth-of-cut threshold. greatEndian, 2026-08-28: *"segments)
+	(behind the boss which are artificial created from the tool back angle)
+	(compensation respection are still not in contact"*, and 2026-08-29, on)
+	(which of the two repairs to make: *"front before is shorter in the behind)
+	(boss area then are next segments behind them"* - the front cut is the)
+	(short one, so the front cut is the one to lengthen.)
+	(A FIRST ATTEMPT MIRRORED e_best AND NEVER FIRED, because e_have is 0 for)
+	(exactly these levels - that is WHY they take the e_ext fallback. The)
+	(fallback is what has to be mirrored, and this is it.)
+	(Four guards, so an ordinary boundary does not move:)
+	(  - the cut must have ended ON the window bound. One stopped by the)
+	(    profile crossing has met real geometry and is left alone.)
+	(  - the entry line must be known, which is e_whave and a usable e_wdx.)
+	(  - it only ever lengthens: a target short of where the cut already ends)
+	(    is ignored, so a boundary the next window starts exactly on is)
+	(    untouched, which is every boundary that is not on a ramp.)
+	(  - and never past the level's own crossing, nor further than the same)
+	(    three depths of cut e_ext bounds itself by.)
+	o<w_ext> if [[#<e_whave> GT 0] AND [ABS[#<e_wdx>] GT 0.000001]]
+		#<e_xze> = [#<e_waz> + [[#<level> - #<e_wax>] * #<e_wdz> / #<e_wdx>]]
+		o<w_ext2> if [ABS[#<z_end> - [#<w_to> - #<_pl_rgh_oz>]] LT 0.000001]
+			o<w_ext3> if [[[#<z_dir> * [#<e_xze> - #<z_end>]] LT 0] AND [[#<z_dir> * [#<e_xze> - #<zc>]] GT 0.0001] AND [ABS[#<e_xze> - #<w_to>] LT [3.0 * #<_rough_cut>]]]
+				#<z_end> = #<e_xze>
+			o<w_ext3> endif
+		o<w_ext2> endif
+	o<w_ext> endif
+
 	o<ent> endif
 
 	(Extend the STOP to the pre-finish contour, when Python emitted one.)
