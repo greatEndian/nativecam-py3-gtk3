@@ -426,9 +426,43 @@ the two cuts only touch.
     restore - or read out of the interpreter with a DEBUG line, which is what
     finally settled it.
 
+- [ ] **THE BACK-ANGLE SEGMENTS BEHIND THE BOSS STILL DO NOT MEET, AND THE
+  METAL IS REAL.** greatEndian, 2026-08-28: *"segments behind the boss which
+  are artificial created from the tool back angle compensation respection are
+  still not in contact"*, and 2026-08-29 on which repair to make: *"front
+  before is shorter in the behind boss area then are next segments behind
+  them"* - so the FRONT cut is the short one and is the one to lengthen.
+
+  **Measured, and it is not cosmetic.** testing_15_9, radius 26.3998 =
+  52.7996 diameter. The cut ends Z-66.5667 and the next begins Z-67.3320,
+  leaving 0.7653. Across that strip the STOP contour - the roughing floor -
+  runs 52.1103 down to 51.7569, i.e. **below the level the whole way**, so
+  there is material at that radius and no pass takes it. Six such gaps, one
+  per level, shrinking linearly with radius: 0.7653, 0.6162, 0.4670, 0.3178,
+  0.1686, 0.0194. `test_leftover` misses them because what stands is roughly
+  0.17-0.26 mm of radius, under its one-depth-of-cut threshold.
+
+  **The mechanism, read out of the interpreter:**
+  ```
+  cut A  window -65.0738..-66.1667  starts -65.4738  ends -66.5667
+  cut B  window -66.1667..-70.4000  starts -67.3320  ends -69.5918
+  ```
+  B's start is not `w_from - oz`, which would be -66.5667. It is pushed to
+  -67.3320 by the entry-contour machinery, and A stops at its own window bound.
+
+  - [ ] **AN ATTEMPT THAT FAILED, recorded so it is not repeated.** I added an
+    accumulator mirroring `e_best` - the nearest entry crossing - measured
+    from `w_to` instead of `w_from`, to let A reach where B starts. It never
+    fired, and instrumenting showed why: **`e_have` is 0 for window B**, so
+    B's start does NOT come from `e_best` at all. It comes from the FALLBACK
+    at `o<e_ext>`, the branch for *"a level that never crosses the entry
+    contour"*, which reaches -67.332047 by a different route. Any fix has to
+    mirror THAT computation, not `e_best`. The attempt was reverted rather
+    than left in as dead machinery.
+
 - [ ] **STILL UNANSWERED from the same report**: *"segments which are touching
-  the arc surface from the front side"*. Not investigated - the joins took the
-  whole session. No measurement has been made of it yet.
+  the arc surface from the front side"*. Not investigated. No measurement has
+  been made of it yet.
 
 ## Reported 2026-08-26 — the tiny backwards pass behind the boss
 
