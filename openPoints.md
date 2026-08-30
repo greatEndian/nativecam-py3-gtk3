@@ -495,7 +495,24 @@ the two cuts only touch.
   The two gaps below are NOT affected: they are measured cut-to-cut, control
   against control, so both sides shift equally and the gap is real either way.
 
-- [ ] **TWO GAPS REMAIN, AND THEY ARE ON THE BOSS FRONT - which is
+- [x] **THE BOSS-FRONT GAPS ARE CLOSED — FIXED 2026-08-30.** Same repair as
+  behind the boss, but it needed the latch taken at the right end. `e_w*` - the
+  entry surface the fallback extrapolates - is latched at the segment spanning
+  **`w_from`**, deliberately, since that is the surface this window's own start
+  needs. The lengthening needs the surface at **`w_to`**, because that is the
+  NEXT window's start and therefore what ITS fallback will use.
+  Reusing `e_w*` failed silently: at level 28.9293 the segment spanning
+  `w_from` -15.2500 is VERTICAL, `e_wdx` 0.0000, so the lengthening was skipped
+  by its own divide-by-zero guard - while the segment spanning `w_to` -20.0000
+  has `e_wdx` 0.8235 and yields the **-21.3269** the next window actually
+  starts at. A second latch `e_t*` at `w_to` fixes it.
+  **Positive-gap count on testing_15_9: 18 -> 16**, and the 16 are the
+  legitimate disjoint intervals either side of the boss. Gates:
+  `check_tangent` PASS min |dot| 1.00000 over 931423 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_leads`, `test_skip_short`, `test_sections` all pass.
+
+  ~~TWO GAPS REMAIN, AND THEY ARE ON THE BOSS FRONT - which is
   greatEndian's other observation**: *"segments which are touching the arc
   surface from the front side"*. Measured on testing_15_9 after the ramp fix:
   **0.9269 at radius 28.9293, Z-21.3269 to -20.4000**, and **0.2214 at radius
@@ -503,7 +520,18 @@ the two cuts only touch.
   7.13 mm below the level across them - and both sit where the boss arc starts
   at Z-20. A different mechanism from the ramp behind the boss: these end at a
   window bound of -20.4000 that the next cut starts exactly on, so the
-  lengthening rule does not apply. Not yet diagnosed.
+  lengthening rule does not apply.~~
+
+- [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
+  the honest state.** Sampling Z and asking whether any cut covers each level
+  gives a different answer depending on which frame the floor table is assumed
+  to be in, and I can only verify the assumption at ONE end. Contact = control
+  + oz was confirmed at a cut's START, where it matched a floor crossing to
+  0.0002; applied to the far end as well it reports 0.40 uncut at the back face
+  on every level, which no one has seen on the machine. **Settle which frame
+  `build_stop_contour_gcode` emits before trusting either answer.** Until then
+  use cut-to-cut measurements, which are frame-independent because both sides
+  shift equally.
 
 ## Reported 2026-08-26 — the tiny backwards pass behind the boss
 

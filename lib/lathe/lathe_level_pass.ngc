@@ -71,8 +71,17 @@ o<lathe_level_pass> sub
 	(and the entry segment the pass STARTS on, for a level that never)
 	(crosses the entry contour at all)
 	(where the entry line reaches this level, used to lengthen a window-bound)
-	(cut to the point the next window will start at - see the block below)
+	(cut to the point the next window will start at - see the block below.)
+	(The e_t* set is the same latch as e_w* but taken at w_to instead of)
+	(w_from, because it is the NEXT window's surface that decides where the)
+	(next cut begins - see the second latch in the entry scan.)
 	#<e_xze>     = 0
+	#<e_tb>      = 0
+	#<e_thave>   = 0
+	#<e_tdz>     = 0
+	#<e_tdx>     = 0
+	#<e_taz>     = 0
+	#<e_tax>     = 0
 	#<e_whave>   = 0
 	#<e_wdz>     = 0
 	#<e_wdx>     = 0
@@ -465,6 +474,26 @@ o<lathe_level_pass> sub
 					#<e_whave> = 1
 				o<e_ws2> endif
 			o<e_ws> endif
+			(THE SAME LATCH AGAIN, AT w_to. e_w* above is the surface at this)
+			(window's START, which is what this window's own fallback needs.)
+			(The lengthening below needs the surface at this window's END,)
+			(because that is the next window's START and therefore what its)
+			(fallback will use. Latching one and reusing it for the other was)
+			(tried and fails silently: on testing_15_9 at level 28.9293 the)
+			(segment spanning w_from -15.2500 is VERTICAL, e_wdx 0.0000, so)
+			(the lengthening was skipped by its own divide-by-zero guard,)
+			(while the segment spanning w_to -20.0000 has e_wdx 0.8235 and)
+			(gives the -21.3269 the next window actually starts at.)
+			o<e_ts> if [[#<_pl_eramp_n> GT 0] AND [[[#<e_pz> - #<w_to>] * [#<e_cz> - #<w_to>]] LE 0]]
+				#<e_tb> = [3200 + [#<e_i> - 1] * 4]
+				o<e_ts2> if [ABS[#[#<e_tb>]] GT 0.000001]
+					#<e_tdz> = #[#<e_tb>]
+					#<e_tdx> = #[#<e_tb> + 1]
+					#<e_taz> = #[#<e_tb> + 2]
+					#<e_tax> = #[#<e_tb> + 3]
+					#<e_thave> = 1
+				o<e_ts2> endif
+			o<e_ts> endif
 			o<e_cross> if [[[#<e_px> - #<l_eff>] * [#<e_cx> - #<l_eff>]] LT 0]
 				#<e_z> = [#<e_pz> + [#<e_cz> - #<e_pz>] * [#<l_eff> - #<e_px>] / [#<e_cx> - #<e_px>]]
 				(this table segment's own direction - the profile angle the)
@@ -616,8 +645,8 @@ o<lathe_level_pass> sub
 	(    untouched, which is every boundary that is not on a ramp.)
 	(  - and never past the level's own crossing, nor further than the same)
 	(    three depths of cut e_ext bounds itself by.)
-	o<w_ext> if [[#<e_whave> GT 0] AND [ABS[#<e_wdx>] GT 0.000001]]
-		#<e_xze> = [#<e_waz> + [[#<level> - #<e_wax>] * #<e_wdz> / #<e_wdx>]]
+	o<w_ext> if [[#<e_thave> GT 0] AND [ABS[#<e_tdx>] GT 0.000001]]
+		#<e_xze> = [#<e_taz> + [[#<level> - #<e_tax>] * #<e_tdz> / #<e_tdx>]]
 		o<w_ext2> if [ABS[#<z_end> - [#<w_to> - #<_pl_rgh_oz>]] LT 0.000001]
 			o<w_ext3> if [[[#<z_dir> * [#<e_xze> - #<z_end>]] LT 0] AND [[#<z_dir> * [#<e_xze> - #<zc>]] GT 0.0001] AND [ABS[#<e_xze> - #<w_to>] LT [3.0 * #<_rough_cut>]]]
 				#<z_end> = #<e_xze>
