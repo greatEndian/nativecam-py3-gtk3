@@ -522,6 +522,39 @@ the two cuts only touch.
   window bound of -20.4000 that the next cut starts exactly on, so the
   lengthening rule does not apply.~~
 
+- [ ] **FOUR LEVELS END IN A DIFFERENT PLACE WITH SECTIONING ON, AND THREE OF
+  THEM AT THE SAME BOUNDARY.** greatEndian, 2026-08-30: *"passes are not
+  missing now but they are more mixed between pass section before and after"*,
+  asking for testing_15_9 with sectioning off against on.
+  Matched by LEVEL INDEX, since the ladders differ slightly - the radii are
+  34.4936 off against 34.4941 on - **24 of 28 levels agree to about 0.005**,
+  which is just that ladder difference on a sloped surface. Four do not:
+
+  | # | radius on | OFF ends | ON ends | difference |
+  |---|---|---|---|---|
+  | 8 | 30.4470 | -24.3146 | -24.5667 | -0.2521 past |
+  | 17 | 25.8939 | -20.6510 | **-20.4000** | +0.2510 short |
+  | 19 | 24.8821 | -20.2025 | **-20.4000** | -0.1975 past |
+  | 20 | 24.3762 | -19.9983 | **-20.4000** | -0.4017 past |
+
+  **-20.4000 is a window bound minus `_pl_rgh_oz`.** Instrumented at level
+  24.3762: the level's own reach is `zc = -20.002614` while the cut ends
+  -20.400000, so it runs **0.3974 past where the level can actually cut**.
+
+  - [ ] **TWO CLAMP ATTEMPTS FAILED AND WERE REVERTED, both for the same
+    reason.** A clamp placed with the window clamp, and a second placed after
+    the entry scan, neither fired: **`zc` is not final at either point** - it
+    is refined further down, past `o<stp>` and the multi-crossing `z_end_try`.
+    The value my debug printed at the foot of the subroutine, -20.0026, is not
+    the value those clamps saw. A fix has to sit where the cut end is actually
+    settled, and that needs the ordering of this subroutine mapped rather than
+    assumed - five attempts in it have now failed on exactly that.
+  - [ ] **The before/after comparison does NOT say whether these four are new.**
+    Running the pre-boundary-fix lib gives front intervals ending at -1.0000
+    for every level, because without that fix the cuts do not join and the
+    merge fragments them. The metric only means anything once they join, so it
+    cannot be used to date these four.
+
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed
