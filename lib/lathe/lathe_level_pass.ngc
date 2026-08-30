@@ -75,6 +75,7 @@ o<lathe_level_pass> sub
 	(The e_t* set is the same latch as e_w* but taken at w_to instead of)
 	(w_from, because it is the NEXT window's surface that decides where the)
 	(next cut begins - see the second latch in the entry scan.)
+	#<z_wend>    = 0
 	#<e_xze>     = 0
 	#<e_tb>      = 0
 	#<e_thave>   = 0
@@ -419,17 +420,33 @@ o<lathe_level_pass> sub
 	(Only the WINDOW clamp changes. A cut stopped by the profile crossing zc)
 	(keeps that value: the stop table has carried the nose since it was built,)
 	(so compensating it again would apply the term twice.)
+	(AND THE TEST IS AGAINST THE VALUE THAT WILL BE ASSIGNED, not against w_to.)
+	(Comparing zc with w_to while assigning w_to - _pl_rgh_oz makes the two)
+	(disagree over a band one nose term wide: a crossing that falls just past)
+	(w_to is judged "not before the window end", and the cut is then sent to)
+	(w_to - oz, PAST the reach the crossing named.)
+	(Measured on testing_15_9, level 24.3762: zc -20.002614 against w_to)
+	(-20.000000 - short by 0.0026, so the test said no - and the cut ended)
+	(-20.400000, running 0.3974 beyond where that level can cut. Three levels)
+	(ended on that one boundary and one on another, while the other 24 agreed)
+	(with sectioning OFF to about 0.005. greatEndian, 2026-08-30: *"passes are)
+	(not missing now but they are more mixed between pass section before and)
+	(after"*.)
+	(It was invisible until the nose term was subtracted here: the else used)
+	(to give w_to itself, 0.0026 from zc, so the disagreement had nowhere to)
+	(show. z_wend names the bound once so the two cannot drift apart again.)
+	#<z_wend> = [#<w_to> - #<_pl_rgh_oz>]
 	o<zend> if [#<z_dir> GT 0]
-		o<zend1> if [#<zc> GT #<w_to>]
+		o<zend1> if [#<zc> GT #<z_wend>]
 			#<z_end> = #<zc>
 		o<zend1> else
-			#<z_end> = [#<w_to> - #<_pl_rgh_oz>]
+			#<z_end> = #<z_wend>
 		o<zend1> endif
 	o<zend> else
-		o<zend2> if [#<zc> LT #<w_to>]
+		o<zend2> if [#<zc> LT #<z_wend>]
 			#<z_end> = #<zc>
 		o<zend2> else
-			#<z_end> = [#<w_to> - #<_pl_rgh_oz>]
+			#<z_end> = #<z_wend>
 		o<zend2> endif
 	o<zend> endif
 	(Extend the START back to the entry contour, when Python emitted one.)

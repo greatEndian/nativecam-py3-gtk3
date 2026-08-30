@@ -522,8 +522,37 @@ the two cuts only touch.
   window bound of -20.4000 that the next cut starts exactly on, so the
   lengthening rule does not apply.~~
 
-- [ ] **FOUR LEVELS END IN A DIFFERENT PLACE WITH SECTIONING ON, AND THREE OF
-  THEM AT THE SAME BOUNDARY.** greatEndian, 2026-08-30: *"passes are not
+- [x] **SECTIONING ON NOW MATCHES SECTIONING OFF — FIXED 2026-08-30, and the
+  cause was a test that did not compare against what it assigned.**
+  The window clamp read `if zc GT w_to` while assigning `w_to - _pl_rgh_oz`.
+  Those disagree over a band one nose term wide: a crossing falling just past
+  `w_to` is judged *"not before the window end"* and the cut is then sent to
+  `w_to - oz`, PAST the reach the crossing named.
+  **Measured at level 24.3762**: `zc -20.002614` against `w_to -20.000000` -
+  short by 0.0026, so the test said no - and the cut ended -20.400000, running
+  **0.3974 beyond where that level can cut**. Invisible until the nose term was
+  subtracted there, because the else used to give `w_to` itself, 0.0026 from
+  `zc`. `z_wend` names the bound once so the two cannot drift apart again.
+
+  | # | radius | before | after |
+  |---|---|---|---|
+  | 8 | 30.4470 | -0.2521 | **-0.0057** |
+  | 19 | 24.8821 | -0.1975 | **-0.0041** |
+  | 20 | 24.3762 | -0.4017 | **-0.0043** |
+  | 17 | 25.8939 | +0.2510 | +0.2510, and it is NOT a fault - see below |
+
+  **Level 17 is `Skip short roughing passes` doing its job.** Its reach is
+  -20.6510 and the window bound is -20.4000, so the remainder is a **0.251 mm**
+  pass against a **0.500** setting, and it is dropped. With Skip short at 0 that
+  level ends -20.6559 against -20.6510 off, a difference of 0.0049 like every
+  other. **With Skip short off the largest difference across all 29 levels is
+  0.0147**, which is the ladder difference on a sloped surface and not a
+  defect.
+  Gates: `check_tangent` PASS min |dot| 1.00000 over 934723 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_skip_short`, `test_leads`, `test_sections` all pass.
+
+  ~~FOUR LEVELS END IN A DIFFERENT PLACE WITH SECTIONING ON.~~ greatEndian, 2026-08-30: *"passes are not
   missing now but they are more mixed between pass section before and after"*,
   asking for testing_15_9 with sectioning off against on.
   Matched by LEVEL INDEX, since the ladders differ slightly - the radii are
@@ -541,8 +570,15 @@ the two cuts only touch.
   24.3762: the level's own reach is `zc = -20.002614` while the cut ends
   -20.400000, so it runs **0.3974 past where the level can actually cut**.
 
-  - [ ] **TWO CLAMP ATTEMPTS FAILED AND WERE REVERTED, both for the same
-    reason.** A clamp placed with the window clamp, and a second placed after
+  - [x] **THE ORDERING, MAPPED - which is what finally located it.**
+    `zc` is settled at line 394, BEFORE the window clamp at 424, so the clamp
+    always had the right value and my two earlier clamps were solving a problem
+    that did not exist. The end is then rewritten twice more: by the entry
+    lengthening, and at **817 by the stop-contour extension**, which is where
+    the end is finally settled. The fault was never about ordering at all - it
+    was the clamp comparing `zc` against `w_to` while assigning `w_to - oz`.
+    ~~TWO CLAMP ATTEMPTS FAILED AND WERE REVERTED, both for the same
+    reason.~~ A clamp placed with the window clamp, and a second placed after
     the entry scan, neither fired: **`zc` is not final at either point** - it
     is refined further down, past `o<stp>` and the multi-crossing `z_end_try`.
     The value my debug printed at the foot of the subroutine, -20.0026, is not
