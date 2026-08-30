@@ -479,6 +479,22 @@ the two cuts only touch.
     mirror THAT computation, not `e_best`. The attempt was reverted rather
     than left in as dead machinery.
 
+- [x] **A COVERAGE SWEEP THAT CLAIMED NINE MORE GAPS WAS AN INSTRUMENT ERROR,
+  2026-08-30.** Sampling Z and asking "does any cut cover this level here"
+  reported nine levels each missing exactly **0.40 mm** on the ramp - and 0.40
+  is `_pl_rgh_oz`, which should have been the tell.
+  **The cut positions are CONTROL points; the floor table is where the NOSE
+  must contact.** The nose contacts at control + oz, so a cut whose control
+  span is -43.5611..-45.4194 contacts -43.1611..-45.0194, and the floor crosses
+  that radius at **-43.1613** - a match to 0.0002. The metal is cut; the
+  sampler was comparing the two frames directly.
+  **Rule for the next sweep**: before comparing a cut against any contour
+  table, decide which frame the table is in and add the nose term if it is a
+  contact surface. A discrepancy that equals `_pl_rgh_oz` on every sample is an
+  instrument error until proven otherwise.
+  The two gaps below are NOT affected: they are measured cut-to-cut, control
+  against control, so both sides shift equally and the gap is real either way.
+
 - [ ] **TWO GAPS REMAIN, AND THEY ARE ON THE BOSS FRONT - which is
   greatEndian's other observation**: *"segments which are touching the arc
   surface from the front side"*. Measured on testing_15_9 after the ramp fix:
