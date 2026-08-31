@@ -37,6 +37,20 @@ o<lathe_level_pass> sub
 	(1 when this pass's ENTRY LEAD runs entirely through metal a previous)
 	(section has already removed - see the ld_air gate after the ramp arming)
 	#<ld_air>    = 0
+	#<ld_ref>    = 0
+	#<ld_seen>   = 0
+	#<ld_i>      = 0
+	#<ld_az>     = 0
+	#<ld_sgn>    = 0
+	#<ld_len>    = 0
+	#<ld_z0>     = 0
+	#<ld_z1>     = 0
+	#<ld_wf>     = 0
+	#<ld_wt>     = 0
+	#<ld_lo>     = 0
+	#<ld_hi>     = 0
+	#<ld_ov>     = 0
+	#<ld_d>      = 0
 	#<pa_z>      = 0
 	#<pa_x>      = 0
 	#<e_bdz>     = 0
@@ -998,46 +1012,9 @@ o<lathe_level_pass> sub
 	(section 9 stopped at r33.4823 with its floor at 32.8658, so the next)
 	(level down is above the floor and still cuts 0.5059 deep into the step)
 	(that ladder left. What is gone is what was actually CUT, so that is what)
-	(is asked. _pl_last_cut_lvl records it, poly_lathe_mill carries it into)
-	(_pl_psec_deep at each window start.)
-	(Both globals default to 999999, so the first section - which has no)
-	(predecessor - never matches and keeps its leads.)
-	(ARTIFICIAL SECTIONING ONLY, AND THAT IS A CORRECTNESS BOUND, NOT CAUTION.)
-	(The carry says "the previous WINDOW PROCESSED", and this gate needs "the)
-	(neighbouring window in Z, on the side the lead comes from". Those are the)
-	(same window only when the processing order follows the part: Artificial)
-	(- _pl_sect_mode 1 - is emitted by lathe_sections in Z order, front to)
-	(back or reversed to match the cut direction, so window w-1 is always the)
-	(neighbour the lead reaches into. Natural orders windows weakest/smallest-)
-	(diameter FIRST, so the window that ran last can be somewhere else on the)
-	(part entirely, and its deepest level says nothing about the metal beside)
-	(this one.)
-	(THIS WAS MEASURED, not feared. Without the mode test the gate fired on)
-	(nearly every pass of the Natural projects - testing_15_2, _15_4 and _15_5)
-	(dropped to 2 ramps or fewer - and their radial descents then rapided)
-	(0.4962 to 0.4991 mm INTO STANDING METAL, where the same projects are)
-	(clean on every one of their 142 and 88 rapids before the change. A deep)
-	(level carried over from a far window made every later level look already)
-	(cut.)
-	(Natural therefore keeps its leads and its air time. Doing it there needs)
-	(a per-window record of what each window reached, looked up by which)
-	(window actually contains the lead's start Z - recorded in openPoints.md,)
-	(not attempted here.)
-	o<ld_gate> if [[#<_pl_sectioning> GT 0] AND [#<_pl_sect_count> GT 0] AND [#<_pl_sect_mode> EQ 1]]
-		o<ld_deep> if [#<level> GE [#<_pl_psec_deep> - 0.000001]]
-			#<ld_air> = 1
-			(the ramp goes with it. Disarming ONLY the ramp is what made an)
-			(earlier attempt at this worth 22% instead of the measured 35%:)
-			(the pass did not lose its approach, it fell back to the plain)
-			(1.0 mm lead at 45 degrees - an X step of 0.7072, DEEPER than one)
-			(depth of cut - so the air time came back as a plunge. The lead)
-			(lengths are zeroed with it below, which drops the pass onto the)
-			(no-lead path that already exists and is already proven: stand)
-			(off in Z by the clearance, descend X there through the cleared)
-			(column, cut. Nothing new is invented for this.)
-			#<pa_on> = 0
-		o<ld_deep> endif
-	o<ld_gate> endif
+	(is asked, and the #2800 table below is where each window records it.)
+	(A window that has cut nothing still reads 999999, so a neighbour that has)
+	(not run yet keeps the lead rather than clearing it.)
 
 
 	(exposed for callers doing their own disjoint-interval scanning after this)
@@ -1150,6 +1127,112 @@ o<lathe_level_pass> sub
 			o<lo_pull2> endif
 		o<lo_pull> endif
 	o<lo_res> endif
+
+	(WHICH WINDOW THE LEAD REACHES INTO, ASKED BY GEOMETRY, NOT BY ORDER.)
+	(The first version of this gate carried ONE value - the deepest level the)
+	(previously PROCESSED window cut - and that is only the neighbour the lead)
+	(enters when the processing order follows the part. It does under)
+	(Artificial front-to-back and back-to-front, and it does NOT under Natural,)
+	(which orders windows weakest/smallest-diameter first, nor under Both)
+	(directions, which alternates the entry END per pass so every other pass)
+	(leads in over the boundary with a section not yet cut.)
+	(Measured with the carried value left live in those two: Natural rapided)
+	(0.4962 to 0.4991 mm and Both directions 0.5059 mm INTO STANDING METAL -)
+	(one full depth of cut - where both are clean before. They were bounded)
+	(out, and greatEndian, 2026-08-31: *"do same for natural sectionning and)
+	(both directions"*.)
+	(So the question is asked of the WINDOWS THE LEAD ACTUALLY CROSSES.)
+	(#2800 + i holds the deepest level window i has cut so far, written below)
+	(and cleared to 999999 by lathe_sections. Take the MAXIMUM over every)
+	(window the lead's Z span touches except this one: the lead is air only if)
+	(its level is at or above what ALL of them have already taken down, and an)
+	(untouched neighbour still reading 999999 carries that comparison by)
+	(itself and keeps the lead. That is what makes the order irrelevant - a)
+	(window that has not run yet cannot claim to have cleared anything.)
+	(_pl_wdeep_ok guards a project generated before the table existed, whose)
+	(slots would read 0 - "cut to the centre" - and drop every lead on the)
+	(part.)
+	o<ld_gate> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
+		(the entry END, and the direction the lead comes in FROM. A forward)
+		(pass enters at z_start and is led into from before it; a reversed)
+		(pass enters at z_end_cut, at the far end, and is led into from)
+		(beyond that. Getting this backwards would test the window the pass)
+		(is cutting away from.)
+		(z_dir IS NOT A Z DIRECTION. It is 1 when w_from GE w_to, so a)
+		(forward pass travels toward DECREASING Z at z_dir 1 - the cut is)
+		(z_end = z_start - z_dir * length. The approach therefore comes from)
+		(z_start PLUS z_dir * length, and having that sign inverted is what)
+		(made the first version of this walk find no neighbouring window at)
+		(all: seen=0 and ref=-999999 on every pass of window 5.)
+		#<ld_az> = #<z_start>
+		#<ld_sgn> = #<z_dir>
+		o<ld_rev> if [#<_pl_cut_rev> GT 0]
+			#<ld_az> = #<z_end_cut>
+			#<ld_sgn> = [0 - #<z_dir>]
+		o<ld_rev> endif
+		(how far back the approach reaches. Deliberately generous - the ramp)
+		(plus the straight lead plus a margin - because overstating it can)
+		(only pull in an extra window and REFUSE the gate, while)
+		(understating it would miss the neighbour that matters.)
+		#<ld_len> = [#<pa_dz> + #<li_len> + #<_pl_z_clear> + 1.0]
+		#<ld_z0> = #<ld_az>
+		#<ld_z1> = [#<ld_az> + #<ld_sgn> * #<ld_len>]
+		o<ld_ord> if [#<ld_z0> GT #<ld_z1>]
+			#<ld_z0> = #<ld_z1>
+			#<ld_z1> = #<ld_az>
+		o<ld_ord> endif
+		#<ld_ref> = -999999
+		#<ld_seen> = 0
+		#<ld_i> = 0
+		o<ld_w> while [#<ld_i> LT #<_pl_sect_count>]
+			o<ld_self> if [#<ld_i> NE #<_pl_w_idx>]
+				#<ld_wf> = #[3400 + #<ld_i> * 4 + 1]
+				#<ld_wt> = #[3400 + #<ld_i> * 4 + 2]
+				#<ld_lo> = #<ld_wf>
+				#<ld_hi> = #<ld_wt>
+				o<ld_wo> if [#<ld_lo> GT #<ld_hi>]
+					#<ld_lo> = #<ld_wt>
+					#<ld_hi> = #<ld_wf>
+				o<ld_wo> endif
+				(overlap, in two short tests. One combined condition is how)
+				(the retract walk earned a "Command too long" - the)
+				(interpreter refuses the whole file at the line-length)
+				(limit, so these stay small on purpose.)
+				#<ld_ov> = 1
+				o<ld_x1> if [#<ld_lo> GT [#<ld_z1> + 0.000001]]
+					#<ld_ov> = 0
+				o<ld_x1> endif
+				o<ld_x2> if [#<ld_hi> LT [#<ld_z0> - 0.000001]]
+					#<ld_ov> = 0
+				o<ld_x2> endif
+				o<ld_take> if [#<ld_ov> GT 0]
+					#<ld_seen> = 1
+					#<ld_d> = #[2800 + #<ld_i>]
+					o<ld_mx> if [#<ld_d> GT #<ld_ref>]
+						#<ld_ref> = #<ld_d>
+					o<ld_mx> endif
+				o<ld_take> endif
+			o<ld_self> endif
+			#<ld_i> = [#<ld_i> + 1]
+		o<ld_w> endwhile
+		(no window touched means the lead reaches into ground nothing here)
+		(describes - the front of the part, outside the sectioned span - so)
+		(there is no evidence it is cleared and the lead stays.)
+		(debug LDG w=%d lvl=%f seen=%d ref=%f z0=%f z1=%f)
+		o<ld_deep> if [[#<ld_seen> GT 0] AND [#<level> GE [#<ld_ref> - 0.000001]]]
+			#<ld_air> = 1
+			(the ramp goes with it. Disarming ONLY the ramp is what made an)
+			(earlier attempt at this worth 22% instead of the measured 35%:)
+			(the pass did not lose its approach, it fell back to the plain)
+			(1.0 mm lead at 45 degrees - an X step of 0.7072, DEEPER than one)
+			(depth of cut - so the air time came back as a plunge. The lead)
+			(lengths are zeroed with it below, which drops the pass onto the)
+			(no-lead path that already exists and is already proven: stand)
+			(off in Z by the clearance, descend X there through the cleared)
+			(column, cut. Nothing new is invented for this.)
+			#<pa_on> = 0
+		o<ld_deep> endif
+	o<ld_gate> endif
 
 	(THE STRAIGHT LEAD AT THE z_start END, resolved here beside the other one)
 	(rather than inside the block that emits it, because which of the two is)
@@ -1521,13 +1604,18 @@ o<lathe_level_pass> sub
 		G1 Z#<em_z1>
 	o<peck> endif
 
-	(THIS PASS CUT, so its level is the deepest reached in this section so far)
-	(- the ladder descends, so the last one to get here is the deepest. Set)
-	(after the cut on purpose: a pass that returned early above never reaches)
-	(this line, and a level nobody cut must not be reported as removed metal.)
-	(poly_lathe_mill copies this into _pl_psec_deep when it opens the next)
-	(section window; read by the ld_air gate above.)
-	#<_pl_last_cut_lvl> = #<level>
+	(THIS PASS CUT, so its level is the deepest THIS WINDOW has reached - the)
+	(ladder descends, so the last write wins. Set after the cut on purpose: a)
+	(pass that returned early above never reaches this line, and a level)
+	(nobody cut must not be recorded as removed metal.)
+	(Kept per window rather than as one running value, because the gate above)
+	(asks its NEIGHBOURS what they have cleared and the windows do not run in)
+	(Z order under Natural or Both directions. _pl_wdeep_ok is tested so a)
+	(program generated before the table existed never writes into slots its)
+	(own reader will not trust.)
+	o<ld_rec> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
+		#[2800 + #<_pl_w_idx>] = #<level>
+	o<ld_rec> endif
 
 
 	(THE PROFILE-ANGLE RAMP, CLIMBED. Back to front the pass arrives at)

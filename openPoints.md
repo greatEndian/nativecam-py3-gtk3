@@ -752,25 +752,23 @@ the two cuts only touch.
     That measurement was made and is the acceptance number above: +1.0693 mm
     tightest clearance, positive everywhere.
 
-- [ ] **Air entry leads are still emitted under Natural sectioning and under
-  Both directions.** The Artificial front-to-back and back-to-front cases are
-  done - `analysis/066`, 693.4 mm of lead that cut nothing is down to 282.9,
-  roughing feed 1951.1 -> 1540.6 mm - but the gate stands down in the other two
-  modes, and that is a CORRECTNESS bound, not caution. The carry says "the
-  window processed before this one" and the gate needs "the neighbour in Z on
-  the side the lead reaches into". Natural orders windows weakest-diameter
-  first, so those differ; Both directions alternates the entry END per pass, so
-  half the passes lead in over the boundary with the section not yet cut.
-  Measured with the carry left live: **Natural rapided 0.4962-0.4991 mm and
-  Both directions 0.5059 mm into standing metal**, one full depth of cut, where
-  both are clean before the change.
-  - [ ] Closing it needs a **per-window record** of what each window actually
-    reached, looked up by which window contains the lead's start Z - not one
-    carried value. Costs parameter slots, so measure the budget against the
-    real projects before designing it.
-  - [ ] `test_air_leads.py` pins the current numbers for all three standing-down
-    cases, so a widening that gets this wrong fails there rather than on a
-    machine.
+- [x] **Air entry leads under Natural sectioning and Both directions** — DONE
+  2026-08-31, `analysis/067`. The single carried value was replaced by a
+  **per-window record at #2800, looked up by which windows the lead's Z span
+  actually crosses**, so the visiting order stops mattering: a window that has
+  not run yet still reads 999999 and keeps the lead by itself. One mechanism now
+  covers all four mode combinations and both earlier bounds are gone.
+  - Both directions: entry-air down to 10 moves / 5.0 mm, roughing feed
+    1951.1 -> **1744.2 mm**, all 811 rapids through cleared metal.
+  - Artificial unchanged at 1540.6 / 1547.4 mm; back-to-front now has **zero**
+    air entry leads.
+  - **Natural had nothing to take** — 10.0 mm and 7.9 mm of air entry lead,
+    against 419.4 mm on Artificial. Its windows carry a RADIUS BAND and so
+    partition the ladder between them, where Artificial's every window re-walks
+    the whole shared ladder. That is the result, not a shortfall, and
+    `test_air_leads.py` asserts the figures so it stays a recorded fact.
+  - The table took room from nothing: 1000-2999 measured completely
+    unreferenced across cfg/, lib/, the Python and the generated program.
 
 - [ ] **Lead-OUTs are not gated, on purpose.** Roughly 280 mm of the remaining
   air on testing_15_9 is retreat leads. A retreat leaves the cut the pass has

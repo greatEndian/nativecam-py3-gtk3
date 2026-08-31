@@ -34,13 +34,19 @@ WHAT IS ASSERTED
    and descends radially. That descent must happen in cleared material. This is
    the assertion that caught two real regressions while the fix was being
    built - Natural sectioning at 0.4962 mm and Both-directions at 0.5059 mm,
-   each one full depth of cut into standing metal.
+   each one full depth of cut into standing metal - both caused by a first
+   version that carried ONE value meaning "the window processed before this
+   one".
 
-4. THE MODES THAT CANNOT EXPRESS THE CARRY ARE BIT-FOR-BIT UNCHANGED. Natural
-   ordering puts the weakest section first, and Both-directions alternates the
-   entry end per pass; in neither case is "the window processed before this
-   one" the neighbour the lead reaches into. Both must measure exactly as they
-   did before the gate existed.
+4. EVERY MODE IS COVERED, AND NATURAL HAS NOTHING TO TAKE. The gate asks the
+   windows an entry lead actually CROSSES what they have already cut, so the
+   order windows are visited in stops mattering: Natural's weakest-section-first
+   and Both-directions' alternating entry end are both handled by the same
+   lookup. Natural then turns out to have had almost no air entry leads in the
+   first place - 10.0 mm on testing_15_5 and 7.9 mm on testing_15_2 - because
+   its windows carry a RADIUS BAND and so partition the ladder between them
+   instead of each re-walking all of it. That is asserted here so the absence of
+   a saving there is a recorded fact rather than a suspicion.
 
 NOT CIRCULAR
 
@@ -144,7 +150,7 @@ def measure(P, project, sets, d, tag, selftest=0.0):
         if m.kind == 'feed' and abs(m.b[0] - m.a[0]) < 1e-6 \
                 and abs(m.b[2] - m.a[2]) > 1e-9:
             levels.add(k)
-    r = dict(air_n=0, air_l=0.0, cut_n=0, cut_l=0.0,
+    r = dict(air_n=0, air_l=0.0, cut_n=0, cut_l=0.0, ent_n=0, ent_l=0.0,
              rap_n=0, rap_bad=0, rap_worst=0.0, feed=0.0)
     for k, m in enumerate(mv):
         if m.kind == 'rapid':
@@ -164,6 +170,15 @@ def measure(P, project, sets, d, tag, selftest=0.0):
         if mat.depth(m) <= 1e-4:
             r['air_n'] += 1
             r['air_l'] += seglen(m)
+            # ENTRY or RETREAT. A lead emitted just BEFORE a level cut is the
+            # entry; one after it is the retreat, and only entries are gated -
+            # a retreat leaves the cut this pass has just made, which is a
+            # different question. Validated against the state before any gate
+            # existed, where it reported 408 air entry moves; 389 of those are
+            # what the gate removes, leaving the 19 asserted below.
+            if any(t in levels for t in range(k + 1, min(k + 4, len(mv)))):
+                r['ent_n'] += 1
+                r['ent_l'] += seglen(m)
         else:
             r['cut_n'] += 1
             r['cut_l'] += seglen(m)
@@ -182,58 +197,68 @@ def main():
 
     d = tempfile.mkdtemp(prefix='airlead_')
     try:
-        # ---- the reported case: Artificial sectioning, front to back --------
-        a = measure(P, 'testing_15_9.xml', ['polyline:param_dir=0'], d, 'art0')
-        check('the Artificial case generates and runs', a is not None)
-        if a:
-            # 1. THE WORK IS UNTOUCHED
-            check('the leads that cut metal are all still there',
-                  a['cut_n'] >= 190 and a['cut_l'] > 200.0,
-                  'only %d leads / %.1f mm still cut' % (a['cut_n'], a['cut_l']))
-            # 2. AIR IS ACTUALLY REMOVED
-            check('   and the air leads are gone',
-                  a['air_l'] < 400.0,
-                  '%.1f mm of lead still cuts nothing (was 693.4 before '
-                  'the gate)' % a['air_l'])
-            # 3. NOTHING RAPIDS INTO STANDING METAL
-            check('   and no rapid descends into standing metal',
-                  a['rap_bad'] == 0,
-                  '%d of %d rapids, worst %.4f mm deep'
-                  % (a['rap_bad'], a['rap_n'], a['rap_worst']))
-            # the probe must be able to fail
-            st = measure(P, 'testing_15_9.xml', ['polyline:param_dir=0'], d,
-                         'art0st', selftest=1.0)
-            check('   and the collision check itself fires when it should',
-                  st is not None and st['rap_bad'] > 0,
-                  'sinking every rapid 1 mm changed nothing - the probe is '
-                  'not measuring')
-
-        # ---- 4. the modes the carry cannot express, unchanged ---------------
-        # Natural ordering (sec_len 0) puts the weakest section first, and
-        # Both-directions alternates the entry end; the gate stands down in
-        # both, so these must measure exactly as they did before it existed.
-        for project, sets, tag, want in (
-                ('testing_15_5.xml', ['polyline:param_sectioning=1'],
-                 'nat5', (73, 194, 1326.2)),
-                ('testing_15_2.xml', ['polyline:param_sectioning=1'],
-                 'nat2', (107, 101, 700.9)),
-                ('testing_15_9.xml', ['polyline:param_dir=2'],
-                 'both', (556, 327, 1951.1))):
+        # ---- every mode, by the numbers it actually produces ---------------
+        # air ENTRY leads are what the gate targets; the rest of the air is
+        # retreats, which are deliberately left alone. Before any gate existed
+        # the Artificial front-to-back case carried 408 of them / 419.4 mm.
+        cases = (
+            ('artificial front to back', 'testing_15_9.xml',
+             ['polyline:param_dir=0'], 'art0',
+             dict(ent_n=19, cut_n=197, feed=1540.6, rap=0)),
+            ('artificial back to front', 'testing_15_9.xml',
+             ['polyline:param_dir=1'], 'art1',
+             dict(ent_n=0, cut_n=468, feed=1547.4, rap=60)),
+            ('both directions', 'testing_15_9.xml',
+             ['polyline:param_dir=2'], 'both',
+             dict(ent_n=10, cut_n=327, feed=1744.2, rap=0)),
+            ('natural, testing_15_5', 'testing_15_5.xml',
+             ['polyline:param_sectioning=1'], 'nat5',
+             dict(ent_n=20, cut_n=194, feed=1326.2, rap=0)),
+            ('natural, testing_15_2', 'testing_15_2.xml',
+             ['polyline:param_sectioning=1'], 'nat2',
+             dict(ent_n=16, cut_n=101, feed=700.9, rap=0)),
+        )
+        for name, project, sets, tag, want in cases:
             r = measure(P, project, sets, d, tag)
-            check('%s is untouched by the gate' % tag, r is not None)
+            check('%s generates and runs' % name, r is not None)
             if not r:
                 continue
-            check('   %s keeps its own lead counts' % tag,
-                  r['air_n'] == want[0] and r['cut_n'] == want[1],
-                  'air %d (want %d), cutting %d (want %d)'
-                  % (r['air_n'], want[0], r['cut_n'], want[1]))
-            check('   %s keeps its own roughing feed distance' % tag,
-                  abs(r['feed'] - want[2]) < 0.5,
-                  '%.1f mm against %.1f' % (r['feed'], want[2]))
-            check('   %s still rapids only through cleared metal' % tag,
-                  r['rap_bad'] == 0,
-                  '%d of %d rapids, worst %.4f mm'
+
+            # 1. THE WORK IS UNTOUCHED
+            check('   %s keeps every lead that cuts metal' % name,
+                  r['cut_n'] == want['cut_n'],
+                  '%d leads still cut, want %d' % (r['cut_n'], want['cut_n']))
+
+            # 2. AIR IS ACTUALLY REMOVED
+            check('   %s has no air entry leads left to speak of' % name,
+                  r['ent_n'] <= want['ent_n'],
+                  '%d air entry leads / %.1f mm, want at most %d'
+                  % (r['ent_n'], r['ent_l'], want['ent_n']))
+
+            check('   %s cuts the distance it is meant to' % name,
+                  abs(r['feed'] - want['feed']) < 0.5,
+                  'roughing feed %.1f mm against %.1f'
+                  % (r['feed'], want['feed']))
+
+            # 3. NOTHING RAPIDS INTO STANDING METAL
+            # art1 carries 60 hits at 0.0042 mm - grid discretisation on a
+            # sloped floor, present identically before any of this work
+            # (64 at 0.0041) and four orders of magnitude below a depth of
+            # cut. Bounded rather than waived, so a real collision there
+            # still fails.
+            check('   %s rapids only through cleared metal' % name,
+                  r['rap_bad'] <= want['rap'] and r['rap_worst'] < 0.01,
+                  '%d of %d rapids, worst %.4f mm deep'
                   % (r['rap_bad'], r['rap_n'], r['rap_worst']))
+
+        # ---- the probe must be able to fail --------------------------------
+        st = measure(P, 'testing_15_9.xml', ['polyline:param_dir=0'], d,
+                     'selftest', selftest=1.0)
+        check('the collision check itself fires when it should',
+              st is not None and st['rap_bad'] > 0,
+              'sinking every rapid 1 mm changed nothing - the probe is not '
+              'measuring')
+
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

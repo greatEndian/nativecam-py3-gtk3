@@ -1158,6 +1158,23 @@ def build_sections_gcode(polyline_feature):
         '#<_pl_sect_mode> = %d' % sect_mode,
         '#<_pl_sect_top_dia> = %s' % _fmt(top_x),
     ]
+    # THE PER-WINDOW DEEPEST-CUT SLOTS, cleared to "nothing cut here yet".
+    # 999999 is not a decorative sentinel: lathe_level_pass takes the MAXIMUM
+    # over the windows an entry lead crosses, so an uncut neighbour carries the
+    # whole comparison and the lead is kept. Clearing to 0 - which is what an
+    # untouched numbered parameter reads as - would instead say "cut to the
+    # centre" and drop every lead on the part.
+    # _pl_wdeep_ok is the guard for exactly that: a project generated before
+    # this table existed leaves it 0 (see create_defaults) and the gate stands
+    # down rather than reading slots nobody filled in.
+    if len(windows) <= (WDEEP_TOP - WDEEP_BASE):
+        lines.append('#<_pl_wdeep_ok> = 1')
+        for i in range(len(windows)):
+            lines.append('#%d = 999999' % (WDEEP_BASE + i))
+    else:
+        lines.append('(more windows than the deepest-cut table holds - entry)')
+        lines.append('(lead gating off for this program, roughing unchanged)')
+        lines.append('#<_pl_wdeep_ok> = 0')
     for i, (z_from, z_to, r_lo, r_hi) in enumerate(windows):
         slot = 3400 + i * 4
         lines.append('#%d = %s' % (slot + 1, _fmt(z_from)))
@@ -2949,6 +2966,9 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 # flank envelope at 3600 - roughing then stopped 4 mm short of the floor and
 # drove through the boss it was supposed to split around.
 #
+#   2800  per-window deepest cut  i     - WRITTEN AT RUNTIME by
+#                                         lathe_level_pass, one slot per
+#                                         window, cleared to 999999 here
 #   3400  sections window table   i*4
 #   3600  flank envelope          i*2, capped below
 #   3700  floor contour           i*2 - where a roughing LEVEL stops
@@ -2956,6 +2976,19 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 #   4400  In-CAM offsets          directory + points, capped at CAM_TOP
 #
 # test_table_layout in test_sections.py asserts they stay disjoint.
+# The only table here that Python does not fill in: lathe_level_pass writes the
+# deepest level each window actually CUT, and reads its neighbours' back to
+# decide whether an entry lead has any metal to enter. It has to be runtime -
+# the ladder lives in the O-code and a Python guess at what each window reaches
+# would be a second answer that could disagree with the real one.
+# 1000-2999 was measured to be completely unreferenced - by cfg/, lib/, ncam.py
+# and lathe_sections alike, and by the whole generated program, whose lowest
+# numbered parameter is 3000 - so this takes room from nothing. 200 slots
+# against the window table's own 50-window ceiling, so it can never be the
+# binding limit: greatEndian, 2026-08-15, *"there could come any files with any
+# number of points .. therefore the should not be limit that low"*.
+WDEEP_BASE = 2800
+WDEEP_TOP = 3000
 SECT_BASE = 3400
 FLANK_BASE = 3600
 # the flank envelope has never needed more than 58 slots of its 400, measured

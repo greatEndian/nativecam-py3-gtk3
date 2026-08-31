@@ -2668,16 +2668,16 @@ class Preferences(object):
             self.default += ("#<_pl_park_x>               = 0.0\n")
             self.default += ("#<_pl_park_z>               = 0.0\n")
             self.default += ("#<_pl_prev_lvl>             = 0.0\n")
-            # Deepest level a section actually CUT, and the same figure
-            # carried over as "what the PREVIOUS section reached". A pass
-            # whose level is at or above that was already taken down by the
-            # previous section, so its entry lead descends through metal
-            # that is already gone - see the ld_air gate in
-            # lathe_level_pass.ngc. Both start ABOVE any real radius so the
-            # very first section, which has no predecessor, arms its leads
-            # the normal way.
-            self.default += ("#<_pl_last_cut_lvl>         = 999999.0\n")
-            self.default += ("#<_pl_psec_deep>            = 999999.0\n")
+            # Which section window is being cut, and whether the per-window
+            # deepest-cut table at #2800 was filled in by this program at all.
+            # lathe_level_pass writes the deepest level each window reaches
+            # into #2800+i and reads its NEIGHBOURS' entries back to decide
+            # whether an entry lead has any metal to enter.
+            # A project generated before that table existed leaves the flag 0,
+            # and the entry-lead gate stands down rather than reading slots
+            # nobody wrote - they would read as 0, i.e. "cut to the centre".
+            self.default += ("#<_pl_w_idx>                = 0.0\n")
+            self.default += ("#<_pl_wdeep_ok>             = 0.0\n")
             self.default += ("#<_pl_zc_ovr>               = 0.0\n")
             self.default += ("#<_pl_z_clear>              = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_multi_cross>          = 0.0\n")

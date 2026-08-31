@@ -41,6 +41,7 @@ CFG = os.path.join(HERE, 'cfg')
 # 3300 - so they are named here and checked against lathe_sections' own
 # constants.
 LITERAL_WINDOWS = {
+    'WDEEP_BASE': 2800,
     'LVLSPLIT_BASE': 3160,
     'ERAMP_BASE': 3200,
     'SECT_FLOOR_BASE': 3380,
