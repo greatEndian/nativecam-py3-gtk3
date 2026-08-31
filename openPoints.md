@@ -770,7 +770,20 @@ the two cuts only touch.
   - The table took room from nothing: 1000-2999 measured completely
     unreferenced across cfg/, lib/, the Python and the generated program.
 
-- [ ] **Lead-OUTs are not gated, on purpose.** Roughly 280 mm of the remaining
+- [ ] **Lead-OUTs: MEASURED, awaiting greatEndian's call — `analysis/068`.**
+  Artificial front to back, roughing only: **266 lead-outs, every one exactly
+  1.0000 mm, purely outward, removing nothing — 19.7% of the roughing feed.**
+  Turning them off saves 266.0 mm of feed, leaves the cutting leads identical
+  (54 / 67.9 mm either way), and keeps every one of the 799 rapids out of
+  standing metal. Rapid distance rises 353.3 mm, so the gain is feed rate ->
+  rapid rate, not less travel.
+  **Back to front must not be touched**: its retreats ARE the climbing ramp and
+  cut 304.6 mm; dropping that once left a 0.4255 mm tooth per level on a taper.
+  What measurement cannot settle: the lead-out backs the tool off the end wall
+  at feed before the rapid, which is what avoids a witness mark at the stop
+  point. That is a machining-practice decision, not a geometric one.
+
+- [ ] **superseded note: Lead-OUTs are not gated, on purpose.** Roughly 280 mm of the remaining
   air on testing_15_9 is retreat leads. A retreat leaves the cut the pass has
   just made, which is a different question from an entry into metal that was
   already gone, and greatEndian's report was about lead-ins. Not yet asked
