@@ -684,6 +684,62 @@ the two cuts only touch.
   `test_x_continuity`, `test_ladder`, `test_skip_short`, `test_leads`,
   `test_sections` all pass.
 
+## Reported 2026-08-31 — the roughing air, and a setting that cannot fire
+
+- [x] **MEASURED: cutting is 16% of the roughing motion.** greatEndian, asking
+  whether the parallel ramp could be armed only on the pass that touches the
+  part: *"there is a lot of the cutting air passings"*. On testing_15_9:
+
+  | roughing motion | moves | distance |
+  |---|---|---|
+  | level cuts | 266 | 1010.0 mm |
+  | entries + lead-outs | 594 | 602.0 mm |
+  | **rapids** | **799** | **4688.3 mm** |
+
+- [x] **THE RAMP GATE WAS BUILT, MEASURED AND REVERTED - it is the wrong
+  lever.** Arming the ramp only where the pass begins ON the entry surface
+  keeps 31 ramps and drops 235 - but the ramp does not vanish, it falls back to
+  the configured 1.0 mm lead-in **at 45 degrees, X step 0.7072**, deeper than
+  one depth of cut. Entry feed 389.3 -> 305.0 mm, a **22% saving, not the 79%
+  I projected**, in exchange for 235 plunging entries - the very shape the ramp
+  machinery exists to prevent. Reverted. The projection was wrong because it
+  assumed the ramp would simply disappear.
+
+- [ ] **`Retract = Minimal` CANNOT FIRE ON ANY PROJECT, AND IT IS WORTH 48% OF
+  THE ROUGHING MOTION.** The setting reaches the runtime - the generated file
+  carries `#<_pl_ret_mode> = 1` - but `poly_lathe_mill.ngc:336` forces it back:
+  ```
+  o<mx_ret> if [#<_pl_multi_cross> GT 0]
+          #<_pl_ret_mode> = 0
+  ```
+  and `_pl_multi_cross` is set to **1 unconditionally** in the cfg, which says
+  so itself: *"disjoint-interval roughing is always active .. it no longer
+  gates anything"*. So the combo is dead for every project, always. Instrumented
+  to be certain: the level pass reads `mode=0.000000` when the file says 1.
+
+  **What it would be worth, measured by neutralising the guard for one run:**
+
+  | | rapids | total roughing motion |
+  |---|---|---|
+  | Full - above stock | 4688.3 mm | 6451.6 mm |
+  | Minimal | **1589.1 mm** | **3352.4 mm** |
+
+  **3099 mm of rapids removed, 66% of them; total motion nearly halved.** The
+  guard was restored immediately - this was a measurement, not a change.
+
+  - [ ] **The guard's reason is real and must not simply be deleted.**
+    `_pl_prev_lvl` is a single reference radius meaning "the previous level",
+    and it goes stale the moment a boss splits a level into disjoint intervals:
+    retracting there can put the tool into the boss. Full retract is an
+    absolute upper bound and unconditionally safe.
+  - [ ] **The fix is a safe reference, not a removed guard.** The retract
+    radius should be the highest material between where the tool IS and where
+    it is GOING - `max(profile) over the traverse span + ret_dist` - rather
+    than the previous level. That is a table lookup of the kind the stop and
+    entry scans already do, and Python already emits the contours to read.
+    Not built: it changes retract heights, so it wants its own measurement of
+    every retract against the profile before it goes anywhere near a machine.
+
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed
