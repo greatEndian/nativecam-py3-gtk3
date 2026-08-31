@@ -574,7 +574,16 @@ o<lathe_level_pass> sub
 			#<e_pz> = #<e_cz>
 			#<e_px> = #<e_cx>
 		o<e_w> endwhile
-		o<e_ok> if [#<e_have>]
+		(THE ENTRY CONTOUR MAY ONLY PULL A START EARLIER, NEVER LATER.)
+		(A level that survived the blocked test above is cuttable from w_from,)
+		(so there is nothing for the entry rule to protect against: it is a)
+		(continuation, and the boundary is where the previous section's cut)
+		(ended. Letting it push the start deeper leaves the strip between the)
+		(two, and the repair for THAT used to be lengthening the previous cut)
+		(to meet it - which is what made that cut overrun its section.)
+		(w_from - _pl_rgh_oz is the boundary in control terms, the same)
+		(expression the window END uses, so the two sides meet by construction.)
+		o<e_ok> if [[#<e_have>] AND [[#<z_dir> * [#<e_best> - [#<w_from> - #<_pl_rgh_oz>]]] GE -0.000001]]
 			#<z_start> = #<e_best>
 			(the approach copies the contour's own angle here, running one)
 			(roughing depth of cut of PROJECTED length back from the entry)
@@ -598,7 +607,8 @@ o<lathe_level_pass> sub
 		(window, so it cannot run away.)
 		o<e_ext> if [[#<e_have> EQ 0] AND [#<e_whave> GT 0] AND [ABS[#<e_wdx>] GT 0.000001]]
 			#<e_xz> = [#<e_waz> + [[#<level> - #<e_wax>] * #<e_wdz> / #<e_wdx>]]
-			o<e_xb> if [[ABS[#<e_xz> - #<w_from>] LT [3.0 * #<_rough_cut>]] AND [[#<z_dir> * [#<e_xz> - #<w_to>]] GT 0.0001]]
+			(and the same guard as e_best above - earlier only, never later)
+			o<e_xb> if [[ABS[#<e_xz> - #<w_from>] LT [3.0 * #<_rough_cut>]] AND [[#<z_dir> * [#<e_xz> - #<w_to>]] GT 0.0001] AND [[#<z_dir> * [#<e_xz> - [#<w_from> - #<_pl_rgh_oz>]]] GE -0.000001]]
 				#<z_start> = #<e_xz>
 			o<e_xb> endif
 		o<e_ext> endif
@@ -662,14 +672,14 @@ o<lathe_level_pass> sub
 	(    untouched, which is every boundary that is not on a ramp.)
 	(  - and never past the level's own crossing, nor further than the same)
 	(    three depths of cut e_ext bounds itself by.)
-	o<w_ext> if [[#<e_thave> GT 0] AND [ABS[#<e_tdx>] GT 0.000001]]
-		#<e_xze> = [#<e_taz> + [[#<level> - #<e_tax>] * #<e_tdz> / #<e_tdx>]]
-		o<w_ext2> if [ABS[#<z_end> - [#<w_to> - #<_pl_rgh_oz>]] LT 0.000001]
-			o<w_ext3> if [[[#<z_dir> * [#<e_xze> - #<z_end>]] LT 0] AND [[#<z_dir> * [#<e_xze> - #<zc>]] GT 0.0001] AND [ABS[#<e_xze> - #<w_to>] LT [3.0 * #<_rough_cut>]]]
-				#<z_end> = #<e_xze>
-			o<w_ext3> endif
-		o<w_ext2> endif
-	o<w_ext> endif
+	(THE LENGTHENING THAT SAT HERE IS GONE. It pushed a window-clamped end on)
+	(to where the next window's entry rule would start, which closed the strip)
+	(but made that cut run past its own section: 5.6769 in a 4.7500 section on)
+	(testing_15_9, beside 26 passes of exactly 4.7500. greatEndian, 2026-08-30:)
+	(*"16 and 17 are longer than 18 19 20 pass and they should be the same)
+	(ones"*. The guard on the START above closes the same strip from the other)
+	(side and leaves every pass its own section's length. e_t* is kept: it is)
+	(what the guard compares against.)
 
 	o<ent> endif
 

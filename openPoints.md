@@ -591,6 +591,40 @@ the two cuts only touch.
     merge fragments them. The metric only means anything once they join, so it
     cannot be used to date these four.
 
+- [x] **EVERY PASS NOW RUNS ITS OWN SECTION'S LENGTH — FIXED 2026-08-31, and
+  it replaced the lengthening rather than adding to it.** greatEndian:
+  *"16 and 17 are longer than 18 19 20 pass and they should be the same ones"*.
+  On testing_15_9 the 5th section from the front is 4.7500 wide, and 26 of its
+  28 passes ran exactly that - while two ran **5.6769** and **4.9714**, past
+  the section into the next.
+
+  Those two were my own lengthening, pushing a window-clamped end on to where
+  the next window's entry rule would start. **The guard on the START does the
+  same job from the other side**: the entry contour may only pull a start
+  EARLIER, never later. A level that survived the blocked test is cuttable from
+  `w_from`, so there is nothing for the entry rule to protect against there -
+  it is a continuation, and the boundary is where the previous section's cut
+  ended. `w_from - _pl_rgh_oz` is that boundary in control terms, the same
+  expression the window END uses, so the two sides meet by construction.
+
+  **Measured**: passes 12 and 13 are now **4.7500** like the rest, every pass
+  1-19 ends exactly on -20.4000, and 20 onward taper only because their own
+  reach ends earlier. Positive-gap count **16 -> 15, with no small gaps left at
+  all** - every remaining one is a large legitimate disjoint interval across
+  the boss. So this is strictly better than the lengthening it removed: same
+  strips closed, no pass overrunning its section.
+  Gates: `check_tangent` PASS min |dot| 1.00000 over 938973 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_skip_short`, `test_leads`, `test_sections` all pass.
+
+  - [x] **A NEAR MISS WORTH RECORDING: a scripted edit deleted 594 lines.**
+    Removing the lengthening by locating its start and walking a line range
+    took out the entire entry scan - `o<ent> endif` ended up at line 85 and the
+    file went 1406 -> 812. `cam_map` still PASSED, because it checks tables and
+    windows, not that the geometry survived. Caught by `git diff --stat` and
+    reverted. **Edit O-code by exact string replacement only; never by line
+    arithmetic, and always read the diffstat before believing an edit.**
+
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed
