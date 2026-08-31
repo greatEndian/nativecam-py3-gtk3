@@ -752,6 +752,37 @@ the two cuts only touch.
     That measurement was made and is the acceptance number above: +1.0693 mm
     tightest clearance, positive everywhere.
 
+- [ ] **Air entry leads are still emitted under Natural sectioning and under
+  Both directions.** The Artificial front-to-back and back-to-front cases are
+  done - `analysis/066`, 693.4 mm of lead that cut nothing is down to 282.9,
+  roughing feed 1951.1 -> 1540.6 mm - but the gate stands down in the other two
+  modes, and that is a CORRECTNESS bound, not caution. The carry says "the
+  window processed before this one" and the gate needs "the neighbour in Z on
+  the side the lead reaches into". Natural orders windows weakest-diameter
+  first, so those differ; Both directions alternates the entry END per pass, so
+  half the passes lead in over the boundary with the section not yet cut.
+  Measured with the carry left live: **Natural rapided 0.4962-0.4991 mm and
+  Both directions 0.5059 mm into standing metal**, one full depth of cut, where
+  both are clean before the change.
+  - [ ] Closing it needs a **per-window record** of what each window actually
+    reached, looked up by which window contains the lead's start Z - not one
+    carried value. Costs parameter slots, so measure the budget against the
+    real projects before designing it.
+  - [ ] `test_air_leads.py` pins the current numbers for all three standing-down
+    cases, so a widening that gets this wrong fails there rather than on a
+    machine.
+
+- [ ] **Lead-OUTs are not gated, on purpose.** Roughly 280 mm of the remaining
+  air on testing_15_9 is retreat leads. A retreat leaves the cut the pass has
+  just made, which is a different question from an entry into metal that was
+  already gone, and greatEndian's report was about lead-ins. Not yet asked
+  whether a retreat over just-cut material earns its feed.
+
+- [ ] **A 0.0042 mm rapid overlap survives on roughing direction 1.** Assumed to
+  be grid discretisation on a sloped floor in the material probe: it matches the
+  baseline 0.0041 exactly and is four hits fewer after the change. Far below any
+  machining significance, but not chased to ground.
+
 - [ ] **Minimal retract still falls back to Full on ID work and with no floor
   table.** Both are deliberate abstentions from `analysis/065`, not oversights:
   `_pl_side != 0` is a different retract geometry that the +1.0693 mm clearance

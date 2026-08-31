@@ -34,6 +34,9 @@ o<lathe_level_pass> sub
 	#<z_start>   = [#<w_from> - #<_pl_rgh_oz>]
 	(the profile-angle approach segment, resolved with z_start below)
 	#<pa_on>     = 0
+	(1 when this pass's ENTRY LEAD runs entirely through metal a previous)
+	(section has already removed - see the ld_air gate after the ramp arming)
+	#<ld_air>    = 0
 	#<pa_z>      = 0
 	#<pa_x>      = 0
 	#<e_bdz>     = 0
@@ -975,6 +978,67 @@ o<lathe_level_pass> sub
 		o<e_proj> endif
 	o<e_arm> endif
 
+	(AN ENTRY LEAD INTO METAL THAT IS ALREADY GONE IS PURE AIR TIME.)
+	(With Sectioning on the ladder is computed ONCE and shared by every)
+	(section window, so section N and section N-1 cut at exactly the same)
+	(radii. A pass whose level the previous section already reached therefore)
+	(leads in through a column that section has fully cleared: the 45 degree)
+	(straight lead and the profile-angle ramp both run through air, arrive)
+	(parallel to nothing, and remove no metal.)
+	(greatEndian, 2026-08-31, on the 10th section of testing_15_9: *"could)
+	(have skipped artificial lead in from 1-3 passes and only 4th in the part)
+	(contact it should has it"* - and passes 1-3 there are exactly the three)
+	(levels section 9 had already taken down.)
+	(Measured with a time-ordered material simulation over the whole program:)
+	(689 lead and ramp moves, 693.4 mm, cut nothing at all - 35.5% of the)
+	(entire roughing feed distance - against 194 moves and 210.9 mm that do.)
+	(THE TEST IS THE PREVIOUS SECTION'S DEEPEST CUT, NOT THE FLOOR. Checking)
+	(the lead against the roughing floor mispredicts in both directions,)
+	(because a section's ladder does not reach its own floor: on testing_15_9)
+	(section 9 stopped at r33.4823 with its floor at 32.8658, so the next)
+	(level down is above the floor and still cuts 0.5059 deep into the step)
+	(that ladder left. What is gone is what was actually CUT, so that is what)
+	(is asked. _pl_last_cut_lvl records it, poly_lathe_mill carries it into)
+	(_pl_psec_deep at each window start.)
+	(Both globals default to 999999, so the first section - which has no)
+	(predecessor - never matches and keeps its leads.)
+	(ARTIFICIAL SECTIONING ONLY, AND THAT IS A CORRECTNESS BOUND, NOT CAUTION.)
+	(The carry says "the previous WINDOW PROCESSED", and this gate needs "the)
+	(neighbouring window in Z, on the side the lead comes from". Those are the)
+	(same window only when the processing order follows the part: Artificial)
+	(- _pl_sect_mode 1 - is emitted by lathe_sections in Z order, front to)
+	(back or reversed to match the cut direction, so window w-1 is always the)
+	(neighbour the lead reaches into. Natural orders windows weakest/smallest-)
+	(diameter FIRST, so the window that ran last can be somewhere else on the)
+	(part entirely, and its deepest level says nothing about the metal beside)
+	(this one.)
+	(THIS WAS MEASURED, not feared. Without the mode test the gate fired on)
+	(nearly every pass of the Natural projects - testing_15_2, _15_4 and _15_5)
+	(dropped to 2 ramps or fewer - and their radial descents then rapided)
+	(0.4962 to 0.4991 mm INTO STANDING METAL, where the same projects are)
+	(clean on every one of their 142 and 88 rapids before the change. A deep)
+	(level carried over from a far window made every later level look already)
+	(cut.)
+	(Natural therefore keeps its leads and its air time. Doing it there needs)
+	(a per-window record of what each window reached, looked up by which)
+	(window actually contains the lead's start Z - recorded in openPoints.md,)
+	(not attempted here.)
+	o<ld_gate> if [[#<_pl_sectioning> GT 0] AND [#<_pl_sect_count> GT 0] AND [#<_pl_sect_mode> EQ 1]]
+		o<ld_deep> if [#<level> GE [#<_pl_psec_deep> - 0.000001]]
+			#<ld_air> = 1
+			(the ramp goes with it. Disarming ONLY the ramp is what made an)
+			(earlier attempt at this worth 22% instead of the measured 35%:)
+			(the pass did not lose its approach, it fell back to the plain)
+			(1.0 mm lead at 45 degrees - an X step of 0.7072, DEEPER than one)
+			(depth of cut - so the air time came back as a plunge. The lead)
+			(lengths are zeroed with it below, which drops the pass onto the)
+			(no-lead path that already exists and is already proven: stand)
+			(off in Z by the clearance, descend X there through the cleared)
+			(column, cut. Nothing new is invented for this.)
+			#<pa_on> = 0
+		o<ld_deep> endif
+	o<ld_gate> endif
+
 
 	(exposed for callers doing their own disjoint-interval scanning after this)
 	(call - e.g. lathe_level_next_start needs to know where THIS pass actually)
@@ -1334,6 +1398,15 @@ o<lathe_level_pass> sub
 		#<rt_ff> = #<li_feed>
 	o<end_sw> endif
 
+	(ld_air drops the ENTRY lead only. The retreat lead at the other end is)
+	(left exactly as it was: it leaves the cut this pass has just made, which)
+	(is metal that was standing a moment ago, so it is not the same question)
+	(and it is not what was reported.)
+	o<ld_zero> if [#<ld_air> GT 0]
+		#<ap_ll> = 0
+		#<ap_rr> = 0
+	o<ld_zero> endif
+
 	(drive in along the entry lead: rapid to its far point, feed down the)
 	(straight, then blend onto the pass's own direction)
 	o<lead_ap> if [[#<ap_ll> GT 0] OR [#<ap_rr> GT 0]]
@@ -1447,6 +1520,14 @@ o<lathe_level_pass> sub
 	o<peck> else
 		G1 Z#<em_z1>
 	o<peck> endif
+
+	(THIS PASS CUT, so its level is the deepest reached in this section so far)
+	(- the ladder descends, so the last one to get here is the deepest. Set)
+	(after the cut on purpose: a pass that returned early above never reaches)
+	(this line, and a level nobody cut must not be reported as removed metal.)
+	(poly_lathe_mill copies this into _pl_psec_deep when it opens the next)
+	(section window; read by the ld_air gate above.)
+	#<_pl_last_cut_lvl> = #<level>
 
 
 	(THE PROFILE-ANGLE RAMP, CLIMBED. Back to front the pass arrives at)

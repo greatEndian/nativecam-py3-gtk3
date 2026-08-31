@@ -2668,6 +2668,16 @@ class Preferences(object):
             self.default += ("#<_pl_park_x>               = 0.0\n")
             self.default += ("#<_pl_park_z>               = 0.0\n")
             self.default += ("#<_pl_prev_lvl>             = 0.0\n")
+            # Deepest level a section actually CUT, and the same figure
+            # carried over as "what the PREVIOUS section reached". A pass
+            # whose level is at or above that was already taken down by the
+            # previous section, so its entry lead descends through metal
+            # that is already gone - see the ld_air gate in
+            # lathe_level_pass.ngc. Both start ABOVE any real radius so the
+            # very first section, which has no predecessor, arms its leads
+            # the normal way.
+            self.default += ("#<_pl_last_cut_lvl>         = 999999.0\n")
+            self.default += ("#<_pl_psec_deep>            = 999999.0\n")
             self.default += ("#<_pl_zc_ovr>               = 0.0\n")
             self.default += ("#<_pl_z_clear>              = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_multi_cross>          = 0.0\n")
