@@ -625,6 +625,34 @@ the two cuts only touch.
     reverted. **Edit O-code by exact string replacement only; never by line
     arithmetic, and always read the diffstat before believing an edit.**
 
+- [x] **A PASS IS NOW CONTAINED BY ITS OWN SECTION AT BOTH ENDS — 2026-08-31.**
+  greatEndian, on the 6th section from the front: *"13.14.15th pass too long ..
+  they stops well at tangential surface back at boss segment but they starts
+  wrong in the 5th section segment looks like offsetted wrong"*,
+  `photo/sectionning_1.png`.
+
+  The far end was already bounded and the near end was not. The entry rule may
+  pull a start BACK so the pass arrives parallel rather than diving in at 45
+  degrees - the testing_15_5 ramp - but a continuation has no room for it: the
+  previous section has already cut that ground at that radius, so the reach-back
+  only re-traverses air and hangs into the section before.
+  **Measured**, section 6 begins -20.4000 and three passes started **-19.9158,
+  -19.2103 and -18.5048** - reaching back 0.4842, 1.1897 and 1.8952 into a
+  section that had already cut to -20.4000 at those very radii.
+  Clamped with the same bound the far end uses, `w_from - _pl_rgh_oz`.
+
+  **After**: every pass in the section starts on -20.4000 and the lengths taper
+  cleanly 4.1667 -> 0.5299 as the boss arc rises. 18 passes become 17 - the last
+  had 0.0105 of reach left once clamped, under the operator's 0.500 Skip short.
+  Positive-gap count stays **15, with no small gaps**.
+
+  **The regression this risked was checked, not assumed**: `test_ramps` passes,
+  **68 ramps, every one arriving at the same angle and none starting inside the
+  level it enters**, so the parallel arrival the clamp touches still holds.
+  Gates: `check_tangent` PASS min |dot| 1.00000 over 941985 canon events,
+  `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
+  `test_skip_short`, `test_leads`, `test_sections` all pass.
+
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed

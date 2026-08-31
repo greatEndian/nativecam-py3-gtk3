@@ -683,6 +683,24 @@ o<lathe_level_pass> sub
 
 	o<ent> endif
 
+	(AND NOT EARLIER THAN THE BOUNDARY EITHER. The entry rule may pull a start)
+	(back so the pass arrives parallel instead of diving in at 45 degrees -)
+	(that is the testing_15_5 ramp - but a continuation has no room for it:)
+	(the previous section already cut that ground at this radius, so reaching)
+	(back only re-traverses air and shows up as a pass hanging into the)
+	(section before it.)
+	(Measured on testing_15_9, the 6th section from the front, which begins)
+	(-20.4000: three passes started -19.9158, -19.2103 and -18.5048, reaching)
+	(back 0.4842, 1.1897 and 1.8952 into a section that had already cut to)
+	(-20.4000 at those very radii. greatEndian, 2026-08-31: *"they stops well)
+	(at tangential surface back at boss segment but they starts wrong in the)
+	(5th section segment looks like offsetted wrong"*.)
+	(Same bound as the far end, w_from - _pl_rgh_oz, so a pass is contained by)
+	(its own section at both ends.)
+	o<zs_cl> if [[#<z_dir> * [#<z_start> - [#<w_from> - #<_pl_rgh_oz>]]] GT 0.000001]
+		#<z_start> = [#<w_from> - #<_pl_rgh_oz>]
+	o<zs_cl> endif
+
 	(Extend the STOP to the pre-finish contour, when Python emitted one.)
 	(The scan above keeps the FLOOR allowance - it is not only the stop, it)
 	(also decides whether this level is blocked at all, and halving it let)
