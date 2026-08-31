@@ -653,6 +653,37 @@ the two cuts only touch.
   `test_x_continuity`, `test_leftover` control 24/24, `test_ladder`,
   `test_skip_short`, `test_leads`, `test_sections` all pass.
 
+- [x] **EVERY PARALLEL RAMP IS FULL LENGTH — 2026-08-31.** greatEndian:
+  *"parallel artificial lead ins are every second time halfsized ... artificial
+  lead in should start at endings of lead in from segment before"*.
+
+  It was literally half: `#<pa_room> = [0.5 * ABS[#<z_end> - #<z_start>]]`
+  capped the ramp at **half the cut it enters**, and the comment beside it said
+  so - *"Half the cut, so the ramp never eats the whole pass"*.
+  **Measured on testing_15_9**: against a standard 2.1724, the last ramp of
+  each section came out **1.0544, 0.9436, 0.8671, 0.7905, 0.7139** - each
+  exactly half its own cut.
+
+  **The length is not a free choice, and that is why the cap was wrong.** A
+  ramp runs `doc / sin` of the contour angle and the levels sit one doc apart,
+  so consecutive ramps are parallel lines whose END is the next one's START -
+  which is exactly the rule greatEndian stated. Capping one breaks the chain
+  and it reads as a lead-in hanging in space beside its neighbours.
+  The cap was guarding against a ramp eating its whole pass; it does not need
+  to, because a ramp runs through metal that is ALREADY GONE. Longer than the
+  cut costs air time, not a gouge. The real guards - it must come from the
+  stock side and must not start inside the level it enters - are elsewhere and
+  are asserted by `test_ramps`.
+
+  **After**: every ramp is **2.2583**, uniform across all passes and sections,
+  and they chain - in the 12th section pass 7's ramp ends -45.7524 where pass
+  8's starts -45.7433.
+  Gates: `test_ramps` **68 ramps, all at one angle, none longer than the
+  standard, none starting inside the level it enters**; `check_tangent` PASS
+  min |dot| 1.00000 over 943861 canon events; `test_leftover` control 24/24,
+  `test_x_continuity`, `test_ladder`, `test_skip_short`, `test_leads`,
+  `test_sections` all pass.
+
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed

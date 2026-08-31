@@ -916,12 +916,24 @@ o<lathe_level_pass> sub
 			(one. Whether the full ramp fits depends on where the ladder's)
 			(levels happen to fall against the slope, so any change to the)
 			(levels can turn a ramped pass into a plunging one; giving the)
-			(short pass the ramp it can have removes that coupling. Half the)
-			(cut, so the ramp never eats the whole pass.)
-			#<pa_room> = [0.5 * ABS[#<z_end> - #<z_start>]]
-			o<e_cap> if [#<pa_dz> GT #<pa_room>]
-				#<pa_dz> = #<pa_room>
-			o<e_cap> endif
+			(short pass the ramp it can have removes that coupling.)
+			(THE LENGTH IS NOT A FREE CHOICE THOUGH - it is what makes the)
+			(ramps CHAIN. Every ramp runs doc/sin of the contour angle, and the)
+			(levels sit one doc apart, so consecutive ramps are parallel lines)
+			(whose end is exactly the next one's start. Capping one breaks that)
+			(chain and it shows as a lead-in hanging in space, half the length)
+			(of its neighbours. greatEndian, 2026-08-31: *"parallel artificial)
+			(lead ins are every second time halfsized ... artificial lead in)
+			(should start at endings of lead in from segment before"*.)
+			(Measured on testing_15_9: the standard ramp is 2.1724 and the last)
+			(of each section came out 1.0544, 0.9436, 0.8671, 0.7905, 0.7139 -)
+			(each exactly half its own cut, which is what the cap here was.)
+			(The cap was there so a ramp could not eat its whole pass. It does)
+			(not need to: the ramp runs through metal that is ALREADY GONE -)
+			(that is its whole premise - so being longer than the cut it enters)
+			(costs air time, not a gouge. The real guard is that it must come)
+			(in from the stock side and must not start inside the level it)
+			(enters, and that is enforced below and asserted by test_ramps.)
 			o<e_room> if [#<pa_dz> GT 0.000001]
 				#<pa_z> = [#<z_start> + #<z_dir> * #<pa_dz>]
 				#<pa_x> = [#<level> + #<z_dir> * #<pa_dz> * #<e_slope>]
