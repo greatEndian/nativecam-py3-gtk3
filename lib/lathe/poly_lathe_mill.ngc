@@ -324,17 +324,21 @@ o<poly_lathe_mill> sub
                 #<_pl_p1s_n> = 0
         o<p1s_clr> endif
 
-        (a re-entrant profile can split one level into several disjoint)
-        (safe-to-cut intervals - minimal retract's single reference radius)
-        (only ever means "the previous level," which goes stale the moment)
-        (an interval-splitting boss is found and stays permanently short of)
-        (that boss on every smaller level after. Force full retract instead)
-        (for the whole polyline once multi-crossing handling is active -)
-        (full retract's target is an absolute upper bound, unconditionally)
-        (safe, trading some cycle time for closing that gap)
-        o<mx_ret> if [#<_pl_multi_cross> GT 0]
-                #<_pl_ret_mode> = 0
-        o<mx_ret> endif
+        (A re-entrant profile can split one level into several disjoint)
+        (safe-to-cut intervals, and minimal retract's reference USED to be)
+        (_pl_prev_lvl alone - "the previous level" - which goes stale the)
+        (moment an interval-splitting boss is found and stays permanently)
+        (short of that boss on every smaller level after. Full retract was)
+        (forced here for the whole polyline whenever multi-crossing was)
+        (active, and since the cfg sets _pl_multi_cross unconditionally that)
+        (meant the Minimal setting could never fire on ANY project - a shipped)
+        (combo that did nothing, worth 66% of the rapids and nearly half the)
+        (roughing motion on testing_15_9.)
+        (The force is gone because the staleness is fixed at its source:)
+        (lathe_level_pass now takes the roughing floor's PEAK between where)
+        (the tool is and where it is going, so an interval-splitting boss)
+        (raises the retract by construction instead of being missed. See the)
+        (minimal-retract block there.)
 
         (densified copy for the level-crossing scans only. They read a record's)
         (endpoints and nothing else, so an arc reaches them as its chord - which)

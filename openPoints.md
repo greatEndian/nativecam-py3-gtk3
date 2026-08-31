@@ -705,8 +705,20 @@ the two cuts only touch.
   machinery exists to prevent. Reverted. The projection was wrong because it
   assumed the ramp would simply disappear.
 
-- [ ] **`Retract = Minimal` CANNOT FIRE ON ANY PROJECT, AND IT IS WORTH 48% OF
-  THE ROUGHING MOTION.** The setting reaches the runtime - the generated file
+- [x] **`Retract = Minimal` CANNOT FIRE ON ANY PROJECT, AND IT IS WORTH 48% OF
+  THE ROUGHING MOTION.** DONE 2026-08-31, see `analysis/065`. The safe
+  reference below was built: the retract radius is now the roughing floor's
+  **peak between where the tool is and where it is going**, taken together with
+  the previous level, so an interval-splitting boss raises the retract by
+  construction and the force in `poly_lathe_mill.ngc` is gone. Shipped numbers
+  on testing_15_9, same 799 rapids either way: **4688.3 -> 1898.3 mm of rapid
+  distance, 6451.6 -> 3661.6 mm total** (60% / 43%). Slightly more than the
+  1589.1 mm the unsafe prototype measured - that difference is the price of the
+  peak lookup, and it is the right price. **The number that proves it is not
+  the distance but the clearance**: every Z traverse sampled along its length
+  against the roughing floor, tightest **+1.0693 mm**, never negative. Falls
+  back to full retract with no floor table and on ID work, both unmeasured
+  rather than assumed. The setting reaches the runtime - the generated file
   carries `#<_pl_ret_mode> = 1` - but `poly_lathe_mill.ngc:336` forces it back:
   ```
   o<mx_ret> if [#<_pl_multi_cross> GT 0]
@@ -727,18 +739,26 @@ the two cuts only touch.
   **3099 mm of rapids removed, 66% of them; total motion nearly halved.** The
   guard was restored immediately - this was a measurement, not a change.
 
-  - [ ] **The guard's reason is real and must not simply be deleted.**
+  - [x] **The guard's reason is real and must not simply be deleted.**
     `_pl_prev_lvl` is a single reference radius meaning "the previous level",
     and it goes stale the moment a boss splits a level into disjoint intervals:
     retracting there can put the tool into the boss. Full retract is an
     absolute upper bound and unconditionally safe.
-  - [ ] **The fix is a safe reference, not a removed guard.** The retract
+  - [x] **The fix is a safe reference, not a removed guard.** BUILT. The retract
     radius should be the highest material between where the tool IS and where
     it is GOING - `max(profile) over the traverse span + ret_dist` - rather
     than the previous level. That is a table lookup of the kind the stop and
     entry scans already do, and Python already emits the contours to read.
-    Not built: it changes retract heights, so it wants its own measurement of
-    every retract against the profile before it goes anywhere near a machine.
+    That measurement was made and is the acceptance number above: +1.0693 mm
+    tightest clearance, positive everywhere.
+
+- [ ] **Minimal retract still falls back to Full on ID work and with no floor
+  table.** Both are deliberate abstentions from `analysis/065`, not oversights:
+  `_pl_side != 0` is a different retract geometry that the +1.0693 mm clearance
+  measurement did not cover, and `_pl_stop_n = 0` leaves nothing to verify a
+  shorter retract against. ID roughing therefore still pays the full-retract
+  rapids. Closing it needs the same clearance measurement run on an ID project
+  before the gate is widened - not a widened gate followed by a check.
 
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level

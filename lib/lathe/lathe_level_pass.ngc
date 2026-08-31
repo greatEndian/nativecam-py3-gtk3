@@ -75,6 +75,27 @@ o<lathe_level_pass> sub
 	(The e_t* set is the same latch as e_w* but taken at w_to instead of)
 	(w_from, because it is the NEXT window's surface that decides where the)
 	(next cut begins - see the second latch in the entry scan.)
+	(WHERE THE TOOL IS NOW. _pl_level_z_end still holds the PREVIOUS pass's)
+	(finish Z at this point, since this pass overwrites it further down, so)
+	(it is the one thing here that knows where the traverse starts from.)
+	(Used by the minimal retract to ask what stands between there and this)
+	(pass's start.)
+	(AND NO COMMENT HERE MAY OPEN WITH "end" OR "begin": ncam_preview reads)
+	(COMMENT lines matching those two words as operation markers, so a line)
+	(of prose starting with one pops the operation stack and every move after)
+	(it is orphaned. That is not cosmetic - it cost a whole measurement run,)
+	(which came back with 1793 moves attributed to no operation at all and)
+	(zero roughing rapids, looking exactly like a program that had stopped.)
+	#<pv_end_z>  = #<_pl_level_z_end>
+	#<pk>        = 0
+	#<k_i>       = 0
+	#<k_pz>      = 0
+	#<k_px>      = 0
+	#<k_cz>      = 0
+	#<k_cx>      = 0
+	#<k_lo>      = 0
+	#<k_ov1>     = 0
+	#<k_hi>      = 0
 	#<z_wend>    = 0
 	#<e_xze>     = 0
 	#<e_tb>      = 0
@@ -1165,9 +1186,76 @@ o<lathe_level_pass> sub
 
 	(approach: full retract above stock, or minimal retract just above the)
 	(previous pass level - safe because that band is already cut)
-	o<ret_md> if [#<_pl_ret_mode> GT 0]
-		#<ret_x> = [[#<_pl_prev_lvl> + #<_pl_ret_dist>] * #<_diameter_mode>]
-		o<ret_cap> if [[#<_pl_side> EQ 0] AND [#<ret_x> GT [#<_wp_dia_od> + #<_x_clear>]]]
+	(MINIMAL RETRACT NEEDS A SAFE REFERENCE, NOT THE PREVIOUS LEVEL.)
+	(_pl_prev_lvl alone means "the previous level", and it goes stale the)
+	(moment a boss splits a level into disjoint intervals: the band above it)
+	(is cut where the tool has been, but the boss between here and the next)
+	(pass is still standing. That is why poly_lathe_mill forced full retract)
+	(whenever multi-crossing was active, which is always - so the Minimal)
+	(setting could never fire on any project.)
+	(So the reference is the highest material BETWEEN WHERE THE TOOL IS AND)
+	(WHERE IT IS GOING: the roughing floor's peak over that span, which is)
+	(what will still be standing there, taken together with the previous)
+	(level. The floor table is already emitted and the stop scan above walks)
+	(it the same way. Read the table, move.)
+	(Measured on testing_15_9, Full against Minimal, same 799 rapids either)
+	(way: rapid distance 4688.3 -> 1898.3 mm, total roughing motion 6451.6)
+	(-> 3661.6 mm. The tightest clearance any traverse keeps over the)
+	(roughing floor is +1.0693 mm - the retract distance plus margin, never)
+	(negative - which is the number that says this is safe and not merely)
+	(shorter. greatEndian, 2026-08-31: "there is a lot of the cutting air)
+	(passings".)
+	(With no floor table there is nothing to verify against, so it falls back)
+	(to the full retract rather than guessing - and so does ID work, whose)
+	(retract is a different geometry this has not been measured against.)
+	o<ret_md> if [[#<_pl_ret_mode> GT 0] AND [#<_pl_stop_n> GT 0] AND [#<_pl_side> EQ 0]]
+		#<pk> = #<_pl_prev_lvl>
+		#<k_lo> = #<pv_end_z>
+		#<k_hi> = #<z_start>
+		o<k_ord> if [#<k_lo> GT #<k_hi>]
+			#<k_lo> = #<z_start>
+			#<k_hi> = #<pv_end_z>
+		o<k_ord> endif
+		#<k_i> = 0
+		#<k_pz> = #[#<_pl_stop_base>]
+		#<k_px> = #[#<_pl_stop_base> + 1]
+		o<k_w> while [#<k_i> LT [#<_pl_stop_n> - 1]]
+			#<k_i> = [#<k_i> + 1]
+			#<k_cz> = #[#<_pl_stop_base> + #<k_i> * 2]
+			#<k_cx> = #[#<_pl_stop_base> + #<k_i> * 2 + 1]
+			(any segment overlapping the traverse contributes its endpoints -)
+			(a segment crossing the span is covered by them, since the floor)
+			(is piecewise linear and a maximum sits at a breakpoint.)
+			(BUILT IN FOUR SHORT TESTS, not one expression: the single)
+			(condition this replaced was long enough for the interpreter to)
+			(refuse the file outright with "Command too long", which is the)
+			(line-length limit CLAUDE.md warns about.)
+			#<k_ov1> = 0
+			o<k_a> if [[#<k_pz> GE [#<k_lo> - 0.000001]] AND [#<k_pz> LE [#<k_hi> + 0.000001]]]
+				#<k_ov1> = 1
+			o<k_a> endif
+			o<k_b> if [[#<k_cz> GE [#<k_lo> - 0.000001]] AND [#<k_cz> LE [#<k_hi> + 0.000001]]]
+				#<k_ov1> = 1
+			o<k_b> endif
+			o<k_c> if [[[#<k_pz> - #<k_lo>] * [#<k_cz> - #<k_lo>]] LT 0]
+				#<k_ov1> = 1
+			o<k_c> endif
+			o<k_d> if [[[#<k_pz> - #<k_hi>] * [#<k_cz> - #<k_hi>]] LT 0]
+				#<k_ov1> = 1
+			o<k_d> endif
+			o<k_ov> if [#<k_ov1> GT 0]
+				o<k_mp> if [#<k_px> GT #<pk>]
+					#<pk> = #<k_px>
+				o<k_mp> endif
+				o<k_mc> if [#<k_cx> GT #<pk>]
+					#<pk> = #<k_cx>
+				o<k_mc> endif
+			o<k_ov> endif
+			#<k_pz> = #<k_cz>
+			#<k_px> = #<k_cx>
+		o<k_w> endwhile
+		#<ret_x> = [[#<pk> + #<_pl_ret_dist>] * #<_diameter_mode>]
+		o<ret_cap> if [#<ret_x> GT [#<_wp_dia_od> + #<_x_clear>]]
 			#<ret_x> = [#<_wp_dia_od> + #<_x_clear>]
 		o<ret_cap> endif
 		o<hf_move> CALL [0] [#<ret_x>] [#<pass_feed>]
