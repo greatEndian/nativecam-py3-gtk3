@@ -140,6 +140,11 @@ def measure(P, project, sets, d, tag, selftest=0.0):
         wp_z = float(re.findall(r'#<_wp_z>\s*=\s*([-\d.]+)', src)[-1])
     except IndexError:
         return None
+    # THE MATERIAL STATE TAKES EVERY CUT - roughing and the finish passes
+    # alike - because the metal a finish pass removes is gone whether or not
+    # this report counts its moves. Filtering the finish out of the MODEL made
+    # a legitimate rapid over finish-cleared ground read as a 0.2842 mm
+    # collision. Only the REPORTING below is roughing-only, via m.subs.
     mv = [m for m in tp.moves if m.op == 'Lathe Polyline']
     if not mv:
         return None
@@ -147,7 +152,8 @@ def measure(P, project, sets, d, tag, selftest=0.0):
     mat = Material(stock, wp_z, min(zs), max(zs))
     levels = set()
     for k, m in enumerate(mv):
-        if m.kind == 'feed' and abs(m.b[0] - m.a[0]) < 1e-6 \
+        if m.kind == 'feed' and not m.subs \
+                and abs(m.b[0] - m.a[0]) < 1e-6 \
                 and abs(m.b[2] - m.a[2]) > 1e-9:
             levels.add(k)
     r = dict(air_n=0, air_l=0.0, cut_n=0, cut_l=0.0, ent_n=0, ent_l=0.0,
@@ -162,6 +168,13 @@ def measure(P, project, sets, d, tag, selftest=0.0):
             mat.cut(m)
             continue
         if m.kind != 'feed':
+            continue
+        # The finish passes still CUT - they shape the material state - but
+        # they are not roughing and their long contour moves are not leads. A
+        # 35.0032 mm finish move classified as a "lead-out" is what made the
+        # first lead-out measurement unusable.
+        if m.subs:
+            mat.cut(m)
             continue
         r['feed'] += seglen(m)
         if k in levels:
@@ -198,25 +211,27 @@ def main():
     d = tempfile.mkdtemp(prefix='airlead_')
     try:
         # ---- every mode, by the numbers it actually produces ---------------
-        # air ENTRY leads are what the gate targets; the rest of the air is
-        # retreats, which are deliberately left alone. Before any gate existed
+        # air ENTRY leads are what the gate targets. Before any gate existed
         # the Artificial front-to-back case carried 408 of them / 419.4 mm.
+        # All distances here are ROUGHING ONLY - the finish passes still shape
+        # the material state but are not roughing motion, and counting them
+        # inflated every figure in analysis/066 and 067.
         cases = (
             ('artificial front to back', 'testing_15_9.xml',
              ['polyline:param_dir=0'], 'art0',
-             dict(ent_n=19, cut_n=197, feed=1540.6, rap=0)),
+             dict(ent_n=19, cut_n=54, feed=1352.9, rap=0)),
             ('artificial back to front', 'testing_15_9.xml',
              ['polyline:param_dir=1'], 'art1',
-             dict(ent_n=0, cut_n=468, feed=1547.4, rap=60)),
+             dict(ent_n=0, cut_n=325, feed=1359.6, rap=60)),
             ('both directions', 'testing_15_9.xml',
              ['polyline:param_dir=2'], 'both',
-             dict(ent_n=10, cut_n=327, feed=1744.2, rap=0)),
+             dict(ent_n=10, cut_n=184, feed=1556.5, rap=0)),
             ('natural, testing_15_5', 'testing_15_5.xml',
              ['polyline:param_sectioning=1'], 'nat5',
-             dict(ent_n=20, cut_n=194, feed=1326.2, rap=0)),
+             dict(ent_n=20, cut_n=57, feed=1144.4, rap=0)),
             ('natural, testing_15_2', 'testing_15_2.xml',
              ['polyline:param_sectioning=1'], 'nat2',
-             dict(ent_n=16, cut_n=101, feed=700.9, rap=0)),
+             dict(ent_n=16, cut_n=35, feed=530.0, rap=0)),
         )
         for name, project, sets, tag, want in cases:
             r = measure(P, project, sets, d, tag)
@@ -250,6 +265,58 @@ def main():
                   r['rap_bad'] <= want['rap'] and r['rap_worst'] < 0.01,
                   '%d of %d rapids, worst %.4f mm deep'
                   % (r['rap_bad'], r['rap_n'], r['rap_worst']))
+
+        # ---- the lead-out setting, off and on ------------------------------
+        # _pl_lo_air is greatEndian's per-project choice and 0 is the original
+        # behaviour, so OFF must match the numbers above exactly and ON must
+        # remove air without removing work. The pair is asserted together
+        # because "the leads that cut are identical either way" is the whole
+        # proof that nothing goes unremoved.
+        pairs = (
+            ('front to back', 'testing_15_9.xml', ['polyline:param_dir=0'],
+             'lo0', 1352.9, 1103.9),
+            ('both directions', 'testing_15_9.xml', ['polyline:param_dir=2'],
+             'lo2', 1556.5, 1435.5),
+            ('natural 15_5', 'testing_15_5.xml',
+             ['polyline:param_sectioning=1'], 'lo5', 1144.4, 1103.4),
+        )
+        for name, project, sets, tag, f_off, f_on in pairs:
+            a = measure(P, project, sets, d, tag + 'off')
+            b = measure(P, project, sets + ['polyline:param_lo_air=1'], d,
+                        tag + 'on')
+            check('%s: lead-out setting runs both ways' % name,
+                  a is not None and b is not None)
+            if not (a and b):
+                continue
+            check('   %s off is the original motion' % name,
+                  abs(a['feed'] - f_off) < 0.5,
+                  '%.1f mm against %.1f' % (a['feed'], f_off))
+            check('   %s on removes the air lead-outs' % name,
+                  abs(b['feed'] - f_on) < 0.5,
+                  '%.1f mm against %.1f' % (b['feed'], f_on))
+            check('   %s on removes NO work' % name,
+                  b['cut_n'] == a['cut_n'],
+                  'leads that cut: %d on against %d off'
+                  % (b['cut_n'], a['cut_n']))
+            check('   %s on still rapids only through cleared metal' % name,
+                  b['rap_bad'] == 0,
+                  '%d of %d rapids, worst %.4f mm'
+                  % (b['rap_bad'], b['rap_n'], b['rap_worst']))
+
+        # THE CLIMBING RAMP MUST SURVIVE. Back to front, every pass is
+        # reversed, so the setting has nothing it may touch - its retreats ARE
+        # the profile-angle ramp and they cut 304.6 mm. Applied there before it
+        # was bounded to forward passes, it took the feed to 1110.6 mm and put
+        # 2 rapids 7.5622 mm into standing metal.
+        rb = measure(P, 'testing_15_9.xml',
+                     ['polyline:param_dir=1', 'polyline:param_lo_air=1'],
+                     d, 'lo1on')
+        check('back to front keeps every retreat, setting or not',
+              rb is not None and abs(rb['feed'] - 1359.6) < 0.5,
+              'roughing feed %.1f, want 1359.6' % (rb['feed'] if rb else -1))
+        check('   and back to front gains no rapid into standing metal',
+              rb is not None and rb['rap_worst'] < 0.01,
+              'worst %.4f mm' % (rb['rap_worst'] if rb else -1))
 
         # ---- the probe must be able to fail --------------------------------
         st = measure(P, 'testing_15_9.xml', ['polyline:param_dir=0'], d,

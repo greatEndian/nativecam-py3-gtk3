@@ -2678,6 +2678,11 @@ class Preferences(object):
             # nobody wrote - they would read as 0, i.e. "cut to the centre".
             self.default += ("#<_pl_w_idx>                = 0.0\n")
             self.default += ("#<_pl_wdeep_ok>             = 0.0\n")
+            # Skip a roughing lead-out that runs entirely through metal an
+            # earlier pass already removed. 0 = the original behaviour, always
+            # lead out; the cfg parameter defaults to 0 as well, so this only
+            # ever changes motion when greatEndian asks for it per project.
+            self.default += ("#<_pl_lo_air>               = 0.0\n")
             self.default += ("#<_pl_zc_ovr>               = 0.0\n")
             self.default += ("#<_pl_z_clear>              = [1.0 * #<_mm>]\n")
             self.default += ("#<_pl_multi_cross>          = 0.0\n")

@@ -770,7 +770,17 @@ the two cuts only touch.
   - The table took room from nothing: 1000-2999 measured completely
     unreferenced across cfg/, lib/, the Python and the generated program.
 
-- [ ] **Lead-OUTs: MEASURED, awaiting greatEndian's call — `analysis/068`.**
+- [x] **Lead-OUTs — DONE 2026-08-31 as a PARAMETER, `analysis/068`.**
+  `PARAM_LO_AIR` "Skip lead-out in cleared metal", Off/On, **default Off** =
+  the original motion byte for byte. On, roughing feed: front-to-back
+  1352.9 -> **1103.9 mm**, Both directions 1556.5 -> **1435.5**, Natural 15_5
+  1144.4 -> **1103.4**, 15_2 530.0 -> **505.0**. The leads that cut are
+  identical On and Off in every case, and no rapid enters standing metal.
+  Bounded to FORWARD passes, measured: applied to reversed ones it put 2 of 799
+  rapids **7.5622 mm into standing metal**. The climbing ramp is a separate
+  move and is never touched, so back-to-front keeps the 304.6 mm it really cuts.
+
+- [x] **superseded: Lead-OUTs measured, awaiting a call — `analysis/068`.**
   Artificial front to back, roughing only: **266 lead-outs, every one exactly
   1.0000 mm, purely outward, removing nothing — 19.7% of the roughing feed.**
   Turning them off saves 266.0 mm of feed, leaves the cutting leads identical
