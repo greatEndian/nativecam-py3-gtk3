@@ -1063,7 +1063,15 @@ the two cuts only touch.
   suite; testing_15_2 passes all twelve checks in all three modes. Recorded
   2026-08-25, not chased.
 
-- [ ] **2b. THE MIRRORING - variant A does NOT fix it, and this is the
+- [x] **2b. THE MIRRORING — CLOSED 2026-09-01 by measurement.** The `pf_rev`
+  fix resolved it. On `param_dir=0` both contour phases now lead in at the
+  FRONT and run to the back: pre-finish starts Z0.7071 X20.1912, finish starts
+  Z0.7071 X19.4728, on testing_15_7 and testing_15_9 alike — and the X
+  separation is the pre-finish offset, correctly OUTSIDE the finish. Everything
+  below describes the state before that commit and is kept for the reasoning,
+  not as a live fault.
+
+- [x] **2b. THE MIRRORING - variant A does NOT fix it, and this is the
     bigger one.** `param_dir` is **0, front to back**, yet the PRE-FINISH pass
     leads in at the **BACK** while the FINISH pass leads in at the FRONT. The
     two contour passes run the part in opposite directions on the same job.
