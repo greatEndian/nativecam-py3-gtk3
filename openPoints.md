@@ -792,6 +792,15 @@ the two cuts only touch.
   at feed before the rapid, which is what avoids a witness mark at the stop
   point. That is a machining-practice decision, not a geometric one.
 
+- [ ] **Both directions WARNS but is not yet CORRECT.** `analysis/070` added the
+  warning greatEndian asked for - a directional insert plus `param_dir` 2 says
+  the trailing flank will lead on alternate passes and points at the neutral
+  orientations 6, 8, 9 - and it warns and proceeds rather than refusing. What it
+  does not do: `flank_sides` still computes the reachable envelope for ONE
+  direction while the passes run BOTH ways, and the entry/exit leads are not
+  gated per pass direction the way the ramp now is. Those two are what would
+  make the mode right rather than merely fast.
+
 - [ ] **`flank_sides` still decides the shadowed side from the ROUGHING
   DIRECTION alone**, which is the deeper version of the ramp fault closed in
   `analysis/069`: it assumes the tool's trailing flank sits on the side the
@@ -2464,7 +2473,15 @@ validation ones.
   perfectly good profile. Only parameter-against-parameter checks are reliable
   in that block. In `LEARNINGS-LOG.md`.
 
-- [ ] **VALIDATION — `msg_inv` at severity 1 blocks any headless run.** It ends
+- [x] **VALIDATION — `msg_inv` at severity 1 blocks any headless run.** DONE
+  2026-09-01, `analysis/070`. `ncam.py` returns after the print when there is no
+  visible toplevel window: in the GUI there always is one, in a batch run there
+  never is, and the message is already on stdout. `test_bidir_warn` asserts all
+  six tool x direction combinations still produce a program, so a future
+  validation cannot quietly bring the hang back. This was the prerequisite for
+  the Both-directions warning - no validation could be added at all before it.
+
+- [x] **superseded: VALIDATION — `msg_inv` at severity 1 blocks any headless run.** It ends
   in `Gtk.Dialog.run()`, waiting for a button nobody can press when
   `gen_project.py` or a test drives the generator; the symptom is a silent
   45-second hang, found with `faulthandler.dump_traceback_later`. Severity 2

@@ -2253,9 +2253,21 @@ class Feature(object):
                 (("%s:msgid-%d" % (self.get_type(), msgid)) in EXCL_MESSAGES)) :
             return
 
-        # create dialog with image and checkbox
+        # A HEADLESS RUN MUST NOT WAIT ON A BUTTON NOBODY CAN PRESS. dlg.run()
+        # below blocks until someone answers it, so a validation message reached
+        # from gen_project.py or a test hangs the generator outright, with
+        # nothing to show for it but the print above. That is why a severity-1
+        # validation could not be added at all before this: every batch caller
+        # would have stopped dead on the first one.
+        # No visible toplevel means no GUI to put a dialog in front of. The
+        # message is already on stdout, which is the whole of what a batch
+        # caller can use.
         active = [w for w in gtk.Window.list_toplevels() if w.get_visible()]
-        parent_win = active[0] if active else None
+        if not active:
+            return
+
+        # create dialog with image and checkbox
+        parent_win = active[0]
         dlg = gtk.MessageDialog(transient_for = parent_win,
             flags = gtk.DialogFlags.MODAL | gtk.DialogFlags.DESTROY_WITH_PARENT,
             type = gtk.MessageType.WARNING,
