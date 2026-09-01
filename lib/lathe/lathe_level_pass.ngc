@@ -55,6 +55,8 @@ o<lathe_level_pass> sub
 	#<lo_d>      = 0
 	#<pa_z>      = 0
 	#<pa_x>      = 0
+	#<pa_trav>   = 0
+	#<pa_face>   = 0
 	#<e_bdz>     = 0
 	#<e_bdx>     = 0
 	#<e_sdz>     = 0
@@ -987,7 +989,47 @@ o<lathe_level_pass> sub
 				(with the front face, so copying its angle points the wrong)
 				(way. No ramp is the right answer in that case, and the)
 				(plain lead-in already handles it.)
-				o<pa_side> if [[#<_pl_x_sgn> * [#<pa_x> - #<level>]] GT 0.000001]
+				(AND THE TOOL HAS TO BE ABLE TO CUT THAT WAY. pa_side)
+				(above is a RADIAL test - come in from the stock side -)
+				(and it says nothing about which END the approach comes)
+				(from. Nothing did: entry_ramp_dirs sees the profile alone)
+				(and never the insert, so a ramp was armed wherever the)
+				(geometry allowed one, whichever way the tool faced.)
+				(The ramp exists to arrive PARALLEL to a surface, which)
+				(needs the CUTTING edge to meet it. Fed the other way the)
+				(trailing flank leads and the ramp rubs its way in, and a)
+				(plain lead-in is the right move instead.)
+				(greatEndian, 2026-09-01, on the back-most section of)
+				(testing_15_9 back to front: *"it should not be there there)
+				(should be just the generic lead in/out .. but there is the)
+				(catch, if we have tool which is mirrored in the X axis and)
+				(if we have taper character part we have to create same)
+				(behaviours"*.)
+				(pa_trav is the direction the pass TRAVELS in Z. z_dir is 1)
+				(when w_from GE w_to, which means a forward pass runs toward)
+				(DECREASING Z, so its travel is -z_dir; a reversed pass runs)
+				(the other way and travels +z_dir. That sign is the whole)
+				(question, and getting it from the surface direction instead)
+				(is what made a first attempt refuse nothing: the stored)
+				(direction is where the SURFACE goes, -17.3728 here, not)
+				(where the ramp travels.)
+				(_pl_ramp_face is Python's answer for the loaded insert -)
+				(-1 for the ordinary right-hand OD tool, +1 once it is)
+				(mirrored about the X axis, 0 for a facing or on-the-point)
+				(tool that expresses no preference and refuses nothing. A)
+				(program generated before it existed reads 0 and behaves)
+				(exactly as it always did.)
+				#<pa_trav> = [0 - #<z_dir>]
+				o<pa_tr> if [#<_pl_cut_rev> GT 0]
+					#<pa_trav> = #<z_dir>
+				o<pa_tr> endif
+				#<pa_face> = 1
+				o<pa_fc> if [#<_pl_ramp_face> NE 0]
+					o<pa_fc2> if [#<pa_trav> NE #<_pl_ramp_face>]
+						#<pa_face> = 0
+					o<pa_fc2> endif
+				o<pa_fc> endif
+				o<pa_side> if [[#<pa_face> GT 0] AND [[#<_pl_x_sgn> * [#<pa_x> - #<level>]] GT 0.000001]]
 					#<pa_on> = 1
 				o<pa_side> endif
 			o<e_room> endif

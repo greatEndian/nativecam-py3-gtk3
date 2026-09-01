@@ -1651,6 +1651,40 @@ ERAMP_BASE = 3200
 ERAMP_TOP = 3380
 
 
+def ramp_facing(orient):
+    """Which way along Z the insert's cutting edge faces, or 0 for no view.
+
+    The profile-angle ramp exists to arrive PARALLEL to a surface, and it can
+    only do that if the tool meets that surface with its CUTTING edge. Approach
+    it the other way round and the trailing flank leads instead - the ramp is
+    then rubbing its way in, and a plain lead-in is the right move.
+
+    Nothing in the ramp path used to ask this. `entry_ramp_dirs` saw the
+    profile alone and `o<pa_side>` in lathe_level_pass tests only that the ramp
+    starts on the stock side RADIALLY, which is a different question: it says
+    "come in from outside", never "come in from the end the tool can cut".
+
+    The orientation is the whole answer, and NOSE_OFFSET already carries it.
+    Its Z component is where the nose centre sits relative to the programmed
+    point, so the edge faces the OTHER way: orient 2, (X +1, Z +1), is the
+    ordinary right-hand OD tool and cuts toward -Z.
+
+    Reflecting the tool about the X axis negates that Z - orient 2 becomes
+    orient 1, (X +1, Z -1) - and the facing flips with it, which is exactly
+    greatEndian's catch, 2026-09-01: *"if we have tool which is mirrored in the
+    X axis and if we have taper character part we have to create same
+    behaviours"*. The mirrored tool keeps every ramp the unmirrored one loses.
+
+    Orientations 6, 8 and 9 have no Z component - facing tools and on-the-point
+    - so they express no axial preference and this refuses nothing for them.
+    """
+    off = NOSE_OFFSET[orient] if 0 < int(orient or 0) < len(NOSE_OFFSET) else None
+    if not off:
+        return 0
+    z = off[1]
+    return -1 if z > 0 else (1 if z < 0 else 0)
+
+
 def entry_ramp_dirs(points, look):
     """Per entry segment, the direction a ramp starting on it should copy.
 
@@ -3182,11 +3216,21 @@ def build_rough_nose_gcode(polyline_feature, nose_r=0.0, orient=0):
     if _nr > EPS and 0 < int(_or) < len(NOSE_OFFSET):
         vec = NOSE_OFFSET[int(_or)]           # (X, Z), raw - not a unit vector
         ox, oz = _nr * vec[0], _nr * vec[1]
+    # WHICH WAY ALONG Z THIS INSERT CAN CUT, for the profile-angle ramp.
+    # Taken from the RAW orientation, not the gated one: the ramp is a
+    # question about the tool's geometry, which is true whether or not this
+    # polyline compensates, where oz/ox above are a compensation offset and
+    # must stay zero when it does not.
     return '\n'.join([
         '(the orientation term ROUGHING carries: zero unless this polyline)',
         '(compensates, so a level start needs no gate of its own)',
         '#<_pl_rgh_oz> = %s' % _fmt(oz),
-        '#<_pl_rgh_ox> = %s' % _fmt(ox)])
+        '#<_pl_rgh_ox> = %s' % _fmt(ox),
+        '(the Z direction this insert cuts in: +1, -1, or 0 for a facing or)',
+        '(on-the-point tool that expresses no axial preference. The)',
+        '(profile-angle ramp is armed only where the pass TRAVELS this way -)',
+        '(see the pa_face gate in lathe_level_pass. See ramp_facing.)',
+        '#<_pl_ramp_face> = %d' % ramp_facing(orient)])
 
 
 def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,

@@ -792,6 +792,18 @@ the two cuts only touch.
   at feed before the rapid, which is what avoids a witness mark at the stop
   point. That is a machining-practice decision, not a geometric one.
 
+- [ ] **`flank_sides` still decides the shadowed side from the ROUGHING
+  DIRECTION alone**, which is the deeper version of the ramp fault closed in
+  `analysis/069`: it assumes the tool's trailing flank sits on the side the
+  travel implies, and a mirrored insert breaks exactly that assumption. The
+  ramp now asks the orientation via `_pl_ramp_face`; the flank shadow does not.
+  Not measured, and it decides where roughing stops behind every raised
+  feature, so it wants its own before/after leftover comparison.
+
+- [ ] **Should a ramp also be refused when the tool faces the right way but the
+  surface is steeper than its FRONT angle?** The front-flank question, left
+  alone here because `Respect tool front angle` is off by default.
+
 - [ ] **A 0.0042 mm rapid overlap survives on roughing direction 1.** Assumed to
   be grid discretisation on a sloped floor in the material probe: it matches the
   baseline 0.0041 exactly and is four hits fewer after the change. Far below any

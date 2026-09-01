@@ -2776,6 +2776,12 @@ class Preferences(object):
             # the ladder it took before floor stages existed.
             self.default += ("#<_pl_floor_n>             = 0\n")
             self.default += ("#<_pl_eramp_n>             = 0\n")
+            # Which Z direction the loaded insert can cut in: +1, -1, or 0 for
+            # a facing or on-the-point tool with no axial preference. The
+            # profile-angle ramp is armed only where the pass TRAVELS that way.
+            # 0 is the safe default - it refuses nothing, so a program that
+            # predates this global behaves exactly as it always did.
+            self.default += ("#<_pl_ramp_face>           = 0\n")
             self.default += ("#<_pl_flc_base>            = 0\n")
             self.default += ("#<_pl_flc_n>               = 0\n")
 
