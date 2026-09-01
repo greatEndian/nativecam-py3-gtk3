@@ -780,7 +780,6 @@ the two cuts only touch.
   rapids **7.5622 mm into standing metal**. The climbing ramp is a separate
   move and is never touched, so back-to-front keeps the 304.6 mm it really cuts.
 
-- [x] **superseded: Lead-OUTs measured, awaiting a call — `analysis/068`.**
   Artificial front to back, roughing only: **266 lead-outs, every one exactly
   1.0000 mm, purely outward, removing nothing — 19.7% of the roughing feed.**
   Turning them off saves 266.0 mm of feed, leaves the cutting leads identical
@@ -792,12 +791,6 @@ the two cuts only touch.
   What measurement cannot settle: the lead-out backs the tool off the end wall
   at feed before the rapid, which is what avoids a witness mark at the stop
   point. That is a machining-practice decision, not a geometric one.
-
-- [ ] **superseded note: Lead-OUTs are not gated, on purpose.** Roughly 280 mm of the remaining
-  air on testing_15_9 is retreat leads. A retreat leaves the cut the pass has
-  just made, which is a different question from an entry into metal that was
-  already gone, and greatEndian's report was about lead-ins. Not yet asked
-  whether a retreat over just-cut material earns its feed.
 
 - [ ] **A 0.0042 mm rapid overlap survives on roughing direction 1.** Assumed to
   be grid discretisation on a sloped floor in the material probe: it matches the
