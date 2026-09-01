@@ -801,7 +801,30 @@ the two cuts only touch.
   gated per pass direction the way the ramp now is. Those two are what would
   make the mode right rather than merely fast.
 
-- [ ] **`flank_sides` still decides the shadowed side from the ROUGHING
+- [x] **`flank_sides` decides the shadowed side from the ROUGHING DIRECTION
+  alone** — DONE 2026-09-01, `analysis/071`. `insert_flank_side` now answers it
+  from the loaded insert inside `flank_envelope`, and for orientation 2 it
+  returns exactly what the direction-derived answer gave, so motion and tables
+  are byte-identical on 3 projects x 3 directions. A mirrored insert moves the
+  flank table 42 slots -> 24. Also found: every caller reaches `flank_sides`
+  through `rough_frame_dir`, which collapses 0/1/2 to 0, so its direction
+  argument was already dead and the shadow was hard-wired to +Z.
+
+- [ ] **Does a mirrored insert really lose EVERY ramp on testing_15_9?** With
+  the insert mirrored the entry contour halves, 40 segments to 20, and no level
+  arms a ramp in either direction - so `test_ramp_orient`'s mirror control went
+  from 18 ramps to 0 and no longer discriminates. The tables are consistent and
+  a large swing is expected when a right-hand tool is mirrored on a taper, but
+  this is NOT proven. The test says so in its docstring; the shipped pair
+  (0 against 15) and the flank wiring check carry the discrimination now.
+
+- [ ] **A neutral insert still defers to the roughing direction for its flank
+  shadow** rather than declaring no shadow at all. Orientations 6, 8 and 9 have
+  no axial component; a genuinely neutral insert has clearance both ways and
+  arguably shadows neither side. That is a reachability claim that wants a gouge
+  check behind it, so it was left alone.
+
+- [ ] **superseded: `flank_sides` still decides the shadowed side from the ROUGHING
   DIRECTION alone**, which is the deeper version of the ramp fault closed in
   `analysis/069`: it assumes the tool's trailing flank sits on the side the
   travel implies, and a mirrored insert breaks exactly that assumption. The

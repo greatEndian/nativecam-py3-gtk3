@@ -32,11 +32,31 @@ only where the pass TRAVELS that way.
      the insert mirrored about the X axis, face +1 - gets all 18 ramps BACK
      when roughed back to front, and loses its 15 going front to back.
 
-Assertion 3 is what stops this being "the ramps were deleted". Without it, an
-empty ramp list passes 1 trivially. It is run from a scratch copy of the config
-whose tool table has exactly one character changed, so nose radius, both flank
-angles and every parameter are identical between the two halves and the
-orientation is the only variable.
+THE CONTROL IS THE SHIPPED PAIR, and that is a correction. When this test was
+written, assertion 3 was the control: the mirrored insert got its 18 ramps back,
+which is what stopped "0 ramps" being indistinguishable from "the ramps were
+deleted". That is no longer true. Once `flank_sides` learned the insert too
+(analysis/071) the mirrored tool's reachable envelope flips with it - the entry
+contour on testing_15_9 halves, 40 segments to 20 - and no level arms a ramp on
+it at all, so the mirrored half now reads 0 in both directions.
+
+What still discriminates:
+
+  * the SHIPPED pair, 0 back to front against 15 front to back. A blanket
+    "delete the ramps" fails that immediately.
+  * `_pl_ramp_face` itself, -1 shipped and +1 mirrored, asserted below.
+  * `test_flank_envelope`'s wiring check, which requires the emitted flank
+    table to MOVE when the insert is mirrored - that is what proves the
+    orientation actually reaches the geometry rather than being dead code.
+
+The mirrored zeros are recorded here as a measured consequence, not as
+evidence. Whether a mirrored insert SHOULD lose every ramp on this part is
+consistent with the tables and has not been independently proven - it is an
+open point.
+
+The two halves run from a scratch copy of the config whose tool table has
+exactly one character changed, so nose radius, both flank angles and every
+parameter are identical and the orientation is the only variable.
 """
 import os
 import re
@@ -121,7 +141,7 @@ def main():
 
         for cfgdir, label, want_face, want in (
                 (CFG, 'T2 as shipped (Q2)', -1, {1: 0, 0: 15}),
-                (mirror, 'T2 mirrored to Q1', 1, {1: 18, 0: 0})):
+                (mirror, 'T2 mirrored to Q1', 1, {1: 0, 0: 0})):
             for direction in (1, 0):
                 rs, face = run(cfgdir, direction, '%s_%d' % (
                     os.path.basename(cfgdir), direction), d)

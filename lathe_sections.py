@@ -2110,6 +2110,50 @@ def rough_emit_reversed(polyline_feature):
     return p is not None and int(_to_float(p.get_ngc_value())) == 1
 
 
+# WHICH INSERT IS LOADED, for the flank shadow. A per-generation constant: the
+# operation runs with one tool, and every function below asks the same question
+# about the same tool, so threading it through fifteen signatures would say
+# nothing extra and touch every caller. cfg/lathe/polyline.cfg sets it before it
+# builds anything, exactly where it already resolves the orientation for the
+# nose terms, and 0 - "no idea" - keeps the direction-derived behaviour this
+# module has always had.
+INSERT_ORIENT = 0
+
+
+def set_insert_orient(orient):
+    """Remember the loaded insert's orientation for the flank shadow."""
+    global INSERT_ORIENT
+    INSERT_ORIENT = int(orient or 0)
+    return ''
+
+
+def insert_flank_side(orient, trailing=True):
+    """Which side of a peak this insert's flank shadows, or 0 for "no view".
+
+    WHICH FLANK TRAILS IS A PROPERTY OF THE INSERT, NOT OF THE TRAVEL. The
+    tool does not rotate when the cut direction changes: the back flank sits
+    behind the cutting edge in the tool's own frame, so the side it shadows is
+    fixed by the orientation. `flank_sides` below derives it from the roughing
+    direction instead, which is the same assumption the profile-angle ramp
+    made until analysis/069 - and it is right only while the insert and the
+    direction agree.
+
+    The cutting edge faces `ramp_facing`; the trailing flank is behind it, so
+    it shadows the opposite side, and the leading flank shadows the same side
+    as the facing.
+
+    Returns 0 for an unknown orientation and for the neutral ones - 6, 8 and 9
+    have no axial component - and the caller then keeps the direction-derived
+    answer rather than removing the constraint. Dropping the shadow entirely
+    for a neutral insert would let roughing reach everywhere, which is a much
+    larger claim than this can prove.
+    """
+    face = ramp_facing(orient)
+    if not face:
+        return 0
+    return -face if trailing else face
+
+
 def flank_sides(rough_dir):
     """Which side of a peak casts a shadow, from the roughing direction.
 
@@ -2162,7 +2206,7 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
     if not points or len(points) < 2:
         return list(points)
 
-    def _flank(deg, dirn):
+    def _flank(deg, dirn, trailing=True):
         """[(side, slope, reach)] for one flank, or [] when it constrains
         nothing. Reach is per-flank: two angles project different distances
         along Z, so one shared value would give the shallower flank the
@@ -2175,7 +2219,17 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
             rr = flank_len * math.cos(math.radians(90.0 - deg - clearance))
             if rr <= EPS:
                 return []
-        return [(side, kk * DIAMETER_MODE, rr) for side in flank_sides(dirn)]
+        # THE INSERT DECIDES THE SIDE WHEN IT CAN. flank_sides answers from the
+        # roughing direction, and every caller reaches it through
+        # rough_frame_dir, which collapses 0, 1 and 2 to 0 - so the shadow has
+        # always been hard-wired to the +Z side, which is the right answer for
+        # an ordinary right-hand insert and the wrong one for a mirrored one.
+        # For orientation 2 this override returns exactly what flank_sides
+        # already returned, trailing and leading alike, so nothing moves on any
+        # normally-oriented tool.
+        side_ov = insert_flank_side(INSERT_ORIENT, trailing)
+        sides = (side_ov,) if side_ov else flank_sides(dirn)
+        return [(side, kk * DIAMETER_MODE, rr) for side in sides]
 
     # THE LEADING FLANK IS THE SAME DILATION, MIRRORED. Passing it here rather
     # than merging two finished envelopes afterwards is not a style choice: a
@@ -2185,9 +2239,9 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
     # the tool without gouging", measured on testing_15_5. Built here, the
     # candidate-Z generation, the outer bound and the collinearity pruning all
     # see both flanks at once and the result is one coherent contour.
-    slopes = _flank(back_deg, rough_dir)
+    slopes = _flank(back_deg, rough_dir, True)
     if front_deg is not None and front_deg > 0:
-        slopes += _flank(front_deg, mirror_dir(rough_dir))
+        slopes += _flank(front_deg, mirror_dir(rough_dir), False)
     if not slopes:
         return list(points)
 

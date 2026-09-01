@@ -65,7 +65,28 @@ def main():
     check('front to back shadows what is behind, the +Z side',
           ls.flank_sides(0) == (1,))
     check('back to front mirrors it', ls.flank_sides(1) == (-1,))
-    check('both directions takes both faces', set(ls.flank_sides(2)) == {1, -1})
+    # NOT both faces any more, and that was deliberate: analysis/060 measured
+    # that shadowing both sides INTERSECTS the two directions' reachable sets
+    # instead of uniting them - 15 lost level cuts and 7.49 mm standing on
+    # testing_15_6 - so direction 2 now rides frame 0 through rough_frame_dir
+    # and never reaches here as a 2. This assertion outlived the behaviour it
+    # described and had been failing ever since; it now states the rule that
+    # replaced it.
+    check('both directions rides frame 0 and takes ONE face',
+          ls.flank_sides(ls.rough_frame_dir(2)) == ls.flank_sides(0)
+          and len(ls.flank_sides(ls.rough_frame_dir(2))) == 1)
+    # and the side follows the INSERT where one is known - see
+    # insert_flank_side. Orientation 2, the ordinary right-hand OD tool, must
+    # reproduce exactly what the direction-derived answer already gave, or
+    # every existing project moves.
+    check('an orient-2 insert reproduces the direction-derived sides',
+          ls.insert_flank_side(2, True) == ls.flank_sides(0)[0]
+          and ls.insert_flank_side(2, False) == ls.flank_sides(ls.mirror_dir(0))[0])
+    check('   and mirroring the insert flips both flanks',
+          ls.insert_flank_side(1, True) == -ls.insert_flank_side(2, True)
+          and ls.insert_flank_side(1, False) == -ls.insert_flank_side(2, False))
+    check('   and a neutral insert defers to the direction',
+          ls.insert_flank_side(9, True) == 0 and ls.insert_flank_side(6, True) == 0)
 
     # --- the shape itself ---------------------------------------------------
     # a boss at r20 from Z0 to Z-10, then a valley floor at r10 out to Z-40
@@ -282,6 +303,7 @@ def test_preview_agrees():
     does not shorten the shadow - see FLANK_BOUNDS_CONTOUR - so setting it must
     change nothing about the contour, in the preview or in the program.
     """
+    import re
     import shutil
     import tempfile
     from lxml import etree
@@ -361,6 +383,54 @@ def test_preview_agrees():
         del pl
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+    # ---- IS THE INSERT ACTUALLY WIRED? ---------------------------------
+    # The unit assertions above pass whether or not cfg/lathe/polyline.cfg
+    # ever calls set_insert_orient, so on their own they would let the whole
+    # feature be dead code - the exact shape of the Retract=Minimal combo that
+    # shipped doing nothing for months. This generates the same project
+    # against two configs whose ONLY difference is the tool table's Q, and
+    # requires the emitted flank/reachable table to differ.
+    import subprocess
+    if not shutil.which('rs274'):
+        print('SKIP  rs274 is not installed - wiring check not run')
+    else:
+        gen = os.path.join(here, '.claude/skills/lathe-gcode-verify/scripts',
+                           'gen_project.py')
+        cfg = os.path.join(here, 'configs/sim/axis/ncam_demo')
+        d2 = tempfile.mkdtemp(prefix='flankwire_')
+        try:
+            mir = os.path.join(d2, 'mirror_cfg')
+            shutil.copytree(cfg, mir, symlinks=True)
+            tbl = os.path.join(mir, 'lathe_mm.tbl')
+            txt = open(tbl).read()
+            swapped = txt.replace('J75.000000  Q2', 'J75.000000  Q1')
+            check('the tool table can be mirrored for the wiring check',
+                  swapped != txt)
+            open(tbl, 'w').write(swapped)
+
+            def flank_table(cfgdir, tag):
+                out = os.path.join(d2, tag + '.ngc')
+                subprocess.run([sys.executable, gen, '--ini',
+                                os.path.join(cfgdir, 'lathe-mm.ini'),
+                                '--project', 'testing_15_9.xml', '--out', out],
+                               capture_output=True, text=True)
+                if not os.path.isfile(out):
+                    return None
+                return [ln for ln in open(out).read().split('\n')
+                        if re.match(r'^#36[0-9][0-9] = ', ln)]
+
+            a = flank_table(cfg, 'shipped')
+            b = flank_table(mir, 'mirrored')
+            check('both configs generate for the wiring check',
+                  a is not None and b is not None)
+            if a is not None and b is not None:
+                check('mirroring the insert MOVES the emitted flank envelope',
+                      a != b,
+                      'identical tables - set_insert_orient is not wired from '
+                      'the cfg, so the insert never reaches flank_envelope')
+        finally:
+            shutil.rmtree(d2, ignore_errors=True)
 
 
 if __name__ == '__main__':
