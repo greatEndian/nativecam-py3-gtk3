@@ -3387,13 +3387,51 @@ decides whether they are work at all:
     `analysis/039`), so it is a real design, just a much larger one than the gap
     description implies.
 
-**Recorded and parked** — real differences, not worth chasing now: Tool
-Orientation as a B axis (2), tailstock M21/M22 (3), negative diameter (4), six
-coolant modes (5), cutting-data presets (6), sharp corners (17), grooving split
-radial/axial (19), canned cycle framing (20), extend to stock (21),
-linearisation tolerance (22), approach/retract datums (24), Z/X clearance
-naming (25), entry clearance datum (26), rapid-to-next-depth (27), radial limits
-as references (14).
+**Re-read against the live parameter list, 2026-09-02.** Two more have closed
+since the scan and are struck out below; the rest are written out one per line
+rather than buried in a paragraph, so they are countable:
+
+- [x] **26 — angled entry, including the feedrate.** `param_li_ang`,
+  `param_li_len` and `param_li_feed` all exist. What remains is a DATUM
+  difference only: their *Entry Clearance* is measured from the material,
+  ours is a length along the lead.
+- [x] **27 — rapid to next cutting depth.** Closed by the High feedrate mode
+  (gap 23): `_pl_hf_feed` non-zero converts every positioning move, the
+  level-to-level radial descent included, from G0 to G1 at that feed. That is
+  exactly the "feed between depths" this asked for.
+
+**Still not implemented** — each is a real difference from the reference. None
+is a defect; they are absences, and most were parked deliberately:
+
+- [ ] **10 — Tool Limit: cutting edge vs contact point.** Every limit we have
+  is on the CONTROL POINT, so with a diameter limit set we cannot say whether
+  that diameter is where the edge stops or where the nose touches. The two
+  differ by exactly the nose radius. The least-parked of the parked: it needs
+  only the nose radius `tip_comp_inputs` already returns, applied wherever a
+  radial limit is.
+- [ ] **14 — radial limits as REFERENCES, not numbers.** The Z half is done
+  (each Z limit carries a datum, Absolute or From workpiece face). The same idea
+  applied to the DIAMETER limits — Start/Final measured from the Workpiece's
+  stock OD/ID — is still open, and is the surviving half of "point at our own
+  objects rather than at CAD geometry".
+- [ ] **2 — tool orientation as a programmable B axis.**
+- [ ] **3 — Use Tailstock (M21/M22).**
+- [ ] **4 — turn in negative diameter.**
+- [ ] **5 — coolant modes beyond None/Flood/Mist.**
+- [ ] **6 — cutting-data presets.**
+- [ ] **17 — Make Sharp Corners.**
+- [ ] **19 — grooving split radial / axial.** Blocked on grooving existing at
+  all.
+- [ ] **20 — Use Canned Cycle as a framing choice.** We have the G7x modes;
+  what is missing is their framing of it as a per-operation switch.
+- [ ] **21 — Extend to Stock.**
+- [ ] **22 — linearisation tolerance.**
+- [ ] **24 — approach / retract reference datums, in Z and in X.**
+- [ ] **25 — Z Clearance and X Clearance as two stand-offs measured from the
+  cut.** We have `param_ret_dist` and `param_zc_ovr`, which are a retract
+  distance and a lead-in distance — the same jobs, different datums. Mostly
+  naming, and worth checking before adding anything or we end up with four
+  parameters doing three jobs.
 
 - [ ] **The finding that outranks the list: it is a CAD-model package and we are
   not.** Much of Geometry and Radii — Model front/back, Chuck front, Selection,
