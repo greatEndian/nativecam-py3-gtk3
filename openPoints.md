@@ -824,14 +824,6 @@ the two cuts only touch.
   arguably shadows neither side. That is a reachability claim that wants a gouge
   check behind it, so it was left alone.
 
-- [ ] **superseded: `flank_sides` still decides the shadowed side from the ROUGHING
-  DIRECTION alone**, which is the deeper version of the ramp fault closed in
-  `analysis/069`: it assumes the tool's trailing flank sits on the side the
-  travel implies, and a mirrored insert breaks exactly that assumption. The
-  ramp now asks the orientation via `_pl_ramp_face`; the flank shadow does not.
-  Not measured, and it decides where roughing stops behind every raised
-  feature, so it wants its own before/after leftover comparison.
-
 - [ ] **Should a ramp also be refused when the tool faces the right way but the
   surface is steeper than its FRONT angle?** The front-flank question, left
   alone here because `Respect tool front angle` is off by default.
