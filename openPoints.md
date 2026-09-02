@@ -3403,17 +3403,25 @@ rather than buried in a paragraph, so they are countable:
 **Still not implemented** — each is a real difference from the reference. None
 is a defect; they are absences, and most were parked deliberately:
 
-- [ ] **10 — Tool Limit: cutting edge vs contact point.** Every limit we have
-  is on the CONTROL POINT, so with a diameter limit set we cannot say whether
-  that diameter is where the edge stops or where the nose touches. The two
-  differ by exactly the nose radius. The least-parked of the parked: it needs
-  only the nose radius `tip_comp_inputs` already returns, applied wherever a
-  radial limit is.
-- [ ] **14 — radial limits as REFERENCES, not numbers.** The Z half is done
-  (each Z limit carries a datum, Absolute or From workpiece face). The same idea
-  applied to the DIAMETER limits — Start/Final measured from the Workpiece's
-  stock OD/ID — is still open, and is the surviving half of "point at our own
-  objects rather than at CAD geometry".
+- [x] **10 — Tool Limit: cutting edge vs contact point.** DONE 2026-09-02,
+  `analysis/072`. `PARAM_X_LIMIT`, Cutting edge / Contact point; the shift is
+  one nose radius expressed as a diameter, outward on OD and inward in a bore.
+  Measured: 70.0 -> 70.8 with nose R0.400, and the toolpath moves with it.
+  **It nearly shipped doing nothing** - the resolver defaulted `nose_r=0.0`, so
+  the emitted global moved and the motion was byte-identical; caught only
+  because the check measured motion rather than the number.
+
+- [x] **14 — radial limits as REFERENCES, not numbers.** DONE 2026-09-02,
+  `analysis/072`. `PARAM_B_X_DAT` / `PARAM_E_X_DAT`, Value / Stock OD / Stock
+  ID, the same vocabulary Facing already uses. All five Python consumers and
+  both G-code sites take the resolved value, so the datum moves the profile
+  ORIGIN with it - `param_b_x` is a limit and a datum at once.
+
+- [ ] **Should Contact point move the profile ORIGIN, or only the ladder
+  bound?** `param_b_x` is both the operation's Begin limit and where the
+  profile starts, and the reference has no equivalent double duty, so it does
+  not settle this. Currently it moves both.
+
 - [ ] **2 — tool orientation as a programmable B axis.**
 - [ ] **3 — Use Tailstock (M21/M22).**
 - [ ] **4 — turn in negative diameter.**

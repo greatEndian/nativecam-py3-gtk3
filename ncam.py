@@ -2794,6 +2794,11 @@ class Preferences(object):
             # 0 is the safe default - it refuses nothing, so a program that
             # predates this global behaves exactly as it always did.
             self.default += ("#<_pl_ramp_face>           = 0\n")
+            # The radial limits after their datum and the cutting-edge /
+            # contact-point choice have been applied. Python resolves them so
+            # the O-code and the point tables cannot disagree about one number.
+            self.default += ("#<_pl_b_x>                  = 0.0\n")
+            self.default += ("#<_pl_e_x>                  = 0.0\n")
             self.default += ("#<_pl_flc_base>            = 0\n")
             self.default += ("#<_pl_flc_n>               = 0\n")
 

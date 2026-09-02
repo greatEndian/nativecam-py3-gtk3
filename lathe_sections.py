@@ -114,12 +114,24 @@ def extend_tangent(points, front=0.0, back=0.0):
 # never has to know ncam is there.
 WORKPIECE_FACE_Z = None
 
+# The Workpiece's stock diameters, published the same way and for the same
+# reason as WORKPIECE_FACE_Z. None means no Workpiece has spoken, and every
+# datum that needs one then falls back to the value as written - which is what
+# every project did before the datums existed.
+WORKPIECE_OD = None
+WORKPIECE_ID = None
+
 # The front angle of the tool in force, published by to_gcode's walk the same
 # way WORKPIECE_FACE_Z is and for the same reason: this module imports nothing
 # from ncam, and a Feature has no back-reference to its tree. 0 means no tool
 # has spoken yet, which is indistinguishable from a table with no I column -
 # and both must mean "do not constrain", never "0 degrees".
 TOOL_FRONT_ANGLE = 0.0
+
+# The loaded tool's nose radius, for the contact-point diameter limit. Same
+# route and same reason as the front angle. 0 means no tool has spoken, which
+# must mean "do not shift a limit", never "a zero-radius nose".
+TOOL_NOSE_R = 0.0
 
 
 def z_limit_abs(polyline_feature, which):
@@ -158,6 +170,113 @@ def z_limit_abs(polyline_feature, which):
     if WORKPIECE_FACE_Z is None:
         return v                       # no Workpiece - see the docstring
     return WORKPIECE_FACE_Z - v
+
+
+def x_limit_abs(polyline_feature, which, nose_r=None):
+    """The diameter a radial limit sits at, in the units param_b_x carries.
+
+    Gap 14's diameter half and gap 10, resolved in one place because they are
+    two adjustments to the same number and applying them in different places
+    would let them disagree.
+
+    `which` is 'begin' or 'end'.
+
+    GAP 14 - THE DATUM. Value 0 is the diameter itself, exactly what it has
+    always meant. Stock OD (1) and Stock ID (2) make the number an OFFSET from
+    the Workpiece's own diameter, so the operation follows the stock when the
+    stock changes: 0 from the OD is the bar, and a negative offset comes in
+    from it. This is the vocabulary `cfg/lathe/facing.cfg` already uses for its
+    Begin/End diameters, borrowed rather than reinvented so the two operations
+    read the same. `POLYLINE-GAPS.md` records why the reference's own datums -
+    Model OD/ID, picked faces - do not survive the translation: they point at
+    solid geometry we do not have, and OUR real object is the Workpiece.
+
+    GAP 10 - CUTTING EDGE vs CONTACT POINT. Every limit we have is on the
+    CONTROL POINT, so a diameter limit could not say whether it meant where the
+    edge stops or where the nose touches; the two differ by the nose radius,
+    which is the quantity the whole compensation effort has been about.
+    Cutting edge (0) is the control point and is what the value has always
+    meant. Contact point (1) shifts the limit by one nose radius so the stated
+    diameter is where the nose actually TOUCHES - outward on OD work, inward on
+    a bore, because the material is on the other side there.
+
+    WITH NO WORKPIECE the datum cannot resolve and the value is taken as
+    written, which is every existing project's behaviour. Falling back rather
+    than refusing is deliberate; `build_x_limit_note` says so in the program.
+    """
+    # None means "the tool that is loaded", which is what every internal caller
+    # wants and none of them can look up: they hold a Feature, and a Feature
+    # has no back-reference to the tree. Passing 0 explicitly still means "no
+    # shift". Getting this wrong is what made the contact-point half cosmetic
+    # on its first run - the limit moved 70.0 -> 70.8 in the emitted global and
+    # the toolpath did not move at all, because every consumer took the 0.
+    if nose_r is None:
+        nose_r = TOOL_NOSE_R
+    key = 'param_b_x' if which == 'begin' else 'param_e_x'
+    prm = polyline_feature.get_param(key)
+    if prm is None:
+        return None
+    v = _to_float(prm.get_ngc_value())
+
+    dat = polyline_feature.get_param(
+        'param_b_x_dat' if which == 'begin' else 'param_e_x_dat')
+    mode = int(_to_float(dat.get_ngc_value())) if dat is not None else 0
+    if mode == 1 and WORKPIECE_OD is not None:
+        v = WORKPIECE_OD + v
+    elif mode == 2 and WORKPIECE_ID is not None:
+        v = WORKPIECE_ID + v
+
+    lim = polyline_feature.get_param('param_x_limit')
+    if (lim is not None and int(_to_float(lim.get_ngc_value())) == 1
+            and nose_r > EPS):
+        side = polyline_feature.get_param('param_side')
+        inside = side is not None and int(_to_float(side.get_ngc_value())) == 1
+        # a diameter moves by TWICE the radius, and DIAMETER_MODE is 2 exactly
+        # when these parameters are diameters - so the shift is written in the
+        # same units the value arrived in rather than converted twice
+        d = nose_r * DIAMETER_MODE
+        v = v - d if inside else v + d
+    return v
+
+
+def build_x_limit_gcode(polyline_feature, nose_r=None):
+    """The two resolved radial limits as globals, plus the fallback warning.
+
+    Returned from Python rather than formatted in the cfg because a literal
+    `#<name>` inside an inline <exec> is not decoded - the cfg is INI-style,
+    not XML, so the escapes stay as written and the interpreter is handed
+    `#&lt;_pl_b_x&gt;`. Every other emitter here returns its own lines for the
+    same reason; this one is no different.
+    """
+    b = x_limit_abs(polyline_feature, 'begin', nose_r)
+    e = x_limit_abs(polyline_feature, 'end', nose_r)
+    if b is None or e is None:
+        return ''
+    out = ['(the radial limits, resolved: the datum against the Workpiece own)',
+           '(stock diameters and the cutting-edge / contact-point choice, both)',
+           '(worked out here so the O-code and every table agree on one number)',
+           '#<_pl_b_x> = %s' % _fmt(b),
+           '#<_pl_e_x> = %s' % _fmt(e)]
+    note = build_x_limit_note(polyline_feature)
+    if note:
+        out.append(note)
+    return '\n'.join(out)
+
+
+def build_x_limit_note(polyline_feature):
+    """A comment when a diameter datum has no Workpiece to measure from."""
+    for which in ('begin', 'end'):
+        dat = polyline_feature.get_param(
+            'param_b_x_dat' if which == 'begin' else 'param_e_x_dat')
+        if dat is None:
+            continue
+        mode = int(_to_float(dat.get_ngc_value()))
+        if ((mode == 1 and WORKPIECE_OD is None)
+                or (mode == 2 and WORKPIECE_ID is None)):
+            return ('(WARNING - a diameter limit is set to measure from the '
+                    'stock and there is no Workpiece in the tree, so it has '
+                    'been taken as a diameter instead.)')
+    return ''
 
 
 def build_z_limit_note(polyline_feature):
@@ -435,8 +554,12 @@ def resolve_segments(polyline_feature):
     if b_z_param is None or b_x_param is None:
         return None
 
+    # THE ORIGIN TAKES THE RESOLVED DIAMETER TOO. param_b_x is the profile's
+    # start point as well as the operation's Begin limit, so a datum that says
+    # "start at the stock OD" has to move the origin with it or the profile
+    # would begin somewhere the limit no longer is.
     origin = (_to_float(b_z_param.get_ngc_value()),
-              _to_float(b_x_param.get_ngc_value()) / DIAMETER_MODE)
+              x_limit_abs(polyline_feature, 'begin') / DIAMETER_MODE)
     prev_z, prev_r = origin
 
     # the record fields poly_add_item reads back off the PREVIOUS record when
@@ -1115,8 +1238,7 @@ def build_sections_gcode(polyline_feature):
         ordered = rank_weakest_first(sections)
         sect_mode = 0
 
-    b_x_param = polyline_feature.get_param('param_b_x')
-    stock_x = _to_float(b_x_param.get_ngc_value()) if b_x_param is not None else None
+    stock_x = x_limit_abs(polyline_feature, 'begin')
     # PLUS THE ALLOWANCE. The ceiling is a question about the ROUGHING FLOOR,
     # not about the finished part: a roughing level stops at the profile
     # offset by fin_off + prefin_off, so nothing anywhere has reached that
@@ -1775,8 +1897,8 @@ def rough_radius_bounds(polyline_feature):
         prm = polyline_feature.get_param(name)
         return _to_float(prm.get_ngc_value()) if prm is not None else default
 
-    b = _p('param_b_x') / DIAMETER_MODE
-    e = _p('param_e_x') / DIAMETER_MODE
+    b = x_limit_abs(polyline_feature, 'begin') / DIAMETER_MODE
+    e = x_limit_abs(polyline_feature, 'end') / DIAMETER_MODE
     if _p('param_ext_fr') <= EPS and _p('param_ext_bk') <= EPS:
         return b, e
 
@@ -1873,7 +1995,8 @@ def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
     # floors run the other way and every comparison here inverts; ID work is
     # paused (openPoints) and a wrong guess would rough INTO the wall rather
     # than leave a sliver, so it declines instead.
-    if _p('param_b_x') <= _p('param_e_x') + EPS:
+    if (x_limit_abs(polyline_feature, 'begin')
+            <= x_limit_abs(polyline_feature, 'end') + EPS):
         return ''
 
     floors = floor_ladder(points, _p('param_f_off'), _p('param_pf_off'),
@@ -4211,8 +4334,7 @@ def check_x_wall_moves(moves, z_wall, x_base, x_top, approach, front, lead_x):
 
 def _stock_x(polyline_feature):
     """The stock envelope in the same units the point tables carry, or None."""
-    p = polyline_feature.get_param('param_b_x')
-    return _to_float(p.get_ngc_value()) if p is not None else None
+    return x_limit_abs(polyline_feature, 'begin')
 
 
 def xw_settings(polyline_feature):

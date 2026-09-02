@@ -141,7 +141,10 @@ class NCamProjectIOMixin:
         # cleared every build: a face left over from the last generation would
         # silently datum this one against a Workpiece that is no longer there
         lathe_sections.WORKPIECE_FACE_Z = None
+        lathe_sections.WORKPIECE_OD = None
+        lathe_sections.WORKPIECE_ID = None
         lathe_sections.TOOL_FRONT_ANGLE = 0.0
+        lathe_sections.TOOL_NOSE_R = 0.0
         self.resolve_program_units()
 
         def recursive(itr, ldr, parent_feature = None) :
@@ -169,6 +172,18 @@ class NCamProjectIOMixin:
                     if p_wz is not None :
                         lathe_sections.WORKPIECE_FACE_Z = \
                             get_float(p_wz.get_ngc_value())
+                    # and the stock diameters, for the radial limits' datums -
+                    # the same idea as the face, applied to X. An Int. diameter
+                    # of 0 is solid bar, which is a real answer and not a
+                    # missing one, so it is published as 0 rather than None.
+                    p_od = f.get_param('param_od')
+                    if p_od is not None :
+                        lathe_sections.WORKPIECE_OD = \
+                            get_float(p_od.get_ngc_value())
+                    p_id = f.get_param('param_id')
+                    if p_id is not None :
+                        lathe_sections.WORKPIECE_ID = \
+                            get_float(p_id.get_ngc_value())
                 if f.get_attr('type') == 'tool_change' :
                     p_dnum = f.get_param('param_dnum')
                     if p_dnum is not None :
@@ -179,6 +194,13 @@ class NCamProjectIOMixin:
                         # workpiece face above.
                         lathe_sections.TOOL_FRONT_ANGLE = \
                             ncam.TOOL_TABLE.get_front_angle()
+                        # and the nose radius, for the contact-point diameter
+                        # limit. Same route again, and taken from
+                        # tip_comp_inputs so it is the SAME number the
+                        # compensation and the reachable contour already use -
+                        # TBL_SCALE applied, override honoured - rather than a
+                        # second read that could disagree with them.
+                        lathe_sections.TOOL_NOSE_R = ncam.tip_comp_inputs()[0]
                     # the flank length travels the same way and for the same
                     # reason: it describes the INSERT, so it belongs to the
                     # tool change, and every feature under it - the polyline's
