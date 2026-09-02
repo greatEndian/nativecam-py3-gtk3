@@ -172,7 +172,25 @@ def z_limit_abs(polyline_feature, which):
     return WORKPIECE_FACE_Z - v
 
 
-def x_limit_abs(polyline_feature, which, nose_r=None):
+def x_stock_ref(polyline_feature, which):
+    """The datum-resolved diameter, with NO tool shift - where the stock is.
+
+    greatEndian, 2026-09-02: *"origin should stay put, only the ladder bound
+    moves"*. `param_b_x` does double duty - it is the operation's Begin limit
+    AND where the profile starts, and the reference package has no equivalent,
+    so it could not settle which of the two the tool reference point applies
+    to. The answer is the limit only.
+
+    So the DATUM applies to both - "start at the stock OD" has to move the
+    origin with it or the profile begins where the limit no longer is - and
+    CONTACT POINT applies to neither the origin, the sectioning stock envelope,
+    nor the X-wall stand-off. Those three are asking where the material is, not
+    where the cut must stop.
+    """
+    return x_limit_abs(polyline_feature, which, contact=False)
+
+
+def x_limit_abs(polyline_feature, which, nose_r=None, contact=True):
     """The diameter a radial limit sits at, in the units param_b_x carries.
 
     Gap 14's diameter half and gap 10, resolved in one place because they are
@@ -226,6 +244,9 @@ def x_limit_abs(polyline_feature, which, nose_r=None):
     elif mode == 2 and WORKPIECE_ID is not None:
         v = WORKPIECE_ID + v
 
+    if not contact:
+        return v
+
     lim = polyline_feature.get_param('param_x_limit')
     if (lim is not None and int(_to_float(lim.get_ngc_value())) == 1
             and nose_r > EPS):
@@ -248,8 +269,12 @@ def build_x_limit_gcode(polyline_feature, nose_r=None):
     `#&lt;_pl_b_x&gt;`. Every other emitter here returns its own lines for the
     same reason; this one is no different.
     """
-    b = x_limit_abs(polyline_feature, 'begin', nose_r)
-    e = x_limit_abs(polyline_feature, 'end', nose_r)
+    # DATUM ONLY. These two feed poly_add_item's origin and the canned-cycle
+    # framing rapid - both are "where the stock is", not "where the cut stops",
+    # so the contact-point shift must not reach them. The ladder bound takes
+    # the full resolution in rough_radius_bounds instead.
+    b = x_stock_ref(polyline_feature, 'begin')
+    e = x_stock_ref(polyline_feature, 'end')
     if b is None or e is None:
         return ''
     out = ['(the radial limits, resolved: the datum against the Workpiece own)',
@@ -559,7 +584,7 @@ def resolve_segments(polyline_feature):
     # "start at the stock OD" has to move the origin with it or the profile
     # would begin somewhere the limit no longer is.
     origin = (_to_float(b_z_param.get_ngc_value()),
-              x_limit_abs(polyline_feature, 'begin') / DIAMETER_MODE)
+              x_stock_ref(polyline_feature, 'begin') / DIAMETER_MODE)
     prev_z, prev_r = origin
 
     # the record fields poly_add_item reads back off the PREVIOUS record when
@@ -1238,7 +1263,7 @@ def build_sections_gcode(polyline_feature):
         ordered = rank_weakest_first(sections)
         sect_mode = 0
 
-    stock_x = x_limit_abs(polyline_feature, 'begin')
+    stock_x = x_stock_ref(polyline_feature, 'begin')
     # PLUS THE ALLOWANCE. The ceiling is a question about the ROUGHING FLOOR,
     # not about the finished part: a roughing level stops at the profile
     # offset by fin_off + prefin_off, so nothing anywhere has reached that
@@ -4334,7 +4359,7 @@ def check_x_wall_moves(moves, z_wall, x_base, x_top, approach, front, lead_x):
 
 def _stock_x(polyline_feature):
     """The stock envelope in the same units the point tables carry, or None."""
-    return x_limit_abs(polyline_feature, 'begin')
+    return x_stock_ref(polyline_feature, 'begin')
 
 
 def xw_settings(polyline_feature):

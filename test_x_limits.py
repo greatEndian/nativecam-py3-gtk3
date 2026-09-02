@@ -114,6 +114,14 @@ def unit_tests():
         f = FakeFeature(param_b_x=30.0, param_x_limit=1.0, param_side=0.0)
         check('   and an explicit 0 nose radius shifts nothing',
               ls.x_limit_abs(f, 'begin', 0.0) == 30.0)
+        check('   and x_stock_ref ignores the tool reference entirely',
+              ls.x_stock_ref(f, 'begin') == 30.0,
+              str(ls.x_stock_ref(f, 'begin')))
+        f = FakeFeature(param_b_x=-2.0, param_b_x_dat=1.0, param_x_limit=1.0,
+                        param_side=0.0)
+        check('   but x_stock_ref still takes the DATUM',
+              ls.x_stock_ref(f, 'begin') == 48.0,
+              str(ls.x_stock_ref(f, 'begin')))
 
         # no Workpiece - fall back to the value, and say so
         ls.WORKPIECE_OD = ls.WORKPIECE_ID = None
@@ -170,19 +178,35 @@ def main():
                       % project, abs(base_bx - own_bx) < 1e-6,
                       '%.4f against %.4f' % (base_bx, own_bx))
                 # 3. EACH SETTING MOVES THE TOOLPATH
-                for label, sets, want in (
-                        ('datum Stock OD', ['polyline:param_b_x_dat=1'], None),
+                # THE DATUM MOVES THE ORIGIN, THE TOOL REFERENCE DOES NOT.
+                # greatEndian, 2026-09-02: "origin should stay put, only the
+                # ladder bound moves". param_b_x is the Begin limit AND where
+                # the profile starts; "start at the stock OD" has to carry the
+                # origin with it, while "the limit means where the nose
+                # touches" is about the cut alone. _pl_b_x is the origin, so
+                # the two settings must show up differently in it.
+                for label, sets, want_bx in (
+                        ('datum Stock OD', ['polyline:param_b_x_dat=1'],
+                         'moves'),
                         ('contact point', ['polyline:param_x_limit=1'],
-                         own_bx + 0.4 * ls.DIAMETER_MODE)):
+                         'stays')):
                     bx, h = run(project, sets, project[:-4] + label[:5], d)
                     check('   %s: %s generates' % (project, label),
                           bx is not None)
                     if bx is None:
                         continue
-                    if want is not None:
-                        check('   %s: %s resolves to %.4f'
-                              % (project, label, want),
-                              abs(bx - want) < 1e-6, '%.4f' % bx)
+                    if want_bx == 'stays':
+                        check('   %s: %s leaves the ORIGIN where it was'
+                              % (project, label), abs(bx - own_bx) < 1e-6,
+                              'origin moved to %.4f - contact point must only '
+                              'move the cut limit' % bx)
+                    else:
+                        check('   %s: %s moves the origin with it'
+                              % (project, label), abs(bx - own_bx) > 1e-6,
+                              'origin unchanged at %.4f' % bx)
+                    # ...and both must reach the toolpath. A setting that
+                    # resolves and changes no motion is the failure this test
+                    # exists for - see the docstring.
                     check('   %s: %s MOVES the toolpath'
                           % (project, label), h != base_h,
                           'byte-identical motion - the limit resolves but '

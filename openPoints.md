@@ -3417,10 +3417,17 @@ is a defect; they are absences, and most were parked deliberately:
   both G-code sites take the resolved value, so the datum moves the profile
   ORIGIN with it - `param_b_x` is a limit and a datum at once.
 
-- [ ] **Should Contact point move the profile ORIGIN, or only the ladder
-  bound?** `param_b_x` is both the operation's Begin limit and where the
-  profile starts, and the reference has no equivalent double duty, so it does
-  not settle this. Currently it moves both.
+- [x] **Should Contact point move the profile ORIGIN, or only the ladder
+  bound?** RULED 2026-09-02 by greatEndian — *"origin should stay put, only the
+  ladder bound moves"*. Built: `x_stock_ref` (datum only) serves the origin, the
+  sectioning stock envelope and the X-wall stand-off; `x_limit_abs` (datum +
+  contact) serves the ladder bound. Measured on testing_15_9 — contact point
+  leaves `_pl_b_x` at 70.0000 and still moves the toolpath, the datum moves both.
+  cfg 1.70.
+
+- [ ] **The stock datum offsets, it does not CLAMP.** Stock OD with a positive
+  offset puts the limit outside the bar — legitimate for an oversize blank, and
+  also an easy way to ask for something meaningless. Nothing refuses it.
 
 - [ ] **2 — tool orientation as a programmable B axis.**
 - [ ] **3 — Use Tailstock (M21/M22).**

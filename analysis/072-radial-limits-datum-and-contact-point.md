@@ -37,10 +37,22 @@ and `TOOL_FRONT_ANGLE` already were - `lathe_sections` imports nothing from
 `ncam` and a Feature has no back-reference to its tree.
 
 `param_b_x` is not only a limit: it is also the profile's ORIGIN and the stock
-reference for sectioning and the X-wall detour. All five Python consumers and
-both G-code sites now take the resolved value, so a datum that says "start at
-the stock OD" moves the origin with it rather than leaving the profile
-beginning where the limit no longer is.
+reference for sectioning and the X-wall detour.
+
+**So the two settings reach different things, and that is greatEndian's ruling**
+— 2026-09-02: *"origin should stay put, only the ladder bound moves"*.
+
+- **The DATUM applies to both.** "Start at the stock OD" has to carry the origin
+  with it, or the profile begins where the limit no longer is.
+- **CONTACT POINT applies to the cut alone** — not the origin, not the
+  sectioning stock envelope, not the X-wall stand-off. Those three ask where the
+  MATERIAL is; the tool reference point is about where the CUT must stop.
+
+Two named functions carry the distinction so it cannot blur: `x_stock_ref`
+(datum only) for the three material references and the two emitted globals, and
+`x_limit_abs` (datum + contact) for the ladder bound and the OD/ID check. The
+reference package has one limit where ours doubles as a datum, so it could not
+settle this; the split is ours.
 
 ## THE FAULT THIS NEARLY SHIPPED WITH
 
@@ -60,18 +72,23 @@ tool that is loaded". `test_x_limits` asserts the motion moves, not the global.
 
 ## Measured
 
-| | `_pl_b_x` | motion |
+`_pl_b_x` is the ORIGIN, so the two settings show up in it differently - which
+is what makes the ruling checkable rather than a matter of belief:
+
+| | `_pl_b_x` (origin) | motion |
 |---|---|---|
 | testing_15_9, defaults | 70.0000 | `6cf361a8b8f5`, 1575 moves - **unchanged** |
-| datum Stock OD | 140.0000 | moved, 1580 moves |
-| contact point | **70.8000** | moved, 1545 moves |
-| both | 140.8000 | moved, 1587 moves |
+| datum Stock OD | **140.0000** - moves | moved, 1580 moves |
+| contact point | **70.0000** - stays | **moved**, 1578 moves |
+| both | 140.0000 | moved, 1587 moves |
 | testing_15_2, defaults | 60.0000 | `e2744cbb6ff0`, 327 moves - **unchanged** |
-| contact point | **60.8000** | moved, 333 moves |
+| datum Stock OD | 120.0000 - moves | moved, 341 moves |
+| contact point | 60.0000 - stays | **moved**, 333 moves |
 
-70.8 - 70.0 = 0.8 = nose R0.400 x `DIAMETER_MODE` 2, one nose radius expressed
-as a diameter. The default hashes match the pre-change baselines measured in
-`analysis/071`, so every saved project keeps the toolpath it has.
+The contact-point shift is one nose radius expressed as a diameter - R0.400 x
+`DIAMETER_MODE` 2 = 0.8 - applied to the ladder bound, where it no longer
+appears in the origin at all. The default hashes match the pre-change baselines
+measured in `analysis/071`, so every saved project keeps the toolpath it has.
 
 ## Also worth recording
 
@@ -92,9 +109,9 @@ moving the toolpath).
 
 ## Still unknown
 
-- The contact-point shift is applied to the RESOLVED limit, which is also the
-  profile origin. Whether "contact point" should move the origin as well as the
-  ladder bound, or only the bound, is a judgement the reference does not
-  settle - it has one limit where we have a limit that doubles as a datum.
 - ID work is paused, so the inward shift for `param_side` = 1 is implemented
   and unit-tested but never exercised end to end.
+- The datum offsets from the stock diameter; it does not CLAMP to it. Setting
+  Stock OD with a positive offset puts the limit outside the bar, which is
+  legitimate (clearing an oversize blank) and also an easy way to ask for
+  something meaningless. Nothing refuses it.
