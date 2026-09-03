@@ -216,6 +216,32 @@ class NCamProjectIOMixin:
                     ncam.TOOL_TABLE.save_shank_off(
                         p_sox.get_ngc_value() if p_sox is not None else 0.0,
                         p_soz.get_ngc_value() if p_soz is not None else 0.0)
+                    # the holder as GEOMETRY, for the reachable contour: how
+                    # far the block sits below the nose, how long it is, and
+                    # the insert's own edge length that ends the wedge. Derived
+                    # from ncam_preview's own tool_shank so the contour, the
+                    # drawing and the collision check cannot describe three
+                    # different tools.
+                    lathe_sections.TOOL_SHANK_DROP = 0.0
+                    lathe_sections.TOOL_SHANK_LEN = 0.0
+                    lathe_sections.TOOL_INSERT_EDGE = 0.0
+                    try :
+                        import ncam_preview
+                        _sh = get_float(p_sh.get_ngc_value()) if p_sh is not None else 0.0
+                        _dims = ncam_preview.shank_dims(_sh)
+                        _nr, _or = ncam.tip_comp_inputs()
+                        _blk = ncam_preview.tool_shank(
+                            (0.0, 0.0, 0.0), _nr, _or,
+                            ncam.TOOL_TABLE.get_front_angle(),
+                            ncam.TOOL_TABLE.get_back_angle(),
+                            _sh, None, None,
+                            ncam.TOOL_TABLE.get_shank_off())
+                        if _dims is not None and _blk :
+                            lathe_sections.TOOL_SHANK_DROP = abs(_blk[0][1])
+                            lathe_sections.TOOL_SHANK_LEN = _dims[0]
+                            lathe_sections.TOOL_INSERT_EDGE = _dims[1]
+                    except Exception :
+                        pass
                     p_bc = f.get_param('param_back_clear')
                     ncam.TOOL_TABLE.save_back_clear(
                         p_bc.get_ngc_value() if p_bc is not None else 0.0)

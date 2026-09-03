@@ -2284,7 +2284,24 @@ the two cuts only touch.
   - greatEndian ruled `h = 0` does not occur: *"h every time depends at tool
     tip insert dimension which we have to grab from expanded tool table"*.
 
-- [ ] **The shank bounds the PICTURE but not the reachable contour.** Verified
+- [ ] **NEEDS A CALL — the holder model is BUILT and measured, and it cuts
+  LESS, not more.** `analysis/074`. `FLANK_SHANK_BOUNDS`, off by default.
+  Three regimes replace two: the wedge to the insert's edge length, then the
+  block's flat floor `rp - 12.0946` to the holder length, then nothing.
+  **I predicted it would recover the 10.0899 mm and it does the opposite**:
+  across testing_15_2, _15_4 and _15_5 the reachable contour is never lower and
+  up to **2.2288 mm of radius HIGHER** at Z−69.58. The infinite wedge was
+  optimistic at long range — it let the nose sit 13.6 mm below an obstruction
+  59 mm away when the block face is a fixed 12.09 mm below the nose. So this is
+  a safety correction that costs material, not a productivity one.
+  - **ON**: roughing stops where a real 25 mm holder clears. Costs 2.23 mm of
+    radius behind the boss.
+  - **OFF**: today, byte-identical, and the tool reaches 2.23 mm deeper than
+    the holder allows at long range.
+  - Unknown either way: whether that 2.23 mm would ACTUALLY have fouled. That
+    wants a real cut or a collision-check run, not more geometry.
+
+- [x] **The shank bounds the PICTURE but not the reachable contour.** Verified
   2026-08-08 and re-confirmed today: a 25 mm shank and a 0 shank produce a
   byte-identical program. So the tool the preview draws and the tool
   `flank_envelope` believes in are different tools — the picture shows a holder

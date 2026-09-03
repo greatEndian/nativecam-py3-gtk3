@@ -27,6 +27,7 @@ not against the cfg text.
 """
 
 import math
+import os
 import lathe_comp
 
 EPS = 0.0001
@@ -2218,6 +2219,59 @@ def band_windows(sections, ordered, points):
 # is unaffected either way, it still draws the tool silhouette.
 FLANK_BOUNDS_CONTOUR = False
 
+# --- and the SHANK, which is a different question entirely ------------------
+#
+# FLANK_BOUNDS_CONTOUR above bounds the shadow by the INSERT and was withdrawn:
+# past the insert it lets the obstruction stop constraining altogether, which
+# says the tool ends there. It does not. The HOLDER is behind the insert and is
+# bigger, so the honest model has three regimes rather than two:
+#
+#   d <= insert reach     the wedge binds:  rp - d * kk
+#   reach < d <= l1       the BLOCK binds:  rp - drop        (constant)
+#   d > l1                nothing binds - the holder has ended
+#
+# `drop` is the radial distance from the nose to the block's NEAR face, which
+# ncam_preview.tool_shank already derives from the insert's far corners, and
+# `l1` its overall length. Both are published by to_gcode's walk, the same way
+# WORKPIECE_FACE_Z and TOOL_NOSE_R are, because this module imports nothing
+# from ncam or from the preview.
+#
+# WHY IT RECOVERS METAL. drop is ~12 mm on a 25 mm shank while d * kk is 2.3 mm
+# at 10 mm behind an obstruction and 8.1 mm at 35 mm, so past the insert the
+# block lets the nose sit LOWER than the unbounded wedge allows - the wedge
+# ramps away at the flank angle and never releases, the block is a flat floor
+# far below it. That is the 10.0899 mm behind the boss on testing_15_2.
+#
+# OFF BY DEFAULT. It changes which metal is cut, and the last time the shadow
+# model changed it was withdrawn again; this ships measured and switchable, not
+# assumed.
+# The environment override exists so this can be MEASURED without editing the
+# file - a generation runs in a subprocess, so a flag flipped in the parent
+# would not reach it. It can only turn the model ON; the shipped default stays
+# False and nothing reads the variable in normal use.
+FLANK_SHANK_BOUNDS = (os.environ.get('NCAM_SHANK_BOUNDS') == '1')
+
+# radial nose-to-block distance, holder length, and the INSERT's own edge
+# length - all published by the walk. The edge length is what ends the wedge in
+# this model, and it is derived from the shank rather than typed: it is NOT the
+# Tool Change's flank length, which is what FLANK_BOUNDS_CONTOUR used and which
+# was withdrawn. Using the derived edge keeps this a statement about the tool
+# rather than about a number somebody entered for the picture.
+TOOL_SHANK_DROP = 0.0
+TOOL_SHANK_LEN = 0.0
+TOOL_INSERT_EDGE = 0.0
+
+
+def _shank_band():
+    """(drop, l1) when the shank may bound the shadow, else None."""
+    if not FLANK_SHANK_BOUNDS:
+        return None
+    if TOOL_SHANK_DROP <= EPS or TOOL_SHANK_LEN <= EPS:
+        return None
+    if TOOL_INSERT_EDGE <= EPS:
+        return None
+    return TOOL_SHANK_DROP, TOOL_SHANK_LEN
+
 
 def _contour_flank(flank_len):
     """The flank length the accessible contour may use - see above."""
@@ -2420,6 +2474,15 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
             rr = flank_len * math.cos(math.radians(90.0 - deg - clearance))
             if rr <= EPS:
                 return []
+        # WITH THE SHANK MODELLED, the wedge ends where the INSERT does - its
+        # own edge length, derived from the shank - and the block takes over
+        # from there. Without this the wedge stays unbounded, the block branch
+        # is unreachable and the whole model does nothing.
+        if _shank_band() is not None and TOOL_INSERT_EDGE > EPS:
+            er = TOOL_INSERT_EDGE * math.cos(
+                math.radians(90.0 - deg - clearance))
+            if er > EPS:
+                rr = er if rr is None else min(rr, er)
         # THE INSERT DECIDES THE SIDE WHEN IT CAN. flank_sides answers from the
         # roughing direction, and every caller reaches it through
         # rough_frame_dir, which collapses 0, 1 and 2 to 0 - so the shadow has
@@ -2481,6 +2544,17 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
                 for zc in (zp - side * reach, zp - side * (reach + EPS * 4)):
                     if lo <= zc <= hi:
                         cand.add(zc)
+            # and where the BLOCK starts and ends. Without these the flat floor
+            # between them has no breakpoints to sit on and the collinearity
+            # pruning drops it, so the shank would read as doing nothing - the
+            # same trap the flank's own release needed both sides of.
+            band = _shank_band()
+            if band is not None:
+                for edge in (reach or 0.0, band[1]):
+                    for zc in (zp - side * edge,
+                               zp - side * (edge + EPS * 4)):
+                        if lo <= zc <= hi:
+                            cand.add(zc)
 
     out = []
     for z0 in sorted(cand):
@@ -2488,12 +2562,21 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
         if best is None:
             best = points[0][1]
         for zp, rp in points:
+            band = _shank_band()
             for side, kk, reach in slopes:
                 d = (zp - z0) * side
-                if d > EPS and (reach is None or d <= reach + EPS):
+                if d <= EPS:
+                    continue
+                if reach is None or d <= reach + EPS:
                     bound = rp - d * kk
-                    if bound > best:
-                        best = bound
+                elif band is not None and d <= band[1] + EPS:
+                    # past the insert the HOLDER is what clears the wall, and
+                    # it is a flat floor rather than a ramp
+                    bound = rp - band[0]
+                else:
+                    continue
+                if bound > best:
+                    best = bound
         out.append((z0, best))
 
     if len(out) < 3:
