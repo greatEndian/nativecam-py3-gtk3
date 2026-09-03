@@ -92,6 +92,13 @@ class Toolpath(object):
         self.moves = []           # [Move]
         self.flat = ''         # the same program as plain G-code, see flatten_canon
         self.error = None      # human-readable, or None
+        # Did the interpreter REACH THE END of the program? A run that stops
+        # part way still returns every move it made before it stopped, and
+        # those moves are perfectly valid - so a check that only counts moves
+        # cannot tell a finished program from a truncated one. Two real faults
+        # sat green behind exactly that. False here means "measure nothing from
+        # this"; see the completion check in the test_*.py files.
+        self.completed = False
         self.min = None        # (x,y,z) or None when there is no motion
         self.max = None
 
@@ -290,6 +297,7 @@ def parse_program(path, ini_path=None):
             n = css / (math.pi * d)
             return min(n, css_cap) if css_cap > 0 else n
 
+        tp.completed = bool(_FLAT_RE['end'].search(canon))
         for line in canon.splitlines():
             m = _RE['comment'].search(line)
             if m:
@@ -385,6 +393,20 @@ def parse_program(path, ini_path=None):
             tp.max = tuple(max(p[i] for p in pts) for i in range(3))
         if tp.empty:
             tp.error = tp.error or 'the program produced no motion'
+        # A RUN THAT STOPPED PART WAY IS NOT A RESULT. It returns every move
+        # it made before it stopped, and those moves are all valid, so a check
+        # that counts moves or measures geometry cannot tell a finished program
+        # from a truncated one - two real faults sat green behind exactly that.
+        # Reported through `error` rather than only through `completed` so the
+        # 29 test_*.py files that already refuse to measure an errored run are
+        # protected without each having to remember a second check. Some aborts
+        # leave no message of their own at all - a truncated var file stops the
+        # interpreter at T<n> M6 in silence - which is why the END MARKER is
+        # what is tested and not the absence of an error.
+        if tp.error is None and tp.moves and not tp.completed:
+            tp.error = ('the interpreter stopped before the end of the '
+                        'program - %d moves were emitted but PROGRAM_END was '
+                        'never reached' % len(tp.moves))
         return tp
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

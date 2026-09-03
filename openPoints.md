@@ -1360,97 +1360,31 @@ the two cuts only touch.
   class as the 2026-08-12 fix. Hidden until 2026-08-21 by the `#<p1_cut>`
   abort, which truncated the program the test was measuring.
 
-- [ ] **A test that passes on an aborted program is not passing.** Neither
-  `test_behind_boss_ladder` nor `test_ladder` checks that rs274 reached the end
-  of the file; both take whatever moves were emitted before it stopped, which
-  is how two real faults sat green. Fix the harness before chasing either.
+- [ ] **`test_extension` FAILS, found 2026-09-03 and NOT attributed.** Roughing
+  reaches Z2.4284 with a 3.0 front extension while the contour passes reach
+  Z2.8284 - a 0.4 mm gap, which happens to be the nose radius. Roughing's own
+  number is unchanged from what `rough_radius_bounds`' docstring records
+  (Z2.4284); it is the CONTOUR that has moved, from Z3.7071 there to Z2.8284
+  now. So something narrowed the contour rather than shortening the roughing.
+  - Ruled OUT: the program-completion guard added the same day - identical
+    failure with it stashed.
+  - NOT ruled out: the x-limit resolver, which touched `rough_radius_bounds`,
+    or the insert-orientation work on the flank envelope. An attempt to measure
+    the pre-change baseline failed on its own instrument - checking out the old
+    `cfg` against projects already migrated to 1.71 broke generation - so the
+    comparison wants a worktree with a matching config, not a file checkout.
+  - Do this before item 1: it is in the same machinery.
 
-## Reported 2026-08-15 — greatEndian's three issues
-
-> Written down late, and that is the point of the entry. The sweep `0a60d80`
-> ran BEFORE the two fixes below; the findings went into the commit messages
-> and `analysis/044`/`051` and never came back here. greatEndian asked *"why
-> you did not mark down this issues to open points?"* — because a fix recorded
-> only in a commit message is not recorded. **The sweep belongs after the fix,
-> not before it.**
-
-- [x] **1 — The tangential extension reached only pre-finish and finish —
-  FIXED**, 2026-08-15, `f7356af`, polyline.cfg **1.60**. greatEndian:
-  *"tangential extension works only in prefinish and finish and it should work
-  for the roughing too"*. Three separate things were wrong, and the first is
-  the one the earlier "DONE" at gap 9 missed:
-  - **the roughing ladder is bounded by Begin X / End X**, not by the extended
-    profile, so an extension that grew the shape gained no levels to cut it
-    with;
-  - `_pl_begin_z` carried the extension's **length** rather than its **Z
-    component**, starting the sweep 0.88 mm of air forward of where the profile
-    actually reaches on testing_15_5 — the same diameter/radius confusion that
-    made a 3.0 extension move a wall by 1.5;
-  - the level scan stopped 1.28 mm short of where the contour passes ran on to.
-  - **Gate, now in `test_extension.py`**: roughing's front-most cut and the
-    contour passes' front-most cut agree within 0.01 mm, the ladder GAINS
-    levels, and the front-most cut moves by the extension's Z component
-    (3.0/√2 = 2.1213 on this profile's 45° first segment), not by 3.0.
-
-- [x] **2 — High feedrate mode should not exist at all — FIXED**, 2026-08-15,
-  `8f60e77`, polyline.cfg **1.61**, `analysis/051`. greatEndian: *"there should
-  be only high feedrate mode feedrate floating point and if it is non zero it
-  is on then"*.
-  - The rendering fault was real — `PARAM_HF_MODE` was `type = combo` with six
-    options **and** carried `digits = 0`, so it presented as a float entry.
-    Not chased: the mode is not wanted, so it is **deleted** — the parameter,
-    its `order` entry, the `_pl_hf_x`/`_pl_hf_z` globals, their
-    `create_defaults` entries, and the per-axis pick in `hf_move`.
-  - It was never worth its weight: the six choices exist for machines that
-    dogleg on a two-axis G0, and testing_15_5 emits **148 positioning moves, 99
-    radial, 49 axial, NONE moving both axes** — so three of the six were
-    identical on this output.
-  - Zero means off, which is also the only safe reading of "no rate", since
-    `G1 F0` stops the machine.
-  - **Measured**: rate 0 → 470 moves, 148 rapids, hash `d14e9d952c14`, which is
-    the hash from **before the feature existed** — byte-identical. Rate 2000 →
-    470 moves, 0 rapids, **exactly 148** at the rate, not one more. The move
-    count is unchanged, so a converted move goes where the rapid went.
-  - **KEPT deliberately**: the feed restore at all 21 sites. F is modal and
-    `lathe_level_pass` has a path where the level cut takes the last F set, so
-    a converted move that did not put the caller's feed back would **cut at
-    positioning speed**.
-
-- [x] **3 — Back to front is a mess — FIXED**, 2026-08-15, `analysis/054`.
-  One decomposition frame, reversed emission. Same cut SET as front to back on
-  four projects in both sectioning modes, sections walked last-first, front to
-  back byte-identical across all 39 demo projects. See *Roughing direction*
-  below for the numbers and what is still short.
-
-## Next — before anything else
-
-- [x] **THE FIRST PASS BEHIND THE BOSS IS MISSING — FIXED**, 2026-08-12,
-  `5790e01`, `analysis/032`. The resume-envelope walker and the flag split are
-  wired and the suite is green.
-
-  **Root cause of the last fault**: `build_floor_contour_gcode` was built from
-  `resolve_points` — the RAW polyline — while `build_stop_contour_gcode` and
-  `build_entry_contour_gcode` beside it use `finish_profile`, the **reachable**
-  contour. The raw shape contains an undercut the back angle cannot reach, so
-  the floor contour collapsed to a **24 mm flat at r20.762** where the machined
-  surface tapers r33 → r24.24, and roughing dived into material it must not
-  enter.
-
-  ```
-  test_rough_comp overcut  Off  7.6277 -> 0.0503 mm   (bound 0.0800)
-  topmost behind-boss      off  32.1920 -> 33.2080
-                           on   32.1522 -> 33.1273
-  ```
-
-  **A stale warning was the whole blocker.** The docstring said building it from
-  `finish_profile` "cost testing_15_2 nine of its 29 levels". Re-measured, that
-  is no longer true — the fault it described was fixed by intervening work, and
-  the warning outlived it. **Re-measure a warning before obeying it.**
-
-  Also fixed on the way, pre-existing: `test_rough_overlay` was red from
-  `3df0a4c`, which gave the stop contour `fin + prefin` without moving the drawn
-  twin — the overlay sat 0.2540, exactly `pf_off`, inside the line the levels
-  stop on.
+- [x] **A test that passes on an aborted program is not passing.** DONE
+  2026-09-03. `parse_program` records whether `PROGRAM_END` was reached and
+  sets `error` when it was not, so all 29 test files that already refuse an
+  errored run are protected without each needing a second check, and a test
+  written tomorrow inherits it. Measured: truncating a real program two-thirds
+  through still yields 14 moves against 341, so every geometric assertion here
+  would have run happily on the fragment. The END MARKER is what is tested, not
+  the absence of an error, because some aborts are silent - a truncated var
+  file stops the interpreter at `T<n> M6` with no message.
+  `test_program_completes.py` proves both directions.
 
 - [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
   windows, globals, `order` names and subroutine definitions — not *which scan
