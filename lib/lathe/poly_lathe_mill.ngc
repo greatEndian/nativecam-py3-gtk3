@@ -394,6 +394,38 @@ o<poly_lathe_mill> sub
         (passes, which read the extended profile, ran on out. A DISPLACEMENT,)
         (0.0 when no extension is set, so this line is a no-op without one.)
         #<l_z> = [#<l_z> + #<_pl_ext_bk_dz>]
+
+        (AND INSIDE THE Z LIMITS. e_z and l_z come from the RECORD ARRAY, which)
+        (is built from the raw polyline items - the comment above says so about)
+        (the extension - so it has never seen the Z-limit trim that every)
+        (CONTOUR was built from. A roughing level that does not cross the)
+        (trimmed profile then had nothing to stop it and ran the full bar:)
+        (measured on testing_15_5 with End Z -40, six feeds past the limit, one)
+        (of them Z-0.4000 to Z-70.8000 at a constant X34.4371 - 30 mm of stock)
+        (the limit was set to protect. The finish passes stopped correctly)
+        (because they read the trimmed tables, so only half the program was)
+        (wrong, which is how it survived.)
+        (Clamped AFTER the extension on purpose: a limit is a hard bound and an)
+        (extension is a request, so the limit wins when both are set.)
+        (Python works the band out - which limit is the near one depends on the)
+        (direction the profile was drawn and on which switches are on - and)
+        (this only keeps two numbers inside it. _pl_lim_on is 0 when no limit)
+        (is set, which is every project that sets none.)
+        o<lim_w> if [#<_pl_lim_on> GT 0]
+                o<lim_e1> if [#<e_z> LT #<_pl_lim_lo>]
+                        #<e_z> = #<_pl_lim_lo>
+                o<lim_e1> endif
+                o<lim_e2> if [#<e_z> GT #<_pl_lim_hi>]
+                        #<e_z> = #<_pl_lim_hi>
+                o<lim_e2> endif
+                o<lim_l1> if [#<l_z> LT #<_pl_lim_lo>]
+                        #<l_z> = #<_pl_lim_lo>
+                o<lim_l1> endif
+                o<lim_l2> if [#<l_z> GT #<_pl_lim_hi>]
+                        #<l_z> = #<_pl_lim_hi>
+                o<lim_l2> endif
+        o<lim_w> endif
+
         o<wzd> if [#<e_z> GE #<l_z>]
                 #<z_dirw> = 1
         o<wzd> else

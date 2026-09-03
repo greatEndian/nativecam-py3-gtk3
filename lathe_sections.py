@@ -260,6 +260,59 @@ def x_limit_abs(polyline_feature, which, nose_r=None, contact=True):
     return v
 
 
+def build_z_limit_bounds_gcode(polyline_feature):
+    """The Z band the operation may machine in, for the ROUGHING window.
+
+    The Z limits trim the PROFILE, and every table built from it - the finish,
+    pre-finish, entry and stop contours - inherits the trim. The roughing
+    window does not: poly_lathe_mill takes its extents from the RECORD ARRAY,
+    which is built from the raw polyline items and never sees the trim. Its own
+    comment says as much about the back extension, and it carries a
+    displacement for that; this is the same correction for the same reason.
+
+    What that cost, measured on testing_15_5 with End Z -40: six roughing FEED
+    moves ran the full bar - one of them Z-0.4000 to Z-70.8000 at a constant
+    X34.4371 - cutting 30 mm of stock the limit was set to protect. The finish
+    passes stopped correctly, so the program looked half right. testing_15_2
+    obeys the same limit, because there every level crosses the profile before
+    reaching it and the window end never bites; that is why this survived.
+
+    A BAND RATHER THAN TWO CLAMPS, worked out here rather than in the O-code,
+    because which limit is the near one depends on the direction the profile
+    was drawn in and on which switches are on. Python knows all of that; the
+    subroutine should only have to keep two numbers in range.
+
+    999999 stands for "unbounded on that side" so one limit can be set without
+    the other. `_pl_lim_on` is 0 when neither is, and the clamp is then skipped
+    entirely - which is every project that sets no limit.
+    """
+    fz = z_limit_abs(polyline_feature, 'front')
+    ez = z_limit_abs(polyline_feature, 'end')
+    if fz is None and ez is None:
+        return '#<_pl_lim_on> = 0'
+    lo, hi = -999999.0, 999999.0
+    for v in (fz, ez):
+        if v is None:
+            continue
+        # the band is whatever the set limits enclose; with only one set, the
+        # other side stays unbounded and the single limit still bites
+        if fz is not None and ez is not None:
+            lo, hi = min(fz, ez), max(fz, ez)
+        elif v == fz:
+            hi = v
+        else:
+            lo = v
+    return '\n'.join([
+        '(the Z band roughing may work in. The contours are trimmed by the)',
+        '(limits already; the roughing window comes from the RAW record array)',
+        '(and has to be clamped into the same band or a level that never)',
+        '(crosses the trimmed profile runs the whole bar. See)',
+        '(build_z_limit_bounds_gcode.)',
+        '#<_pl_lim_on> = 1',
+        '#<_pl_lim_lo> = %s' % _fmt(lo),
+        '#<_pl_lim_hi> = %s' % _fmt(hi)])
+
+
 def build_x_limit_gcode(polyline_feature, nose_r=None):
     """The two resolved radial limits as globals, plus the fallback warning.
 

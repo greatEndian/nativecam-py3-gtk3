@@ -2474,13 +2474,16 @@ validation ones.
   absolute −40 (Z−40.6043), follows the workpiece to Z−50.6043 when it moves,
   and an absolute value correctly does not. `test_z_datum.py`.
 
-- [ ] **An End Z limit does not bite on testing_15_5.** An absolute `-40` still
-  reaches Z−70.4 there, while the same limit on testing_15_2 correctly reaches
-  Z−40.6043. Verified **pre-existing** — identical with the datum work stashed —
-  so it is not a regression from it, and it was found only because that work
-  needed a project with a known-good limit to anchor its probe against. Worth
-  finding out what is different about 15_5 before trusting a Z limit on an
-  arbitrary project.
+- [x] **An End Z limit does not bite on testing_15_5.** DONE 2026-09-03,
+  `analysis/073`. It was a SAFETY bug: six roughing feeds ran past the limit,
+  one of them Z-0.4000 to Z-70.8000, taking 30 mm of stock the limit was set to
+  protect - while the finish passes stopped correctly, so only half the program
+  was wrong. The Z limits trim the profile and every contour built from it; the
+  roughing window takes its extents from the RAW record array and had never seen
+  the trim. `build_z_limit_bounds_gcode` emits the Z band and poly_lathe_mill
+  clamps both extents into it. 15_5 now stops at Z-40.6043 - the same Z as 15_2
+  under the same limit. No-limit motion byte-identical on all three projects.
+
 - [ ] **VALIDATION — a `[VALIDATION]` block cannot use `resolve_points`.** It
   runs from `Feature.validate()` part-way through `to_gcode`'s walk, before the
   children are resolvable, so it returns an **empty list** there. A check

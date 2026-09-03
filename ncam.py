@@ -2799,6 +2799,13 @@ class Preferences(object):
             # the O-code and the point tables cannot disagree about one number.
             self.default += ("#<_pl_b_x>                  = 0.0\n")
             self.default += ("#<_pl_e_x>                  = 0.0\n")
+            # The Z band roughing may work in. The contours are trimmed by the
+            # Z limits already; the roughing window comes from the raw record
+            # array and is clamped into this band. 0 = no limit set, which
+            # skips the clamp entirely.
+            self.default += ("#<_pl_lim_on>               = 0.0\n")
+            self.default += ("#<_pl_lim_lo>               = -999999.0\n")
+            self.default += ("#<_pl_lim_hi>               = 999999.0\n")
             self.default += ("#<_pl_flc_base>            = 0\n")
             self.default += ("#<_pl_flc_n>               = 0\n")
 
