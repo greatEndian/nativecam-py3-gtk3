@@ -2638,12 +2638,43 @@ validation ones.
     set. The count is printed so such a project shows up as a disagreement
     rather than as silence.
 
-- [ ] **NEXT LAYER: the sub-span walk.** `sg_from` / `sg_to` from the split
-  table at `#3160` and the `o<wh_seg>` loop above the interval walk - it
-  decides where each interval walk BEGINS. Everything inside it is now
-  predicted. After that the `.ngc` could read a table instead of deciding, and
-  `skip_thin` becomes movable - in that order, since `_pl_prev_thin` advances
-  only where a level actually cuts.
+- [~] **THE WHOLE ROUGHING STACK IS PREDICTED IN PYTHON** — 2026-09-03,
+  `analysis/084` and `085`. Each layer proved GIVEN the one above it:
+  `window (085) -> sub-span (084) -> interval (083) -> level set (080/081/082)`.
+  **Nothing in the toolpath reads any of it.**
+  - `sub_spans()` - poly_lathe_mill's `o<wh_seg>` loop, the `#3160` split table
+    read back to front, each peak breaking the sweep at most once.
+    **30 configurations, 2537 levels, 119 split into sub-spans.**
+  - `roughing_windows()` - the `o<wh_w>` loop. Sectioning off is ONE window
+    (`w_len` is the whole span plus 1 on purpose); Artificial is the table
+    alone from index 0; Natural adds the phase-1 window at -1. The Z bounds are
+    predicted from the RAW profile pair - back extension applied, THEN the Z
+    limits clamped, a limit being a hard bound where an extension is a request.
+    **179 windows, 152 with a radius band, 27 ceiling phases.**
+  - **The sub-span gate's first run failed 7 of 30, all `dir=1`, AND silenced
+    its own control.** I predicted `sg_use` from `#<_pl_cut_rev>` read out of
+    the program, but that global is a RUNTIME value - set from `rough_dir` and,
+    for Both directions, flipped after every pass that emits motion
+    (`lathe_level_pass.ngc:1785`) - so the source only shows the defaults
+    block's 0.0. The mismatch `continue`d before the control ran, so 119 split
+    levels never reached it and it reported nothing rather than a problem.
+    **A silent control reads exactly like a passing one.** Also found:
+    `rough_dir != 1` ZEROES `_pl_p1s_n` (`poly_lathe_mill.ngc:1320`), so front
+    to back and Both directions have no split table at all whatever Python
+    emitted. Both fixes are the same: the direction is a cfg parameter, read it
+    at generation time.
+
+- [ ] **THE ONE THING THAT IS NOT A GENERATION-TIME QUESTION: the phase-1
+  handover.** `poly_lathe_mill` reassigns `sect_top_r` when phase 1 stops on an
+  obstruction, and sets `_pl_ph1_front_cut` / `_pl_ph1_z_end` from how far it
+  actually got - a runtime OUTCOME feeding back into the geometry later windows
+  use. Everything else in roughing is now a table walk Python reproduces. This
+  is the honest boundary of the migration: a `.ngc` that merely walked tables
+  would have to drop the handover or keep that one decision at runtime. Decide
+  which before wiring anything.
+
+  `skip_thin` still comes after the blocked decision, not before -
+  `_pl_prev_thin` advances only where a level actually cuts.
 
 - [x] ~~**NEXT LAYER: the interval walk.** `level_blocked` is handed `w_from` and
   `w_to` out of the record. Supplying them from Python means knowing the
