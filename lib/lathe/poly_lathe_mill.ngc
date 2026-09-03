@@ -235,6 +235,23 @@ o<poly_lathe_mill> sub
                         #<first_step> = [[#<lad_tgt> - #<start_radius>] - #<cut_step> * [#<rough_passes> - 1]]
                 o<anch> endif
         o1001 endif
+        (THE LADDER HEAD, WORKED OUT AT GENERATION TIME. Everything above)
+        (is a generation-time question - the two targets are parameters)
+        (plus offsets, the pass count is a FUP, and the anchoring is)
+        (arithmetic on a floor - so lathe_sections answers it and this)
+        (replaces the answers. The computation above is KEPT as the)
+        (fallback: _pl_lad_ok is 0 on an older project and on any profile)
+        (lathe_sections declines to describe, and that path is unchanged.)
+        (Deleting it is a later step, once this has cut on the machine.)
+        o<lad_rd> if [#<_pl_lad_ok> GT 0]
+                #<dirsign>      = #<_pl_lad_dsgn>
+                #<rough_target> = #<_pl_lad_rtgt>
+                #<step_target>  = #<_pl_lad_stgt>
+                #<lad_tgt>      = #<_pl_lad_ltgt>
+                #<cut_step>     = #<_pl_lad_cstep>
+                #<first_step>   = #<_pl_lad_fstep>
+                #<rough_passes> = #<_pl_lad_np>
+        o<lad_rd> endif
 
         o<set_feed_rate_and_speed> CALL [#<tool_eng>]
 

@@ -2420,6 +2420,94 @@ def _fup(v):
     return int(n if n >= 1 else 1)
 
 
+def ladder_consts(start_r, final_r, fin_off, prefin_off, doc,
+                  pass_from=False, floors=()):
+    """The ladder's head - the scalars poly_lathe_mill works out once, above
+    its window loop, before any level exists.
+
+    Split out of `roughing_ladder` so the same numbers can be EMITTED to the
+    runtime instead of recomputed there. Every one is a generation-time
+    question: the two targets are parameters plus offsets, the pass count is a
+    FUP, and the anchoring is arithmetic on a floor.
+
+    `pass_from` is the subtle one and the reason this is worth moving. Anchored
+    on the finished contour the ladder is walked in WHOLE depths of cut from a
+    floor rounded outward, not in an even division - and it reassigns
+    step_target to that rounded floor, which decides where the levels land
+    without changing how much stock is left. Conflating those two left roughing
+    holding 1.016 off the profile where 0.762 was configured.
+
+    Returns a dict; keys are the O-code's own names.
+    """
+    dirsign = 1 if start_r >= final_r else -1
+    fin_off = max(fin_off, 0.0)
+    rough_target = final_r + dirsign * fin_off
+    step_target = rough_target + dirsign * prefin_off
+
+    lad_tgt = step_target
+    if len(floors) > 1:
+        lad_tgt = floors[0]
+
+    passes = 1
+    if abs(lad_tgt - start_r) <= EPS:
+        cut_step = first_step = 0.0
+    else:
+        passes = _fup(abs(lad_tgt - start_r) / doc)
+        cut_step = (lad_tgt - start_r) / passes
+        first_step = cut_step
+        if pass_from:
+            sgn = -1 if step_target < start_r else 1
+            cut_step = sgn * doc
+            k_min = _fup(abs(step_target - rough_target) / doc)
+            anch_floor = rough_target - sgn * k_min * doc
+            step_target = anch_floor
+            if len(floors) <= 1:
+                lad_tgt = anch_floor
+            passes = _fup(abs(lad_tgt - start_r) / doc)
+            first_step = (lad_tgt - start_r) - cut_step * (passes - 1)
+    return {'dirsign': dirsign, 'rough_target': rough_target,
+            'step_target': step_target, 'lad_tgt': lad_tgt,
+            'cut_step': cut_step, 'first_step': first_step,
+            'rough_passes': passes}
+
+
+def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
+    """The ladder head as globals, or '' to leave poly_lathe_mill computing.
+
+    The subroutine keeps its own computation as the fallback and these simply
+    replace the answers, so a project this cannot describe - and any older one,
+    where `_pl_lad_ok` defaults to 0 - is untouched.
+    """
+    if rough_cut <= EPS:
+        return ''
+
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    start_r, final_r = rough_radius_bounds(polyline_feature)
+    if abs(start_r - final_r) <= EPS:
+        return ''
+    c = ladder_consts(start_r, final_r, _p('param_f_off'),
+                      _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
+                      rough_cut, _p('param_pass_from') > 0,
+                      floor_stages(polyline_feature, rough_cut))
+    return '\n'.join([
+        '(the ladder head, worked out at generation time: the direction, the)',
+        '(two targets, the depth of cut and the first step. poly_lathe_mill)',
+        '(still computes these and these replace the answers, so an older)',
+        '(project - _pl_lad_ok 0 - keeps exactly the ladder it had.)',
+        '#<_pl_lad_ok>    = 1',
+        '#<_pl_lad_dsgn>  = %d' % c['dirsign'],
+        '#<_pl_lad_rtgt>  = %s' % _fmt(c['rough_target']),
+        '#<_pl_lad_stgt>  = %s' % _fmt(c['step_target']),
+        '#<_pl_lad_ltgt>  = %s' % _fmt(c['lad_tgt']),
+        '#<_pl_lad_cstep> = %s' % _fmt(c['cut_step']),
+        '#<_pl_lad_fstep> = %s' % _fmt(c['first_step']),
+        '#<_pl_lad_np>    = %d' % c['rough_passes'],
+    ]) + '\n'
+
+
 def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
                     pass_from=False, floors=(), sectioning=False,
                     sect_top_r=None, sect_mode=0, windows=1,
@@ -2444,33 +2532,14 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     Returns [(window_index, [radii])]; window_index is -1 for phase 1 and for
     the unsectioned single pass.
     """
-    dirsign = 1 if start_r >= final_r else -1
-    fin_off = max(fin_off, 0.0)
-    rough_target = final_r + dirsign * fin_off
-    step_target = rough_target + dirsign * prefin_off
-
-    lad_tgt = step_target
-    if len(floors) > 1:
-        lad_tgt = floors[0]
-
-    if abs(lad_tgt - start_r) <= EPS:
-        cut_step = first_step = 0.0
-    else:
-        n = _fup(abs(lad_tgt - start_r) / doc)
-        cut_step = (lad_tgt - start_r) / n
-        first_step = cut_step
-        if pass_from:
-            # anchored on the finished contour: whole depths of cut from a
-            # floor rounded outward, rather than an even division
-            sgn = -1 if step_target < start_r else 1
-            cut_step = sgn * doc
-            k_min = _fup(abs(step_target - rough_target) / doc)
-            anch_floor = rough_target - sgn * k_min * doc
-            step_target = anch_floor
-            if len(floors) <= 1:
-                lad_tgt = anch_floor
-            n = _fup(abs(lad_tgt - start_r) / doc)
-            first_step = (lad_tgt - start_r) - cut_step * (n - 1)
+    c = ladder_consts(start_r, final_r, fin_off, prefin_off, doc,
+                      pass_from, floors)
+    dirsign = c['dirsign']
+    rough_target = c['rough_target']
+    step_target = c['step_target']
+    lad_tgt = c['lad_tgt']
+    cut_step = c['cut_step']
+    first_step = c['first_step']
 
     top = step_target
     if sectioning and sect_top_r is not None:
