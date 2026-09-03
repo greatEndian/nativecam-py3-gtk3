@@ -182,7 +182,7 @@ def main():
               (not a.error) and (not b.error) and a.flat == b.flat,
               '%s / %s' % (a.error, b.error))
 
-    ran = wins = banded = phase1 = ctrl = 0
+    ran = wins = banded = phase1 = single = ctrl = 0
     for project in PROJECTS:
         for sect in (0, 1):
             for direction in (0, 1, 2):
@@ -203,7 +203,6 @@ def main():
                 ran += 1
                 wins += len(obs)
                 banded += sum(1 for w in obs if w[3] > -999998)
-                phase1 += sum(1 for w in obs if w[0] < 0)
                 dm = num(src, r'#<_diameter_mode>\s*=\s*([\d.]+)', 2.0)
                 ext = num(src, r'#<_pl_ext_bk_dz>\s*=\s*([-\d.]+)', 0.0) or 0.0
                 lim = None
@@ -213,6 +212,16 @@ def main():
                 mode = int(num(src, r'#<_pl_sect_mode>\s*=\s*(\d+)', 0.0) or 0)
                 on = (num(src, r'#<_pl_sectioning>\s*=\s*([-\d.]+)', 0.0)
                       or 0) > 0
+                # A CEILING PHASE AND AN UNSECTIONED SWEEP BOTH CARRY INDEX
+                # -1, and counting them together made this report 27 ceiling
+                # phases where only 12 exist - 15 of them were the single
+                # unsectioned window. The index is the same by design, the two
+                # are not the same thing, and a coverage count that conflates
+                # them overstates what the sweep exercises.
+                if on and mode != 1:
+                    phase1 += sum(1 for w in obs if w[0] < 0)
+                elif not on:
+                    single += sum(1 for w in obs if w[0] < 0)
                 mine = ls.roughing_windows(raw[0], raw[1], ext, lim, secs,
                                            mode, on, dm)
                 same = len(mine) == len(obs) and all(
@@ -234,12 +243,15 @@ def main():
     check('the sweep actually ran', ran >= 25, '%d configurations' % ran)
     check('banded windows are exercised', banded > 0,
           'no window carried a radius band')
-    check('the phase-1 window is exercised', phase1 > 0,
+    check('a Natural ceiling phase is exercised', phase1 > 0,
           'no configuration ran a ceiling phase')
+    check('the unsectioned single window is exercised', single > 0,
+          'no configuration ran unsectioned')
     check('the sectioning-mode control disagrees', ctrl > 0,
           'the mode changes nothing about the sweep')
     print('\n%d configurations, %d windows, %d with a radius band, '
-          '%d ceiling phases' % (ran, wins, banded, phase1))
+          '%d Natural ceiling phases, %d unsectioned single windows'
+          % (ran, wins, banded, phase1, single))
     if FAILED:
         print('\nFAILED: %d\n   -  %s' % (len(FAILED), '\n   -  '.join(FAILED)))
         return 1

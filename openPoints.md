@@ -2677,9 +2677,25 @@ validation ones.
     `level_stop_z` already predicts exactly (1854 of 1854, `analysis/083`), and
     the firing is gated on `p1_cut`, which the proved layers determine.
     HYPOTHESIS, not a result - it is the next gate.
-  - **First understand the gap**: 27 configurations run a ceiling phase and
-    only 6 hand over. Whatever separates them is the real condition, and a
-    narrow path is where a wrong general rule hides.
+  - **THE GAP IS CHASED AND IT WAS NEVER 27** - 2026-09-03, `analysis/087`.
+    `test_roughing_windows` counted `w_idx < 0`, and the UNSECTIONED single
+    window carries -1 as well, so 27 = 15 unsectioned + 12 Natural. My
+    counter, my defect; the check is now split in two and reports 12 and 15,
+    agreeing with an independent probe.
+  - **The real split is 12 vs 6, on one generation-time comparison.** 15_2 and
+    15_4 have ceiling == start (30.0000 vs 30.0000), so phase 1 has zero depth,
+    cuts nothing and does not hand over; 15_5 and 15_6 have the ceiling below
+    the start (33.4211 / 33.4671 vs 35.0000) and do. The handover site is
+    REACHED in all 12, so there is no hidden alternate exit.
+  - **So the last runtime dependency looks reducible to generation time**:
+    `sect_top_r` vs `start_radius` is known before the run and
+    `roughing_ladder` already clamps `top` into that band, while
+    `_pl_ph1_z_end` is `_pl_level_z_end`, predicted exactly by `level_stop_z`.
+  - **Caveat, and it is the whole risk**: `p1_cut = 0` coincides with zero
+    depth in all twelve. A part where phase 1 HAS depth but is blocked
+    everywhere would separate "has depth" from "cut something". No project in
+    the sweep does that, so the rule is proved on these twelve and not in
+    general - that part is what would settle it.
 
   `skip_thin` still comes after the blocked decision, not before -
   `_pl_prev_thin` advances only where a level actually cuts.
