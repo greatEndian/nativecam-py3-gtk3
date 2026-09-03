@@ -3005,6 +3005,34 @@ LVL_BASE = 1000
 LVL_TOP = 2600
 
 
+def protected_flags(levels, floors, step_target, staged):
+    """1 per level that is a PROTECTED FLOOR - one skip_thin may never drop.
+
+    poly_lathe_mill tracks this as `fl_prot`, walking the floor stages as the
+    ladder reaches them. The level table already encodes that walk, so the flag
+    can simply be emitted per level and the runtime stops rediscovering it.
+
+    `fl_prot` is step_target unless the ladder is walking floor stages, when it
+    is the stage currently being AIMED AT - each of those is a real region's
+    floor and must not be skipped either. The last stage IS step_target, so
+    nothing changes on a part with one floor.
+
+    `staged` mirrors the walk: phase 1 aims at the section ceiling, which is not
+    a floor at all, so it protects only step_target - the same discriminator
+    the O-code uses when it tests the window's floor against the last stage.
+    """
+    stages = list(floors) if (staged and len(floors) > 1) else []
+    prot = stages[0] if stages else step_target
+    fl_i, flags = 0, []
+    for r in levels:
+        hit = abs(r - prot) <= 0.000001
+        flags.append(1 if hit else 0)
+        if hit and stages and fl_i < len(stages) - 1:
+            fl_i += 1
+            prot = stages[fl_i]
+    return flags
+
+
 def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     """The #1000 roughing level table, or '' to leave poly_lathe_mill computing.
 
@@ -3061,7 +3089,9 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
         return ''
 
     data = LVL_BASE + 3 * len(ladder)
-    total = data + sum(len(radii) for _w, radii in ladder)
+    n_rad = sum(len(radii) for _w, radii in ladder)
+    flag = data + n_rad
+    total = flag + n_rad
     if total > LVL_TOP:
         return ('(WARNING - the roughing level table needs %d parameter slots '
                 'and only %d are free, so the levels are computed at runtime '
@@ -3071,8 +3101,12 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
              '(next radius instead of working the ladder out again. Window)',
              '(-1 is phase 1, and the unsectioned single sweep which shares)',
              '(that index. Read the table, move.)',
+             '(and, beside each radius, whether it is a floor skip_thin may)',
+             '(never drop - poly_lathe_mill tracked that as fl_prot, walking)',
+             '(the stages as the ladder reached them)',
              '#<_pl_lvl_n>    = %d' % len(ladder),
-             '#<_pl_lvl_base> = %d' % data]
+             '#<_pl_lvl_base> = %d' % data,
+             '#<_pl_lvlf_base> = %d' % flag]
     off = 0
     for i, (w, radii) in enumerate(ladder):
         slot = LVL_BASE + 3 * i
@@ -3084,6 +3118,19 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     for _w, radii in ladder:
         for r in radii:
             lines.append('#%d = %s' % (data + off, _fmt(r)))
+            off += 1
+    off = 0
+    stgs = floor_stages(polyline_feature, rough_cut)
+    stgt = ladder_consts(
+        start_r, final_r, _p('param_f_off'),
+        _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
+        rough_cut, _p('param_pass_from') > 0, stgs)['step_target']
+    for w, radii in ladder:
+        # phase 1 aims at the ceiling, which is not a floor - the same
+        # discriminator the O-code uses against the last stage
+        for f in protected_flags(radii, stgs, stgt,
+                                 not (sectioning and w < 0)):
+            lines.append('#%d = %d' % (flag + off, f))
             off += 1
     return '\n'.join(lines) + '\n'
 

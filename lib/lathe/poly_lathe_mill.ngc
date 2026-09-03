@@ -925,7 +925,23 @@ o<poly_lathe_mill> sub
                         (after an anchor - taking cut_step there would misjudge)
                         (exactly the level the anchoring exists to place.)
                         #<thin_nxt> = [#<current_radius> + #<first_step>]
-                        o<thin_chk> if [[#<_pl_skip_thin> GT 0.000001] AND [ABS[#<current_radius> - #<fl_prot>] GT 0.000001]]
+                        (IS THIS LEVEL A PROTECTED FLOOR - one skip_thin may)
+                        (never drop. The level table carries the answer per)
+                        (level, worked out where the ladder was: fl_prot is)
+                        (step_target unless the ladder walks floor stages,)
+                        (when it is the stage being aimed at. Without the)
+                        (table the runtime tracks it as it always did.)
+                        #<lvl_unprot> = 1
+                        o<fp_src> if [#<lvl_tn> GT 0]
+                                o<fp_t1> if [#[#<_pl_lvlf_base> + #<lvl_ti> + #<lvl_k>] GT 0]
+                                        #<lvl_unprot> = 0
+                                o<fp_t1> endif
+                        o<fp_src> else
+                                o<fp_t2> if [ABS[#<current_radius> - #<fl_prot>] LE 0.000001]
+                                        #<lvl_unprot> = 0
+                                o<fp_t2> endif
+                        o<fp_src> endif
+                        o<thin_chk> if [[#<_pl_skip_thin> GT 0.000001] AND [#<lvl_unprot> GT 0]]
                                 o<thin_hit> if [ABS[#<current_radius> - #<_pl_prev_thin>] LT #<_pl_skip_thin>]
                                         o<thin_gap> if [ABS[#<thin_nxt> - #<_pl_prev_thin>] LE [#<_rough_cut> + 0.000001]]
                                                 #<lvl_thin> = 1

@@ -89,3 +89,13 @@ Unchanged from `analysis/089`: `sect_top_r` sites 2 and 3 remain at 0 fires,
 of 1902 cutting calls. And the fallback path itself is now exercised by no
 configuration in the sweep - the table is emitted in all 36 - so it is proved
 only by the table-off half of the gate.
+
+## Correction, 2026-09-03 (analysis/094)
+
+This file says the fallback path is exercised by no configuration in the sweep.
+**That is wrong.** `testing_15_blocked` sectioned trips the phase-1 handover,
+`lvl_tbl` clears, and **132 levels run the original computation** - measured,
+not inferred. The fallback has real coverage.
+
+The same measurement also confirms this commit is not inert: **4542 levels are
+driven by the table**, so its motion gate was not passing vacuously.
