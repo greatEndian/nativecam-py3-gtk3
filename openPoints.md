@@ -1360,20 +1360,17 @@ the two cuts only touch.
   class as the 2026-08-12 fix. Hidden until 2026-08-21 by the `#<p1_cut>`
   abort, which truncated the program the test was measuring.
 
-- [ ] **`test_extension` FAILS, found 2026-09-03 and NOT attributed.** Roughing
-  reaches Z2.4284 with a 3.0 front extension while the contour passes reach
-  Z2.8284 - a 0.4 mm gap, which happens to be the nose radius. Roughing's own
-  number is unchanged from what `rough_radius_bounds`' docstring records
-  (Z2.4284); it is the CONTOUR that has moved, from Z3.7071 there to Z2.8284
-  now. So something narrowed the contour rather than shortening the roughing.
-  - Ruled OUT: the program-completion guard added the same day - identical
-    failure with it stashed.
-  - NOT ruled out: the x-limit resolver, which touched `rough_radius_bounds`,
-    or the insert-orientation work on the flank envelope. An attempt to measure
-    the pre-change baseline failed on its own instrument - checking out the old
-    `cfg` against projects already migrated to 1.71 broke generation - so the
-    comparison wants a worktree with a matching config, not a file checkout.
-  - Do this before item 1: it is in the same machinery.
+- [x] **`test_extension` FAILS, found 2026-09-03** — CLOSED the same day,
+  `analysis/075`. It was the TEST, not the toolpath: 0.4000 is exactly
+  `_pl_rgh_oz` and 2.4284 + 0.4000 = 2.8284, the contour front, to four
+  decimals. A level starts at `w_from - _pl_rgh_oz` so its NOSE begins where
+  the surface does; the assertion compared that control point against the
+  contour's contact point. Same phantom-0.4 this project has recorded before.
+  - Ruled out by worktree at `9ca60c1` with its symlinks repointed: identical
+    numbers, so none of this week's contour work caused it.
+  - **Bisecting past a project's stored version is not possible** — projects
+    are gitignored and always current, and a worktree at `f7356af` dies on
+    `#<_pl_hf_x> not defined`. Worth knowing before the next attempt.
 
 - [x] **A test that passes on an aborted program is not passing.** DONE
   2026-09-03. `parse_program` records whether `PROGRAM_END` was reached and

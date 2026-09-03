@@ -29,6 +29,7 @@ program's front-most cutting move, not the table.
 """
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -181,8 +182,27 @@ def main():
                       and abs(m.b[2] - m.a[2]) > 1e-6]
                 rz = [q for m in rgh for q in (m.a[2], m.b[2])]
                 cz = [q for m in con for q in (m.a[2], m.b[2])]
+                # ROUGHING AND THE CONTOUR PASSES ARE IN DIFFERENT FRAMES.
+                # A level's start is w_from - _pl_rgh_oz: the orientation term
+                # is subtracted so the level's NOSE begins where the surface
+                # does, not its control point. The contour passes carry no such
+                # shift here. Comparing the two raw gives a gap of exactly the
+                # nose term - 0.4000 on testing_15_5 - which is not metal, and
+                # this test asserted on it. Same mistake as the nine phantom
+                # 0.40 "uncut" gaps in this project's own analysis notes:
+                # contact = control + oz.
+                # THE LAST ASSIGNMENT, not the first. create_defaults emits
+                # #<_pl_rgh_oz> = 0.0 near the top of every program and the
+                # real value later, so re.search returns 0.0000 and the
+                # comparison silently stays in two frames - which is how this
+                # read the first time.
+                oz = 0.0
+                _m = re.findall(r'#<_pl_rgh_oz>\s*=\s*([-\d.]+)',
+                                open(out).read())
+                if _m:
+                    oz = abs(float(_m[-1]))
                 return (round(max(rz), 4), round(max(cz), 4),
-                        len({round(m.a[0], 4) for m in lv}))
+                        len({round(m2.a[0], 4) for m2 in lv}), oz)
             finally:
                 shutil.rmtree(d, ignore_errors=True)
 
@@ -196,9 +216,10 @@ def main():
             # THE ONE THAT MATTERS: roughing must reach as far as the contour
             # passes do. It used to stop 1.28 short while they ran on out.
             check('ROUGHING reaches the extension, not just the contour passes',
-                  abs(b[0] - b[1]) < 0.01,
-                  'roughing front Z%.4f against the contour passes\' Z%.4f'
-                  % (b[0], b[1]))
+                  abs((b[0] + b[3]) - b[1]) < 0.01,
+                  'roughing front Z%.4f + nose term %.4f = Z%.4f against the '
+                  'contour passes\' Z%.4f'
+                  % (b[0], b[3], b[0] + b[3], b[1]))
             check('   and the ladder gains levels to get there',
                   b[2] > a[2],
                   '%d levels against %d - the ladder is still bounded by '
