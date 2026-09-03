@@ -1312,18 +1312,32 @@ the two cuts only touch.
   The wrong finding came from an uncalibrated control; `test_ladder` asserted a
   drop the geometry never warranted. Control replaced, all 26 checks pass.
 
-- [ ] **BUT IT IS BLIND AT WINDOW BOUNDARIES, and that is now MEASURED.** The
-  `analysis/061` hypothesis was right on a different project: on testing_15_6
-  the 0.2591 ceiling gap survives thresholds of **0.300 and 0.350**, because it
-  is the FIRST level of its phase-2 window and `#<_pl_prev_lvl>` has just been
-  reset to `stock_r` at `poly_lathe_mill.ngc:649` — judged 4.6 mm thick instead
-  of 0.2591. Within a window every step is a whole doc and nothing is ever
-  eligible, so **the check is blind in exactly the place thin passes come
-  from**. Lower priority now that greatEndian ruled SPREAD, which removes those
-  passes structurally — but it is a shipped setting with a real gap.
-  The fix is to **separate the two uses**, not to change what `:649` assigns:
-  a per-region thickness reference for the thin check, a safe-radius reference
-  for the retract at `lathe_level_pass.ngc:999`. Designed, not built.
+- [x] **BUT IT IS BLIND AT WINDOW BOUNDARIES** — the reference is FIXED
+  2026-09-03, `analysis/077`, and the effect is masked. `_pl_prev_thin` is new
+  and carries "the surface immediately above this level" - the section ceiling
+  at a phase-2 window start - while `_pl_prev_lvl` keeps meaning "a radius
+  already cut, safe to move at" for the retract. Exactly the separation this
+  entry called for. Byte-identical motion on all three projects.
+  - The reported 0.2591 gap **no longer exists**: 15_6 as saved has every step
+    at 0.5080. The spread removed those ceiling passes structurally.
+  - A case that still exercises it: **Artificial sectioning**, `sec_len` 3/5/8/12
+    gives a 0.0387 mm step on 15_6 and 0.0903 on 15_5.
+  - **And the pass is still not skipped** - the check now SEES it, and the gap
+    rule from `analysis/076` refuses, correctly by its own terms: skipping a
+    level 0.0387 below the ceiling leaves the next cutting 0.5467 against a
+    0.5080 doc.
+
+- [ ] **NEEDS A CALL — should a thin skip be allowed to overshoot the depth of
+  cut slightly?** Skipping the 0.0387 ceiling pass overshoots by 7.6%; refusing
+  it keeps a scraping pass that removes 0.0387 mm, which is what `skip_thin`
+  exists to remove. A tolerance would let that through and still refuse the
+  uniform-ladder halving, which overshoots by 0.4991 - an order of magnitude
+  more. But any tolerance is a chosen number, and this file already says *"Two
+  'halves' are choices, not measurements"*.
+  - Alternative worth weighing first: the 0.0387 and 0.0903 steps appear ONLY
+    with `sec_len` set, so they may be a defect of the Artificial ladder - a
+    remainder that should have been spread the way phase 2's is. Fixing that
+    would remove the question instead of answering it. Not looked at.
 
 - [x] **A `skip_thin` threshold above the LADDER STEP halves the ladder** —
   DONE 2026-09-03, `analysis/076`. The skip now refuses when the level that

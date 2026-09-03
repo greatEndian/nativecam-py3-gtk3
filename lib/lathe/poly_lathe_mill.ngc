@@ -735,6 +735,29 @@ o<poly_lathe_mill> sub
                 #<current_radius> = #<lvl_start>
                 #<_pl_prev_lvl> = #<stock_r>
 
+                (AND A SEPARATE REFERENCE FOR THE THIN CHECK, because the two)
+                (uses of _pl_prev_lvl are not the same question.)
+                (For the RETRACT it means "a radius already cut, safe to move)
+                (at", and stock_r is the honest answer at a window start -)
+                (nothing has been cut in THIS window yet.)
+                (For SKIP THIN it has to mean "the surface immediately above)
+                (this level", because that is what decides how much metal the)
+                (level would actually remove. Reset to stock_r, the first)
+                (level of every phase-2 window was judged 4.6 mm thick when)
+                (its real gap is 0.2591 - so the check was blind in exactly)
+                (the place thin passes come from, and a 0.2591 pass survived)
+                (thresholds of 0.300 and 0.350 on testing_15_6.)
+                (Phase 1 has already taken the bar down to the section ceiling)
+                (over this window, so the ceiling is that surface. Unsectioned,)
+                (and on phase 1 itself, nothing is above the first level but)
+                (the bar, and stock_r is right.)
+                (lvl_floor is the discriminator: phase 1 aims at the ceiling,)
+                (a phase-2 window aims at step_target.)
+                #<_pl_prev_thin> = #<stock_r>
+                o<thin_ref> if [[#<_pl_sectioning> GT 0] AND [ABS[#<lvl_floor> - #<sect_top_r>] GT 0.000001]]
+                        #<_pl_prev_thin> = #<sect_top_r>
+                o<thin_ref> endif
+
                 (ONE ROUGHING FLOOR PER REGION OF THE PROFILE.)
                 (greatEndian: "floor has to follow the profile per region".)
                 (A level is one radius held across its whole sweep and the)
@@ -834,8 +857,8 @@ o<poly_lathe_mill> sub
                         (exactly the level the anchoring exists to place.)
                         #<thin_nxt> = [#<current_radius> + #<first_step>]
                         o<thin_chk> if [[#<_pl_skip_thin> GT 0.000001] AND [ABS[#<current_radius> - #<fl_prot>] GT 0.000001]]
-                                o<thin_hit> if [ABS[#<current_radius> - #<_pl_prev_lvl>] LT #<_pl_skip_thin>]
-                                        o<thin_gap> if [ABS[#<thin_nxt> - #<_pl_prev_lvl>] LE [#<_rough_cut> + 0.000001]]
+                                o<thin_hit> if [ABS[#<current_radius> - #<_pl_prev_thin>] LT #<_pl_skip_thin>]
+                                        o<thin_gap> if [ABS[#<thin_nxt> - #<_pl_prev_thin>] LE [#<_rough_cut> + 0.000001]]
                                                 #<lvl_thin> = 1
                                         o<thin_gap> endif
                                 o<thin_hit> endif
@@ -1064,6 +1087,7 @@ o<poly_lathe_mill> sub
                                                 o<blk_lvl_p1> else
                                                         #<p1_cut> = 1
                                                         #<_pl_prev_lvl> = #<current_radius>
+                                                        #<_pl_prev_thin> = #<current_radius>
                                                         o<mc_p1> if [#<_pl_multi_cross> GT 0]
                                                                 o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<lv_to>]
                                                                 o<p1_more> if [#<_pl_resume_found> EQ 0]
@@ -1152,6 +1176,7 @@ o<poly_lathe_mill> sub
                                                         o<mx_chk> endif
                                                 o<blk_lvl> else
                                                         #<_pl_prev_lvl> = #<current_radius>
+                                                        #<_pl_prev_thin> = #<current_radius>
                                                         o<mx_chk2> if [#<_pl_multi_cross> GT 0]
                                                                 o<lathe_level_next_start> CALL [#<m_pds>] [#<current_radius>] [#<lvl_d>] [#<_pl_level_z_end>] [#<lv_to>]
                                                                 (where an interval STARTS comes from the envelope; whether phase 1)

@@ -2706,6 +2706,11 @@ class Preferences(object):
             self.default += ("#<_pl_park_x>               = 0.0\n")
             self.default += ("#<_pl_park_z>               = 0.0\n")
             self.default += ("#<_pl_prev_lvl>             = 0.0\n")
+            # The surface immediately ABOVE the level being considered, which
+            # is what decides how much metal it would remove. Separate from
+            # _pl_prev_lvl, which means "a radius already cut, safe to move
+            # at" - the retract's question, not the thin check's.
+            self.default += ("#<_pl_prev_thin>            = 0.0\n")
             # Which section window is being cut, and whether the per-window
             # deepest-cut table at #2800 was filled in by this program at all.
             # lathe_level_pass writes the deepest level each window reaches
