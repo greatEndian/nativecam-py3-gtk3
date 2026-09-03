@@ -823,8 +823,18 @@ the two cuts only touch.
     left-hand tool gives 0 - the angles drive the flank envelope, and mirroring
     the orientation without them mirrors half the tool.
 
-- [ ] **Nothing in the demo tables is a real left-hand BORING bar**, so ID work
-  has no mirrored case at all. T13 is an OD turning tool.
+- [x] **Nothing in the demo tables is a real left-hand BORING bar** — WRONG
+  when written, corrected 2026-09-03 the same hour. **`T4` already was one**:
+  `Q4` is `NOSE_OFFSET (-1, -1)`, an ID orientation with facing +1, and its
+  `I195 J255` bisect to CL225 consistently. What was actually missing was a
+  matched pair at a realistic bar nose - T3 and T4 carry both ID orientations
+  but only at D2.54. Added `T14` (Q3, D0.8, bores toward −Z) and `T15` (Q4,
+  D0.8, bores toward +Z), each other's hand exactly as T2 and T13 are, and
+  `wrong_way_dirs` needs no ID branch. `test_bidir_warn` pins both.
+  - **Only the WARNING is covered.** They run against testing_15_9, an OD part,
+    so nothing about the ID toolpath is exercised - ID work is paused. Ramp
+    counts for a boring bar on an OD part would be meaningless and are not
+    claimed.
 
 - [x] **`flank_sides` decides the shadowed side from the ROUGHING DIRECTION
   alone** — DONE 2026-09-01, `analysis/071`. `insert_flank_side` now answers it

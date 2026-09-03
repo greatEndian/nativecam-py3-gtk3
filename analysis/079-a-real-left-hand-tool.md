@@ -64,6 +64,41 @@ still open; what changed is that it can now be investigated honestly.
 `test_leads`, `test_leftover`, `test_ramps`, `test_ladder`,
 `test_x_continuity`, `test_air_leads`, `test_z_limits`, `cam_map`.
 
+## THE ID PAIR, T14 / T15 — and a correction
+
+greatEndian, same day: *"add left hand boring bar too"*. Adding it corrected
+something I had written the hour before.
+
+**`T4` already WAS a left-hand-orientation boring bar.** `Q4` is
+`NOSE_OFFSET (-1, -1)`, an ID orientation with facing +1, and its `I195 J255`
+bisect to CL225 consistently. The open point I had just added — *"nothing in
+the demo tables is a real left-hand boring bar"* — was wrong on its face.
+
+What was genuinely missing is a **matched pair at a realistic bar nose**. `T3`
+and `T4` carry the two ID orientations but both at `D2.54`, an R1.27 nose that
+is large for a bar, and there was nothing comparable to the `T2`/`T13` pair OD
+now has. So:
+
+```
+T14 P14 D0.8 I285.000000 J345.000000 Q3   ;boring bar, right hand - bores toward -Z
+T15 P15 D0.8 I195.000000 J255.000000 Q4   ;boring bar, LEFT hand  - bores toward +Z
+```
+
+`Q3` is `(-1, +1)`, facing −1, so front to back is its own direction; `Q4` is
+`(-1, -1)`, facing +1, so back to front is. They are each other's hand exactly
+as T2 and T13 are, and `wrong_way_dirs` needs no ID branch:
+
+| tool | quiet in | warns in |
+|---|---|---|
+| T14, bore right hand | dir 0 | dir 1, 2 |
+| T15, bore LEFT hand | dir 1 | dir 0, 2 |
+
+**Only the warning is asserted for these.** They are exercised against
+testing_15_9, which is an OD part, so nothing about the ID TOOLPATH is tested —
+ID work is paused. The warning depends on orientation and direction alone, so
+it is meaningful there; ramp counts for a boring bar on an OD part would not
+be, and are not claimed.
+
 ## Still unknown
 
 - Why T13 arms no ramps in its own direction. The flank envelope flips with the

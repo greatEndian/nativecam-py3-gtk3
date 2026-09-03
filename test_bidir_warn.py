@@ -140,6 +140,38 @@ def main():
                   fired == want, 'warning fired' if fired else 'no warning')
             check('   T13 %s: still generates a program' % way,
                   os.path.isfile(out))
+
+        # ---- and the ID pair, T14 / T15 -------------------------------------
+        # Boring bars: Q3 has NOSE_OFFSET (-1, +1) and bores toward -Z, Q4 has
+        # (-1, -1) and bores toward +Z, so they are each other's hand exactly
+        # as T2 and T13 are. Added 2026-09-03 at a 0.8 nose because T3 and T4
+        # already carried those orientations but only at D2.54, giving ID no
+        # pair comparable to the OD one.
+        # ONLY THE WARNING IS ASSERTED HERE. These run against testing_15_9,
+        # which is an OD part, so nothing about the ID TOOLPATH is exercised -
+        # ID work is paused. The warning depends on orientation and direction
+        # alone, so it is meaningful; ramp counts on an OD part with a boring
+        # bar would not be.
+        for tool, own in ((14, 0), (15, 1)):
+            for direction in (0, 1, 2):
+                way = {0: 'front to back', 1: 'back to front',
+                       2: 'both directions'}[direction]
+                want = (direction != own)
+                out = os.path.join(d, 't%d_%d.ngc' % (tool, direction))
+                r = subprocess.run([sys.executable, GEN, '--ini',
+                                    os.path.join(CFG, 'lathe-mm.ini'),
+                                    '--project', 'testing_15_9.xml',
+                                    '--out', out,
+                                    '--set', 'tool_change:param_dnum=%d' % tool,
+                                    '--set',
+                                    'polyline:param_dir=%d' % direction],
+                                   capture_output=True, text=True)
+                blob = (r.stdout or '') + (r.stderr or '')
+                fired = (KEY_BOTH in blob or KEY_ONE in blob)
+                check('T%d boring bar, %s: %s'
+                      % (tool, way, 'warns' if want else 'stays quiet'),
+                      fired == want,
+                      'warning fired' if fired else 'no warning')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

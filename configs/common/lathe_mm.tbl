@@ -11,3 +11,5 @@ T10 P10 D0.001 I60.000000 J120.000000 Q6 ;external thread cutter
 T11 P11 D0.001 I240.000000 J300.000000 Q8 ;internal thread cutter
 T12 P12 D2.5 I90 J90 Q6 ;parting cutter
 T13 P13 D0.8 I105.000000 J165.000000 Q1 ;left-hand twin of T2 - same 0.8 nose, orientation mirrored to CL135
+T14 P14 D0.8 I285.000000 J345.000000 Q3 ;boring bar, right hand - bores toward -Z, twin of T15
+T15 P15 D0.8 I195.000000 J255.000000 Q4 ;boring bar, LEFT hand - bores toward +Z, twin of T14
