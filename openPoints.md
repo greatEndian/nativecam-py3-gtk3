@@ -2616,7 +2616,36 @@ validation ones.
     scarred: **read the LAST assignment and count only the non-placeholder
     ones.** A reversed-window negative control was added too.
 
-- [ ] **NEXT LAYER: the interval walk.** `level_blocked` is handed `w_from` and
+- [~] **THE INTERVAL WALK IS FULLY PREDICTED IN PYTHON** — 2026-09-03,
+  `analysis/083`. For every level the ENTIRE sequence of `lathe_level_pass`
+  calls is predicted - each interval's start and where the sequence ends -
+  across 30 configurations, **2656 interval walks, 717 of them multi-interval,
+  3373 calls**. `test_level_intervals`. Nothing in the toolpath reads it.
+  - New pure functions: `resume_z` (the `_pl_env_*` answer, a walk of the
+    resume envelope Python emits) and `level_stop_z` (`_pl_level_z_end`: the
+    crossing clamped at the window end, where the window end carries the nose
+    term and the crossing does not). `_level_scan` is now shared with
+    `level_blocked` so the two cannot drift.
+  - **THE TEST TAKES NOTHING FROM THE RECORD.** That was not the first plan:
+    z_end is refined against the stop contour with a tool-reach clamp
+    (`lathe_level_pass.ngc:904`), so the walk was first proved with z_end fed
+    back IN from the record and the refinement MEASURED - **it moves z_end on
+    0 of 1854 cutting calls**. Exact, so the observation was dropped. Measuring
+    first is what made that safe.
+  - **The stop-contour refinement never fires on these five projects.** It is
+    carried for cases that do - `lathe_level_pass.ngc:895` records
+    testing_15_2 with the axial allowance at 2.000, which this sweep does not
+    set. The count is printed so such a project shows up as a disagreement
+    rather than as silence.
+
+- [ ] **NEXT LAYER: the sub-span walk.** `sg_from` / `sg_to` from the split
+  table at `#3160` and the `o<wh_seg>` loop above the interval walk - it
+  decides where each interval walk BEGINS. Everything inside it is now
+  predicted. After that the `.ngc` could read a table instead of deciding, and
+  `skip_thin` becomes movable - in that order, since `_pl_prev_thin` advances
+  only where a level actually cuts.
+
+- [x] ~~**NEXT LAYER: the interval walk.** `level_blocked` is handed `w_from` and
   `w_to` out of the record. Supplying them from Python means knowing the
   interval walk - the 3373 calls are not one per level, a level behind a boss
   is re-called per disjoint interval and where the next starts comes from
@@ -2624,7 +2653,7 @@ validation ones.
   blocked answer. The FIRST call of each level in a window is the one Python
   could already predict; the continuations are the layer after. That, plus
   `skip_thin` needing this first, is what stands between here and the
-  migration.
+  migration.~~
 
 - [~] **THE LADDER IS IN PYTHON AND PROVED BOTH WAYS, stages one and two**
   - 2026-09-03, `analysis/081`. **GATE TWO PASSES: 0 of 30 configurations has

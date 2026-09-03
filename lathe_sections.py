@@ -2543,6 +2543,16 @@ def level_blocked(floor_contour, level, w_from, w_to, multi_cross=False,
       window start. Blocked when the state there is "above". A level behind a
       boss crosses several times, and only the state at w_from decides.
     """
+    scan = _level_scan(floor_contour, level, w_from, w_to, multi_cross, mm)
+    return None if scan is None else scan[0]
+
+
+def _level_scan(floor_contour, level, w_from, w_to, multi_cross, mm):
+    """(blocked, found, zc) - the shared body of the two scans above.
+
+    zc is where the level's cut ENDS: the first qualifying crossing past the
+    window start, or the sentinel lathe_level_pass initialises it to when
+    there is none. level_stop_z clamps it at the window end."""
     pts = list(floor_contour)
     if len(pts) < 2:
         return None
@@ -2563,10 +2573,11 @@ def level_blocked(floor_contour, level, w_from, w_to, multi_cross=False,
                     zc = cz
                 found = True
             pz, px = cz, cx
-        return bool(found and z_dir * (zc - w_from) >= -0.0001)
+        return (bool(found and z_dir * (zc - w_from) >= -0.0001), found, zc)
 
     state = 1 if pts[0][1] >= l_eff else 0
     wf_state = -1
+    qual_found, zc = False, w_to - z_dir
     pz, px = pts[0]
     for cz, cx in pts[1:]:
         dirup = None
@@ -2581,15 +2592,103 @@ def level_blocked(floor_contour, level, w_from, w_to, multi_cross=False,
                 tz = cz
             if z_dir * (tz - w_from) < -0.0001:
                 # past the window start: it cannot move the state there any
-                # more, it can only freeze what the state already was
+                # more, it can only freeze what the state already was - and
+                # the first crossing back UP into blocked territory is where
+                # the cut has to end
                 if wf_state < 0:
                     wf_state = state
+                if dirup and not qual_found:
+                    qual_found, zc = True, tz
             else:
                 state = dirup
         pz, px = cz, cx
     if wf_state < 0:
         wf_state = state
-    return wf_state > 0
+    return (wf_state > 0, qual_found, zc)
+
+
+def level_stop_z(floor_contour, level, w_from, w_to, oz=0.0,
+                 multi_cross=False, mm=1.0):
+    """(blocked, z_end) - where one interval of a roughing level ends.
+
+    A REPLICA of what lathe_level_pass exports in #<_pl_level_z_end>, which is
+    what the next resume search starts from. z_end is None when the pass is
+    blocked: the subroutine returns before exporting one, and poly_lathe_mill
+    correctly searches from the interval's own start in that case.
+
+    The cut ends at the crossing, or at the window end, whichever comes first
+    in the direction of travel. THE WINDOW END CARRIES THE NOSE TERM and the
+    crossing does not - the stop table has carried it since it was built, so
+    compensating again would apply it twice. `z_wend` names that bound once
+    because comparing zc against a raw w_to while assigning w_to - oz made the
+    two disagree over a band one nose term wide, and three levels on
+    testing_15_9 ran past the reach their own crossing named.
+
+    NOT REPLICATED: lathe_level_pass then refines z_end against the stop
+    contour with a tool-reach clamp (lathe_level_pass.ngc:904). Measured over
+    the five test projects it moves z_end on 0 of 1854 cutting calls, so this
+    is exact there - but it is carried for cases where it does fire, and those
+    are outside the sweep.
+    """
+    scan = _level_scan(floor_contour, level, w_from, w_to, multi_cross, mm)
+    if scan is None:
+        return (None, None)
+    blocked, _found, zc = scan
+    if blocked:
+        return (True, None)
+    z_dir = 1.0 if w_from >= w_to else -1.0
+    z_wend = w_to - oz
+    return (False, zc if z_dir * (zc - z_wend) > 0 else z_wend)
+
+
+def resume_z(resume_env, level, search_from, w_to, mm=1.0):
+    """Where this level's NEXT disjoint interval starts, or (False, 0).
+
+    A REPLICA of the answer lathe_level_next_start reports in #<_pl_env_found>
+    / #<_pl_env_z>, the one poly_lathe_mill takes whenever the resume envelope
+    exists - `_pl_res_n` GT 1. Nothing in the toolpath reads this;
+    `test_level_intervals` asserts the whole call sequence it produces matches
+    what the O-code walked. Replica, parallel run, migration last.
+
+    A level behind a boss is cut in several disjoint intervals: the pass runs
+    until the profile rises above it, and the level then resumes wherever the
+    profile drops back below. That resume point is a function of the level
+    alone, so Python emits it as an envelope - the table this interpolates.
+
+    Two tests decide whether the answer counts, and they are separate for a
+    reason. The candidate has to be genuinely PAST where the search began, by
+    more than `resume_margin`, or the joint the previous pass just ended on is
+    re-detected as a new interval and the level never terminates. And it has
+    to be inside the window, or a level resumes in the next section's
+    territory.
+
+    Note the margin is 0.01 x mm and NOT the 0.001 grazing epsilon the level
+    scans use - a different question. That one tolerates a level sitting
+    exactly on the floor; this one tells a new interval apart from the point
+    the walk started at.
+    """
+    pts = list(resume_env)
+    if len(pts) < 2:
+        return (False, 0.0)
+    z_dir = 1.0 if search_from >= w_to else -1.0
+    margin = 0.01 * mm
+    # above the envelope's own top there is nothing to resume behind
+    if level > pts[0][0] + 0.000001:
+        return (False, 0.0)
+    re_z = pts[-1][1]
+    for i in range(len(pts) - 1):
+        l0, z0 = pts[i]
+        l1, z1 = pts[i + 1]
+        if l1 - 0.000001 <= level <= l0 + 0.000001:
+            if abs(l1 - l0) > 0.000001:
+                re_z = z0 + (z1 - z0) * (level - l0) / (l1 - l0)
+            else:
+                re_z = z0
+            break
+    if (z_dir * (re_z - search_from) < -margin
+            and z_dir * (re_z - w_to) >= 0):
+        return (True, re_z)
+    return (False, 0.0)
 
 
 def wrong_way_dirs(orient, rough_dir):
