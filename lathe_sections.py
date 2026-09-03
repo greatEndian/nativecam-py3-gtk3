@@ -2498,7 +2498,14 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
         return [(-1, walk(start_r, step_target, cut_step, first_step, True))]
 
     out = []
-    if abs(top - start_r) > EPS:
+    # ARTIFICIAL SECTIONING HAS NO PHASE 1. poly_lathe_mill starts w_idx at 0
+    # rather than -1 there - every window takes the full roughing depth in its
+    # own Z span, so there is no ceiling pass to emit. Emitting one anyway
+    # invented four levels on testing_15_9 - 34.9911, 34.4831, 33.9751,
+    # 33.4671, a grid the windows do not share - and gate ONE could not see
+    # them: no cut lands on an invented level, so "every cut level is on the
+    # ladder" stayed true. The accounting gate caught them as a HOLE.
+    if sect_mode != 1 and abs(top - start_r) > EPS:
         out.append((-1, walk(start_r, top, p1_step, p1_first)))
     for w in range(windows):
         lvl_start = start_r if sect_mode == 1 else top

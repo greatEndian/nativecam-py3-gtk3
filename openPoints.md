@@ -2592,7 +2592,36 @@ validation ones.
   need the resolved profile, which the block cannot have — they belong in the
   `[AFTER]` block or in Python at generation time.
 
-- [~] **THE LADDER IS IN PYTHON AND PROVED, stage one of two** — 2026-09-03,
+- [~] **THE LADDER IS IN PYTHON AND PROVED BOTH WAYS, stages one and two**
+  - 2026-09-03, `analysis/081`. **GATE TWO PASSES: 0 of 30 configurations has
+    an unexplained level.** Per configuration `predicted = cut + thin +
+    out-of-band + past-stock + blocked + unvisited`, and the unvisited part is
+    a TAIL rather than a HOLE. `pred=807 cut=744 thin=18 band=0 stock=6
+    blocked=24 unvis=0`. `test_ladder_account` is that sweep; it instruments a
+    SCRATCH copy of `poly_lathe_mill` - the repo's `lib/` is untouched - and
+    proves the instrument inert by flattening the same program through a clean
+    lib and the instrumented one.
+  - **It caught a phantom gate one could not see.** `roughing_ladder` emitted a
+    phase-1 ceiling pass for ARTIFICIAL sectioning, which has none - 
+    `poly_lathe_mill.ngc:587` says so in words. Four invented levels on
+    testing_15_9 x 3 directions, on a grid the windows do not share. Gate one
+    passed all thirty: nothing is cut on an invented level. Fixed;
+    `pred` 819 -> 807 with `cut` unchanged at 744.
+  - **`band=0` over the whole sweep** - the out-of-band rejection never fires on
+    these five projects, so that path is carried but untested. Needs a project
+    with split windows.
+  - **NEXT, and it is now the only thing between here and the migration**: which
+    levels get SKIPPED is still read out of the record, not predicted. And
+    `skip_thin` CANNOT move to Python ahead of the stop scan - `_pl_prev_thin`
+    advances only where a level actually cuts
+    (`poly_lathe_mill.ngc:1089`, `:1178`), so the thin decision reads cut
+    history, which reads the blocked decision. That fixes the order the
+    migration has to go in.
+  - Still open: `roughing_ladder` takes its inputs read back out of the
+    generated program. Wiring it for real means taking them from the Feature,
+    and the two paths must agree.
+
+- [x] ~~**THE LADDER IS IN PYTHON AND PROVED, stage one of two** — 2026-09-03,
   `analysis/080`. `roughing_ladder()` computes the level radii at generation
   time and **nothing in the toolpath reads it yet**; motion is untouched.
   Proved by parallel run: 5 projects x 2 sectioning states x 3 directions, and
@@ -2608,7 +2637,7 @@ validation ones.
     a replacement.
   - Also open: `roughing_ladder` currently takes its inputs read back out of
     the generated program. Wiring it for real means taking them from the
-    Feature, and the two paths must agree.
+    Feature, and the two paths must agree.~~
 
 - [ ] **The ramp and stop machinery is still runtime O-code.** `s_reach`, the
   slope term, the flat-boundary clamp, the clamped-candidate rule, and the
