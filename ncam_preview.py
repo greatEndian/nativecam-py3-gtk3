@@ -837,7 +837,8 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   tool.get('nose_r', 0.0), tool.get('orient', 0),
                   tool.get('cl_deg'), tool.get('included_deg'),
                   tool.get('front_deg'), tool.get('back_deg'),
-                  tool.get('flank_len', 0.0), tool.get('shank_h', 0.0))
+                  tool.get('flank_len', 0.0), tool.get('shank_h', 0.0),
+                  shank_off=tool.get('shank_off', (0.0, 0.0)))
 
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
@@ -1154,7 +1155,7 @@ def shank_dims(shank_h):
 
 
 def tool_shank(pos, nose_r, orient, front_deg=None, back_deg=None,
-               shank_h=0.0, cl_deg=None, length=None):
+               shank_h=0.0, cl_deg=None, length=None, shank_off=(0.0, 0.0)):
     """The holder shank behind the insert, as a closed (z, radius) outline.
 
     A rectangle, shank height radially by overall length in Z, running in the
@@ -1195,6 +1196,8 @@ def tool_shank(pos, nose_r, orient, front_deg=None, back_deg=None,
     parts = {}
     if tool_silhouette(pos, nose_r, orient, front_deg, back_deg, 0.0,
                        cl_deg, parts, shank_h) and 'e_f' in parts:
+        # the INSERT's corners, so no set-back here - tool_shank applies it
+        # itself below, and applying it twice would double the seating
         # The INSERT's far corners, taken from parts rather than from the
         # returned outline: that outline now runs on down to the bottom
         # reference line, and measuring its extremes would set the block off
@@ -1202,13 +1205,23 @@ def tool_shank(pos, nose_r, orient, front_deg=None, back_deg=None,
         corners = (parts['e_f'], parts['e_b'])
         z0 = (max if zdir > 0 else min)(p[0] for p in corners)
         x0 = (max if xdir > 0 else min)(p[1] for p in corners)
+    # AND THE SEATING, if it has been measured. The corner above is the
+    # INSERT's; the block behind it is set back further by whatever shim seats
+    # the insert in its pocket, and nothing in the ISO relationships gives
+    # that. Both default to 0 - flush with the insert corners, which is what
+    # has been drawn since the shank was added - so an unset holder draws
+    # exactly as before. Interim, pending the expanded tool table.
+    ox, oz = shank_off if shank_off else (0.0, 0.0)
+    z0 += zdir * oz
+    x0 += xdir * ox
     lz = dims[0] if length is None else min(length, dims[0])
     z1, x1 = z0 + zdir * lz, x0 + xdir * shank_h
     return [(z0, x0), (z1, x0), (z1, x1), (z0, x1)]
 
 
 def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
-                    flank_len=0.0, cl_deg=None, parts=None, shank_h=0.0):
+                    flank_len=0.0, cl_deg=None, parts=None, shank_h=0.0,
+                    shank_off=(0.0, 0.0)):
     """The tool as a closed (z, radius) outline in MODEL units, or None.
 
     Built the way the insert actually is, from the tool table plus the flank
@@ -1359,6 +1372,13 @@ def tool_silhouette(pos, nose_r, orient, front_deg=None, back_deg=None,
     cand = list(arc) + [e_f, e_b]
     z_ref = (max if zdir > 0 else min)(p[0] for p in cand)
     x_far = (max if xdir > 0 else min)(p[1] for p in cand)
+    # AND THE SEATING. x_far is the INSERT's far extent; the block behind it
+    # is set back further by whatever shim seats the insert, which nothing in
+    # the ISO relationships gives. Applied here as well as in tool_shank so the
+    # drawn tool and the collision check describe the SAME tool - a picture
+    # that disagrees with the check is what sent this whole question round
+    # once already. 0 draws exactly what it drew before.
+    x_far = x_far + xdir * (shank_off[0] if shank_off else 0.0)
     x_bot = x_far + xdir * shank_h
     z_face = cz + zdir * nose_r
     if abs(d_f[0]) < 1e-9 or (z_face - z_ref) * zdir >= 0:
@@ -1435,7 +1455,7 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
 
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
               cl_deg=None, included_deg=None, front_deg=None, back_deg=None,
-              flank_len=0.0, shank_h=0.0):
+              flank_len=0.0, shank_h=0.0, shank_off=(0.0, 0.0)):
     """The tool at `pos`: its nose circle, and the insert behind it.
 
     The BODY LIES IN THE SAME DIRECTION AS THE NOSE OFFSET, not opposite it.
@@ -1470,7 +1490,8 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         # a lathe silhouette in the ZX plane only - it is built from a nose
         # orientation and a flank, neither of which means anything on a mill
         outline = (tool_silhouette(pos, nose_r, orient, front_deg, back_deg,
-                                   flank_len, cl_deg, None, shank_h)
+                                   flank_len, cl_deg, None, shank_h,
+                                   shank_off)
                    if plane == 'ZX' else None)
         # The holder face is only drawn on the FLANK-LENGTH outline. Once a
         # shank closes the tool on its two vertical references that sliver is
@@ -1701,7 +1722,7 @@ def _outline_samples(poly, step=0.5, closed=True):
 
 def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
                flank_len=0.0, cl_deg=None, columns=None, limit=50,
-               min_depth=None, shank_h=0.0):
+               min_depth=None, shank_h=0.0, shank_off=(0.0, 0.0)):
     """Where the tool runs into material it is not cutting.
 
     Two things are reported, and they are not the same fault:
@@ -1732,7 +1753,7 @@ def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
     # check that stopped where the drawing stops would be a drawing rather
     # than a check.
     shank0 = tool_shank((0.0, 0.0, 0.0), nose_r, orient, front_deg,
-                        back_deg, shank_h, cl_deg)
+                        back_deg, shank_h, cl_deg, None, shank_off)
     # the outline in TOOL coordinates, once - it does not change shape as the
     # tool moves, so it is built here and translated per sample
     whole = _outline_samples(poly0)

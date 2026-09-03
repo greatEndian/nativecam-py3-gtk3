@@ -216,6 +216,8 @@ class PreviewPane(object):
         self.back_deg = None
         self.flank_len = 0.0
         self.shank_h = 0.0
+        # (radial, axial) set-back of the holder body from the insert corners
+        self.shank_off = (0.0, 0.0)
         self._field = None
         self._field_upto = -1
 
@@ -641,7 +643,7 @@ class PreviewPane(object):
     # -- simulation ---------------------------------------------------------
     def set_tool(self, nose_r, orient, cl_deg=None, included_deg=None,
                  front_deg=None, back_deg=None, flank_len=0.0,
-                 shank_h=0.0):
+                 shank_h=0.0, shank_off=(0.0, 0.0)):
         """Nose radius, orientation, the real insert angles, and the flank.
 
         nose_r/orient come from ncam.tip_comp_inputs(), the same source the
@@ -655,6 +657,7 @@ class PreviewPane(object):
         self.front_deg, self.back_deg = front_deg, back_deg
         self.flank_len = flank_len or 0.0
         self.shank_h = shank_h or 0.0
+        self.shank_off = shank_off or (0.0, 0.0)
         self._reset_field()
         self.area.queue_draw()
 
@@ -938,7 +941,8 @@ class PreviewPane(object):
         return {'pos': pos, 'nose_r': self.nose_r, 'orient': self.orient,
                 'cl_deg': self.cl_deg, 'included_deg': self.included_deg,
                 'front_deg': self.front_deg, 'back_deg': self.back_deg,
-                'flank_len': self.flank_len, 'shank_h': self.shank_h}
+                'flank_len': self.flank_len, 'shank_h': self.shank_h,
+                'shank_off': self.shank_off}
 
     # -- zoom and pan -------------------------------------------------------
     def _arm_events(self, area):

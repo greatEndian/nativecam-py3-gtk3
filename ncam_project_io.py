@@ -211,6 +211,11 @@ class NCamProjectIOMixin:
                     p_sh = f.get_param('param_shank_h')
                     ncam.TOOL_TABLE.save_shank_h(
                         p_sh.get_ngc_value() if p_sh is not None else 0.0)
+                    p_sox = f.get_param('param_shank_ox')
+                    p_soz = f.get_param('param_shank_oz')
+                    ncam.TOOL_TABLE.save_shank_off(
+                        p_sox.get_ngc_value() if p_sox is not None else 0.0,
+                        p_soz.get_ngc_value() if p_soz is not None else 0.0)
                     p_bc = f.get_param('param_back_clear')
                     ncam.TOOL_TABLE.save_back_clear(
                         p_bc.get_ngc_value() if p_bc is not None else 0.0)

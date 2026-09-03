@@ -2264,9 +2264,23 @@ the two cuts only touch.
   parameter on the Tool Change or parsed out of the description comment.
   - What it must carry, from `ref/tool-shank/NOTES.md`: the shank height `h`
     (built already, `param_shank_h`), the insert dimension `h` is derived from,
-    the shank width `b` for turn-mill clearance, and **the radial datum -
-    where the shank sits relative to the nose**. That last one is the single
-    number blocking the geometry below; the rest is already derivable.
+    and the shank width `b` for turn-mill clearance.
+  - **CORRECTION, 2026-09-03.** I said the radial datum was the number blocking
+    the geometry. It is not missing: `tool_shank` DERIVES the block's position
+    from the insert's far corners, and that derivation has a measured
+    validation behind it - anchoring on the tool tip instead once reported 50
+    collisions on a program with none, and the same 50 for a 12 mm shank as for
+    a 25 mm. What is genuinely not carried is the SEATING, the shim that leaves
+    the block set back further than the insert corners, and that is a
+    refinement rather than a blocker. **The geometry below is not blocked.**
+  - Interim, 2026-09-03: `param_shank_ox` / `param_shank_oz` on the Tool
+    Change carry that seating for testing now, both defaulting to 0 = flush =
+    what has always been drawn. greatEndian: *"for active testing just add
+    property near tool section which will carry this value for us now"*. They
+    are superseded cleanly when the real table arrives.
+  - The full table is designed **from a future CAM tool-table example**
+    greatEndian will supply - `/ref-intake` on it, the way `ref/tool-shank`
+    was just done.
   - greatEndian ruled `h = 0` does not occur: *"h every time depends at tool
     tip insert dimension which we have to grab from expanded tool table"*.
 

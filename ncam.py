@@ -843,6 +843,32 @@ class Tools(object):
         """
         return getattr(self, 'saved_shank_h', 0.0)
 
+    def save_shank_off(self, ox, oz):
+        """Remember how far the holder body sits back from the insert corners.
+
+        `tool_shank` anchors the block on the INSERT's far corners rather than
+        on the tool tip - the insert stands proud of what clamps it, and
+        anchoring on the tip once reported 50 collisions on a program with
+        none. What that derivation cannot know is the SEATING: a shim leaves
+        the block further back again, and the tool then reaches a little deeper
+        behind a shoulder than the drawn one does.
+
+        Two numbers because a pocket does not seat an insert evenly: the RADIAL
+        one decides how much material behind a shoulder is reachable, the axial
+        one mostly moves a collision check along the part.
+
+        Both default to 0 - flush with the insert corners, which is exactly
+        what has been drawn since the shank was added - so an unset holder is
+        a provable no-op. Interim, pending the expanded tool table.
+        """
+        self.saved_shank_ox = max(get_float(ox), 0.0)
+        self.saved_shank_oz = max(get_float(oz), 0.0)
+
+    def get_shank_off(self):
+        """(radial, axial) holder set-back, (0, 0) when none was given."""
+        return (getattr(self, 'saved_shank_ox', 0.0),
+                getattr(self, 'saved_shank_oz', 0.0))
+
     def save_back_clear(self, value):
         """Remember the back-angle clearance of the tool loaded from here on.
 
