@@ -53,7 +53,8 @@ CFG = os.path.join(HERE, 'configs/sim/axis/ncam_demo')
 INI = os.path.join(CFG, 'lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECTS = ('testing_15_2.xml', 'testing_15_4.xml', 'testing_15_5.xml',
-            'testing_15_6.xml', 'testing_15_9.xml')
+            'testing_15_6.xml', 'testing_15_9.xml',
+            'testing_15_blocked.xml')
 
 SUB = 'lathe/lathe_level_pass.ngc'
 BLK1 = '\t\to<mc_decide> if [#<mc_wf_state> GT 0]\n'

@@ -2673,10 +2673,12 @@ validation ones.
   - What DOES fire is narrower: `_pl_ph1_front_cut` / `_pl_ph1_z_end`, **6 of
     30** - 15_5 and 15_6 sectioned, all three directions. It records how far
     phase 1 got so phase-2 windows it already covered start one level deeper.
-  - **It may reduce to nothing.** `_pl_ph1_z_end` is `_pl_level_z_end`, which
-    `level_stop_z` already predicts exactly (1854 of 1854, `analysis/083`), and
-    the firing is gated on `p1_cut`, which the proved layers determine.
-    HYPOTHESIS, not a result - it is the next gate.
+  - **RETRACTED, 2026-09-03: it does NOT reduce to nothing** - `analysis/088`.
+    `testing_15_blocked.xml` was built for exactly this and fires the
+    `o<p1_none>` branch (`poly_lathe_mill.ngc:1035`), one of the three sites
+    086 measured as firing 0 times: **`sect_top_r` 31.0160 -> 34.5720, a move
+    of 3.5560 mm, in all three directions.** 086's "0 of 30" was a property of
+    the SAMPLE, not of the code.
   - **THE GAP IS CHASED AND IT WAS NEVER 27** - 2026-09-03, `analysis/087`.
     `test_roughing_windows` counted `w_idx < 0`, and the UNSECTIONED single
     window carries -1 as well, so 27 = 15 unsectioned + 12 Natural. My
@@ -2691,11 +2693,33 @@ validation ones.
     `sect_top_r` vs `start_radius` is known before the run and
     `roughing_ladder` already clamps `top` into that band, while
     `_pl_ph1_z_end` is `_pl_level_z_end`, predicted exactly by `level_stop_z`.
-  - **Caveat, and it is the whole risk**: `p1_cut = 0` coincides with zero
-    depth in all twelve. A part where phase 1 HAS depth but is blocked
-    everywhere would separate "has depth" from "cut something". No project in
-    the sweep does that, so the rule is proved on these twelve and not in
-    general - that part is what would settle it.
+  - **THE CAVEAT IS NOW SETTLED, and against the rule** - `analysis/088`.
+    `testing_15_blocked.xml` has phase-1 depth of 3.984 mm (ceiling r31.0160
+    against start r35.0000) and is blocked at every level, so "has depth" does
+    NOT imply "cuts something". Built by leaving the front section at full
+    stock diameter with the machined step behind it - `ceiling()` excludes
+    stock-diameter points, so the ceiling comes from the step while the window
+    start is solid stock.
+
+- [ ] **THE TWO PREDICTIONS THAT READ `sect_top_r` ARE WRONG ON THAT PART** -
+  `analysis/088`, and they are SKIPPED WITH A PRINTED NOTICE rather than
+  deleted, so every run says so:
+  - `test_ladder_account` - the O-code walks 35.072 and 35.572, both ABOVE the
+    start radius and off the predicted ladder, and the ladder invents six
+    levels (31.524 .. 34.064) it never visits.
+  - `test_level_intervals` - "walk should continue to -25.6868" at level
+    34.572.
+  - `test_level_blocked` (3496 of 3496), `test_sub_spans` and
+    `test_roughing_windows` all PASS - the failure is localised to exactly the
+    two predictions that consume the ceiling.
+  - **`test_ladder_python` passes on this part while `test_ladder_account`
+    fails** - 35.072 and 35.572 are walked but never cut. The asymmetry
+    `analysis/081` argued for, now demonstrated on a real part.
+  - **What would close it**: `level_blocked` already answers, per level,
+    whether phase 1 can cut anywhere, and agrees with the O-code on all 3496
+    calls INCLUDING this part. Feeding that back so `roughing_ladder` uses the
+    ceiling the runtime will arrive at is the fix - real work, not a parameter
+    change, and the last thing between here and a table-walking `.ngc`.
 
   `skip_thin` still comes after the blocked decision, not before -
   `_pl_prev_thin` advances only where a level actually cuts.

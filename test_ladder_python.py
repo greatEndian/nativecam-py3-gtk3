@@ -50,7 +50,7 @@ import lathe_sections as ls  # noqa: E402
 INI = os.path.join(HERE, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECTS = ('testing_15_2.xml', 'testing_15_4.xml', 'testing_15_5.xml',
-            'testing_15_6.xml', 'testing_15_9.xml')
+            'testing_15_6.xml', 'testing_15_9.xml', 'testing_15_blocked.xml')
 FAILED = []
 
 
