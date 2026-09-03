@@ -2592,6 +2592,40 @@ validation ones.
   need the resolved profile, which the block cannot have — they belong in the
   `[AFTER]` block or in Python at generation time.
 
+- [~] **THE BLOCKED DECISION IS IN PYTHON AND PROVED CALL FOR CALL** —
+  2026-09-03, `analysis/082`. `lathe_sections.level_blocked()` returns what
+  `lathe_level_pass` puts in `#<_level_blocked>` for **3373 of 3373 calls**
+  across the same 30 configurations, 1519 of them blocked, 0 uncovered.
+  **Nothing in the toolpath reads it** - replica, parallel run, migration last.
+  - It is a TABLE WALK, not a geometry solve: when the floor contour Python
+    emits is present (`_pl_flc_n GT 1`) both scans walk only that table and
+    skip the record-array offset scan outright.
+  - **Every one of the 3373 calls took the multi-crossing branch.**
+    `polyline.cfg:702` hard-wires `_pl_multi_cross = 1` and `lathe_level_pass`
+    has exactly one caller, so the single-crossing branch is unreachable from a
+    polyline - replicated for fidelity, exercised by nothing.
+  - **The record-array scan is a live fallback and is NOT replicated** - it runs
+    when `build_floor_contour_gcode` returns nothing: total allowance zero,
+    under two contour points, or the table overflowing `FLOORC_TOP`.
+    `level_blocked` returns None there and the test counts those calls.
+  - **The gate caught three faults before it could report anything**, one of
+    which was a silent green: `floor_contour` read nothing, so 30 per-config
+    checks all said PASS over 0 answers. Only the coverage check failed. The
+    cause was the defaults block assigning `_pl_flc_base = 0` like every other
+    global - the same trap that nearly shipped gap 10 inert. Rule, now twice
+    scarred: **read the LAST assignment and count only the non-placeholder
+    ones.** A reversed-window negative control was added too.
+
+- [ ] **NEXT LAYER: the interval walk.** `level_blocked` is handed `w_from` and
+  `w_to` out of the record. Supplying them from Python means knowing the
+  interval walk - the 3373 calls are not one per level, a level behind a boss
+  is re-called per disjoint interval and where the next starts comes from
+  `lathe_level_next_start` and the resume envelope, which read the previous
+  blocked answer. The FIRST call of each level in a window is the one Python
+  could already predict; the continuations are the layer after. That, plus
+  `skip_thin` needing this first, is what stands between here and the
+  migration.
+
 - [~] **THE LADDER IS IN PYTHON AND PROVED BOTH WAYS, stages one and two**
   - 2026-09-03, `analysis/081`. **GATE TWO PASSES: 0 of 30 configurations has
     an unexplained level.** Per configuration `predicted = cut + thin +

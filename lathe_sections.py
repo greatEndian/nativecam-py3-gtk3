@@ -2513,6 +2513,85 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     return out
 
 
+def level_blocked(floor_contour, level, w_from, w_to, multi_cross=False,
+                  mm=1.0):
+    """Whether a roughing level can begin at all inside its own window.
+
+    A REPLICA of the answer lathe_level_pass returns in #<_level_blocked>,
+    written to be compared against it rather than to replace it yet. Nothing
+    in the toolpath reads this; `test_level_blocked` asserts it matches the
+    O-code call for call. The ladder went the same way and the parallel run
+    caught two faults reading alone had not - see analysis/080 and 081.
+
+    It is a table walk, not a geometry solve. When Python has emitted the
+    floor contour - `_pl_flc_n` GT 1, which is every polyline that reaches
+    here - BOTH of lathe_level_pass's scans walk only that table and skip the
+    record-array offset scan outright (`scan_i = rec_count`). The contour is
+    already blended by each surface's own normal with its corners joined, so
+    there is no offset arithmetic and no corner connector left to do. Returns
+    None when the table is absent, because the scan this does not replicate
+    owns that case.
+
+    `multi_cross` picks between the two, and they answer different questions:
+
+    - single crossing: the FIRST place the contour rises to the level. Blocked
+      when that crossing is at or before the window start - the profile is
+      already above the level before the window begins, so nothing in the
+      window is reachable.
+    - multi crossing: replays every crossing in order to track whether the
+      contour is above or below the level, and freezes that state at the
+      window start. Blocked when the state there is "above". A level behind a
+      boss crosses several times, and only the state at w_from decides.
+    """
+    pts = list(floor_contour)
+    if len(pts) < 2:
+        return None
+    z_dir = 1.0 if w_from >= w_to else -1.0
+    # the epsilon lets a level sitting exactly on the roughing floor graze it
+    l_eff = level + 0.001 * mm
+
+    if not multi_cross:
+        found, zc = False, w_to - z_dir
+        if pts[0][1] >= l_eff:
+            zc, found = pts[0][0], True
+        pz, px = pts[0]
+        for cz, cx in pts[1:]:
+            if not found and px < l_eff <= cx:
+                if abs(cx - px) > 0.000001:
+                    zc = pz + (cz - pz) * (l_eff - px) / (cx - px)
+                else:
+                    zc = cz
+                found = True
+            pz, px = cz, cx
+        return bool(found and z_dir * (zc - w_from) >= -0.0001)
+
+    state = 1 if pts[0][1] >= l_eff else 0
+    wf_state = -1
+    pz, px = pts[0]
+    for cz, cx in pts[1:]:
+        dirup = None
+        if px < l_eff <= cx:
+            dirup = 1
+        elif px >= l_eff > cx:
+            dirup = 0
+        if dirup is not None:
+            if abs(cx - px) > 0.000001:
+                tz = pz + (cz - pz) * (l_eff - px) / (cx - px)
+            else:
+                tz = cz
+            if z_dir * (tz - w_from) < -0.0001:
+                # past the window start: it cannot move the state there any
+                # more, it can only freeze what the state already was
+                if wf_state < 0:
+                    wf_state = state
+            else:
+                state = dirup
+        pz, px = cz, cx
+    if wf_state < 0:
+        wf_state = state
+    return wf_state > 0
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 
