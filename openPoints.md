@@ -2298,8 +2298,14 @@ the two cuts only touch.
     radius behind the boss.
   - **OFF**: today, byte-identical, and the tool reaches 2.23 mm deeper than
     the holder allows at long range.
-  - Unknown either way: whether that 2.23 mm would ACTUALLY have fouled. That
-    wants a real cut or a collision-check run, not more geometry.
+  - **greatEndian, 2026-09-03: leave it OFF — *"I will test it at real
+    machine"*.** So the acceptance is a real cut, not a harness, and the flag
+    stays False until that comes back. Nothing further to decide here; the
+    model is built, measured and waiting.
+  - To try it on the machine: generate with `NCAM_SHANK_BOUNDS=1` in the
+    environment, or flip `FLANK_SHANK_BOUNDS` in `lathe_sections.py`. Both
+    switch the whole contour at once — roughing, pre-finish, finish and the
+    preview take the same surface.
 
 - [x] **The shank bounds the PICTURE but not the reachable contour.** Verified
   2026-08-08 and re-confirmed today: a 25 mm shank and a 0 shank produce a
