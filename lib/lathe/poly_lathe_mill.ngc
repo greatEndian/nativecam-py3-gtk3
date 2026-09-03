@@ -308,6 +308,20 @@ o<poly_lathe_mill> sub
         (after the motion and never on a pass that emitted none. See)
         (analysis/060.)
         #<r_pds> = #<pds>
+        (THE LEVEL TABLE IS LIVE UNTIL THE HANDOVER MOVES THE CEILING.)
+        (lathe_sections emits the NOMINAL ladder, so the moment phase 1)
+        (hands a radius over - sect_top_r reassigned below - every later)
+        (window would start somewhere the table does not know about. The)
+        (three sites that reassign it clear this flag and the ladder is)
+        (computed the way it always was. See analysis/088 and 090.)
+        #<lvl_tbl> = 0
+        o<lvl_arm> if [#<_pl_lvl_n> GT 0]
+                #<lvl_tbl> = 1
+        o<lvl_arm> endif
+        #<lvl_ti> = 0
+        #<lvl_tn> = 0
+        #<lvl_k>  = 0
+        #<lt_i>   = 0
         #<_pl_cut_rev> = 0
         #<_pl_cut_alt> = 0
         o<rpick> if [#<rough_dir> EQ 1]
@@ -732,7 +746,33 @@ o<poly_lathe_mill> sub
                         o<wh_w> break
                 o<sec_pick> endif
 
-                #<current_radius> = #<lvl_start>
+                (this window's own run of levels, found by index - the)
+                (same index lathe_level_pass records its deepest cut at)
+                #<lvl_tn> = 0
+                #<lvl_k>  = 0
+                o<lvl_find> if [#<lvl_tbl> GT 0]
+                        #<lt_i> = 0
+                        o<lvl_fw> while [#<lt_i> LT #<_pl_lvl_n>]
+                                o<lvl_fh> if [#[1000 + #<lt_i> * 3] EQ #<w_idx>]
+                                        #<lvl_ti> = #[1000 + #<lt_i> * 3 + 1]
+                                        #<lvl_tn> = #[1000 + #<lt_i> * 3 + 2]
+                                        #<lt_i> = #<_pl_lvl_n>
+                                o<lvl_fh> else
+                                        #<lt_i> = [#<lt_i> + 1]
+                                o<lvl_fh> endif
+                        o<lvl_fw> endwhile
+                o<lvl_find> endif
+                o<lvl_st> if [#<lvl_tn> GT 0]
+                        #<current_radius> = #[#<_pl_lvl_base> + #<lvl_ti>]
+                        (first_step must be the step ACTUALLY about to be)
+                        (used: skip_thin reads it to work out where the)
+                        (ladder goes if this level is dropped)
+                        o<lvl_s1> if [#<lvl_tn> GT 1]
+                                #<first_step> = [#[#<_pl_lvl_base> + #<lvl_ti> + 1] - #<current_radius>]
+                        o<lvl_s1> endif
+                o<lvl_st> else
+                        #<current_radius> = #<lvl_start>
+                o<lvl_st> endif
                 #<_pl_prev_lvl> = #<stock_r>
 
                 (AND A SEPARATE REFERENCE FOR THE THIN CHECK, because the two)
@@ -1033,6 +1073,8 @@ o<poly_lathe_mill> sub
                                                                 (here, nothing was cut at all so phase 2 must)
                                                                 (still do this exact radius fresh)
                                                                 #<sect_top_r> = #<current_radius>
+                                                                (the ceiling moved - the table below it is stale)
+                                                                #<lvl_tbl> = 0
                                                                 #<_pl_ph1_front_cut> = 0
                                                                 o<wh_00> break
                                                         o<p1_none> endif
@@ -1114,6 +1156,8 @@ o<poly_lathe_mill> sub
                                                                         (phase 2's own per-section handling already)
                                                                         (does properly)
                                                                         #<sect_top_r> = #<current_radius>
+                                                                        (the ceiling moved - the table below it is stale)
+                                                                        #<lvl_tbl> = 0
                                                                         #<_pl_ph1_front_cut> = 1
                                                                         #<_pl_ph1_z_end> = #<_pl_level_z_end>
                                                                         (FINISH THIS LEVEL BEFORE HANDING OVER.)
@@ -1220,6 +1264,8 @@ o<poly_lathe_mill> sub
                                 (section ceiling.)
                                 o<sg_ph1> if [[#<sg_hit> GT 0] AND [#<p1_cut> GT 0] AND [#<_pl_sectioning> GT 0] AND [#<w_idx> LT 0]]
                                         #<sect_top_r> = #<current_radius>
+                                        (the ceiling moved - the table below it is stale)
+                                        #<lvl_tbl> = 0
                                         #<_pl_ph1_front_cut> = 1
                                         #<ph1_fin> = 1
                                 o<sg_ph1> endif
@@ -1301,8 +1347,26 @@ o<poly_lathe_mill> sub
 
                         (the first advance may differ from the rest when the)
                         (levels are anchored on the finished contour)
-                        #<current_radius> = [#<current_radius> + #<first_step>]
-                        #<first_step> = #<cut_step>
+                        o<lvl_adv> if [#<lvl_tn> GT 0]
+                                #<lvl_k> = [#<lvl_k> + 1]
+                                o<lvl_more> if [#<lvl_k> LT #<lvl_tn>]
+                                        #<current_radius> = #[#<_pl_lvl_base> + #<lvl_ti> + #<lvl_k>]
+                                        o<lvl_a1> if [[#<lvl_k> + 1] LT #<lvl_tn>]
+                                                #<first_step> = [#[#<_pl_lvl_base> + #<lvl_ti> + #<lvl_k> + 1] - #<current_radius>]
+                                        o<lvl_a1> else
+                                                #<first_step> = #<cut_step>
+                                        o<lvl_a1> endif
+                                o<lvl_more> else
+                                        (past the end of this run - carry on the)
+                                        (computed way so the loop still ends where)
+                                        (it always did)
+                                        #<current_radius> = [#<current_radius> + #<first_step>]
+                                        #<first_step> = #<cut_step>
+                                o<lvl_more> endif
+                        o<lvl_adv> else
+                                #<current_radius> = [#<current_radius> + #<first_step>]
+                                #<first_step> = #<cut_step>
+                        o<lvl_adv> endif
                         (check if we passed this phase's own floor)
                         o<if_done> if [[#<start_radius> GT #<lvl_floor>] AND [#<current_radius> LT #<lvl_floor>]]
                                 #<current_radius> = #<lvl_floor>

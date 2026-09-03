@@ -2892,6 +2892,98 @@ def phase1_stop(levels, floor_contour, stock_r, doc, e_z, l_z,
     return None
 
 
+# The roughing level table: a directory of (window index, offset, count)
+# followed by the radii themselves. 1000-2600 is the free block below
+# WDEEP_BASE - measured completely unreferenced - and a 17-window Artificial
+# part at 32 levels needs 544 radii plus 51 directory slots, so it fits with
+# room to spare.
+LVL_BASE = 1000
+LVL_TOP = 2600
+
+
+def build_level_table_gcode(polyline_feature, rough_cut=0.0):
+    """The #1000 roughing level table, or '' to leave poly_lathe_mill computing.
+
+    THE LADDER MOVES OUT OF THE O-CODE HERE. poly_lathe_mill works the level
+    radii out at runtime - dirsign, the two targets, FUP pass counts, the
+    phase-1/phase-2 split, the floor-stage re-anchoring - and this emits the
+    same sequence per window so the subroutine only has to read the next
+    number. It is the arithmetic proved against the running O-code across 36
+    configurations first: analysis/080, 081 and 089.
+
+    THE NOMINAL LADDER, DELIBERATELY. Where phase 1 is blocked from its own
+    window start with nothing cut, poly_lathe_mill REASSIGNS sect_top_r and
+    every later window starts somewhere this table does not know about
+    (analysis/088). `phase1_stop` predicts that, and it is proved - but on 36
+    configurations, not universally, and a table built on a wrong ceiling would
+    cut a wrong ladder in metal. So the table stays nominal and the O-code
+    switches it OFF at the three sites that do the reassigning, falling back to
+    the computation it has always had. Predicting the handover into the table
+    is a later step with its own evidence.
+
+    '' whenever anything is missing or would not fit, and the runtime gate is
+    `_pl_lvl_n GT 0`, so an older project - or one this cannot describe - takes
+    exactly the ladder it took before.
+    """
+    if rough_cut <= EPS:
+        return ''
+
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    start_r, final_r = rough_radius_bounds(polyline_feature)
+    if abs(start_r - final_r) <= EPS:
+        return ''
+
+    got = section_windows(polyline_feature)
+    sectioning = got is not None and _p('param_sectioning') > 0
+    if sectioning:
+        windows, sect_mode, top_x = got
+        top_r, n_win = top_x / DIAMETER_MODE, len(windows)
+        if n_win < 1:
+            return ''
+    else:
+        sect_mode, top_r, n_win = 0, None, 1
+
+    ladder = roughing_ladder(
+        start_r, final_r, _p('param_f_off'),
+        _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
+        rough_cut, _p('param_pass_from') > 0,
+        floor_stages(polyline_feature, rough_cut),
+        sectioning, top_r, int(sect_mode), n_win)
+    ladder = [(w, radii) for w, radii in ladder if radii]
+    if not ladder:
+        return ''
+
+    data = LVL_BASE + 3 * len(ladder)
+    total = data + sum(len(radii) for _w, radii in ladder)
+    if total > LVL_TOP:
+        return ('(WARNING - the roughing level table needs %d parameter slots '
+                'and only %d are free, so the levels are computed at runtime '
+                'as before.)' % (total - LVL_BASE, LVL_TOP - LVL_BASE))
+
+    lines = ['(the roughing levels, per window - poly_lathe_mill reads the)',
+             '(next radius instead of working the ladder out again. Window)',
+             '(-1 is phase 1, and the unsectioned single sweep which shares)',
+             '(that index. Read the table, move.)',
+             '#<_pl_lvl_n>    = %d' % len(ladder),
+             '#<_pl_lvl_base> = %d' % data]
+    off = 0
+    for i, (w, radii) in enumerate(ladder):
+        slot = LVL_BASE + 3 * i
+        lines.append('#%d = %d' % (slot, w))
+        lines.append('#%d = %d' % (slot + 1, off))
+        lines.append('#%d = %d' % (slot + 2, len(radii)))
+        off += len(radii)
+    off = 0
+    for _w, radii in ladder:
+        for r in radii:
+            lines.append('#%d = %s' % (data + off, _fmt(r)))
+            off += 1
+    return '\n'.join(lines) + '\n'
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 

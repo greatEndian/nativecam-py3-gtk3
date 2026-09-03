@@ -66,8 +66,12 @@ ANCHORS = (
     # are Python's to reproduce
     ('        #<l_z> = [#<l_z> + #<_pl_ext_bk_dz>]\n',
      '        (debug, RAWREC ez=#<e_z> lz=#<l_z>)\n', False),
-    # one per window, after its span and band are resolved
-    ('                #<current_radius> = #<lvl_start>\n',
+    # one per window, after its span and band are resolved. ANCHORED ON THE
+    # TABLE LOOKUP, not on the assignment to current_radius: the level table
+    # pushed that into an else branch, so a record placed there fires only
+    # when the table is absent - which is never, now that it is emitted for
+    # every project. The lookup runs unconditionally, once per window.
+    ('                o<lvl_find> if [#<lvl_tbl> GT 0]\n',
      '                (debug, WREC w=#<w_idx> wf=#<w_from> wt=#<w_to> '
      'rlo=#<w_rlo> rhi=#<w_rhi>)\n', False),
 )

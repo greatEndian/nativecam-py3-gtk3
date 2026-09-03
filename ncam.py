@@ -2818,6 +2818,11 @@ class Preferences(object):
             # floor fits the whole part, and poly_lathe_mill then takes exactly
             # the ladder it took before floor stages existed.
             self.default += ("#<_pl_floor_n>             = 0\n")
+            # the roughing level table - 0 means "no table", which is
+            # what an older saved project has and what makes
+            # poly_lathe_mill compute the ladder as it always did
+            self.default += ("#<_pl_lvl_n>               = 0\n")
+            self.default += ("#<_pl_lvl_base>            = 1000\n")
             self.default += ("#<_pl_eramp_n>             = 0\n")
             # Which Z direction the loaded insert can cut in: +1, -1, or 0 for
             # a facing or on-the-point tool with no axial preference. The
