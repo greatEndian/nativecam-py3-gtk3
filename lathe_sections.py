@@ -1247,8 +1247,16 @@ def profile_problem(polyline_feature):
     return None
 
 
-def build_sections_gcode(polyline_feature):
-    """Returns literal G-code text assigning _pl_sect_count, _pl_sect_mode,
+def section_windows(polyline_feature):
+    """The sectioning windows, mode and ceiling as DATA - (windows, sect_mode,
+    top_x) or None when Sectioning is off or the profile cannot be analysed.
+
+    Split out of build_sections_gcode so the roughing ladder can be worked
+    out at generation time from the same windows the runtime is handed,
+    rather than from a re-parse of the G-code this emits. The emitter below
+    is now only the emitter; every decision stayed here.
+
+    Originally: returns literal G-code text assigning _pl_sect_count,
     the raw (unconverted) ceiling, and the #3400+ window block - or '' if
     Sectioning is off, or the profile couldn't be safely analyzed.
 
@@ -1287,11 +1295,11 @@ def build_sections_gcode(polyline_feature):
     """
     sectioning_param = polyline_feature.get_param('param_sectioning')
     if sectioning_param is None or _to_float(sectioning_param.get_ngc_value()) <= 0:
-        return ''
+        return None
 
     points = resolve_points(polyline_feature)
     if not points or len(points) < 2:
-        return ''
+        return None
 
     dir_param = polyline_feature.get_param('param_dir')
     rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
@@ -1304,7 +1312,7 @@ def build_sections_gcode(polyline_feature):
 
     sections = detect_sections(points)
     if not sections:
-        return ''
+        return None
 
     sec_len_param = polyline_feature.get_param('param_sec_len')
     sec_len = _to_float(sec_len_param.get_ngc_value()) if sec_len_param is not None else 0.0
@@ -1353,6 +1361,18 @@ def build_sections_gcode(polyline_feature):
         windows = _sections_back_to_front(windows, points)
         windows = _split_level_intervals(windows, points, sections,
                                          level_allowance(polyline_feature))
+
+    return windows, sect_mode, top_x
+
+
+def build_sections_gcode(polyline_feature):
+    """The #3400 window block, _pl_sect_count, _pl_sect_mode and the
+    raw ceiling - or '' when section_windows has nothing to say.
+    """
+    got = section_windows(polyline_feature)
+    if got is None:
+        return ''
+    windows, sect_mode, top_x = got
 
     lines = [
         '#<_pl_sect_count> = %d' % len(windows),
@@ -2045,20 +2065,18 @@ def build_rough_bounds_gcode(polyline_feature):
             % (_fmt(b), _fmt(e), _fmt(ext_dz(polyline_feature, 'back'))))
 
 
-def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
-    """The #3300 floor-stage table, or '' when one floor fits the whole part.
+def floor_stages(polyline_feature, rough_cut=0.0):
+    """The floor stages this profile is entitled to, shallowest first, as DATA.
 
-    '' is the common case and it matters: the runtime gate is
-    `_pl_floor_n > 1`, so a single-floor profile takes exactly the ladder it
-    took before this existed and cannot be changed by it.
-
-    The last entry is the part's own deepest floor, which is where the ladder
-    ended before - so this only ever ADDS the intermediate floors it was
-    skipping past, and the bottom of the ladder does not move.
+    Split out of build_floor_ladder_gcode so the roughing ladder can be worked
+    out at generation time from the same stages the runtime re-anchors on -
+    the ladder needs them as numbers, and they existed only as emitted G-code.
+    Fewer than two means one floor fits the whole part, which is the common
+    case and the one that leaves the ladder exactly as it was.
     """
     points = resolve_points(polyline_feature)
     if not points or len(points) < 2 or rough_cut <= EPS:
-        return ''
+        return []
 
     # THE FLOOR STAGES ARE THE SAME STAGES WHICHEVER WAY ROUGHING TRAVELS.
     # `points` was reversed here for direction 1, so region merging chained
@@ -2076,10 +2094,24 @@ def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
     # than leave a sliver, so it declines instead.
     if (x_limit_abs(polyline_feature, 'begin')
             <= x_limit_abs(polyline_feature, 'end') + EPS):
-        return ''
+        return []
 
-    floors = floor_ladder(points, _p('param_f_off'), _p('param_pf_off'),
-                          rough_cut, _p('param_pass_from') > 0)
+    return floor_ladder(points, _p('param_f_off'), _p('param_pf_off'),
+                        rough_cut, _p('param_pass_from') > 0)
+
+
+def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
+    """The #3300 floor-stage table, or '' when one floor fits the whole part.
+
+    '' is the common case and it matters: the runtime gate is
+    `_pl_floor_n > 1`, so a single-floor profile takes exactly the ladder it
+    took before this existed and cannot be changed by it.
+
+    The last entry is the part's own deepest floor, which is where the ladder
+    ended before - so this only ever ADDS the intermediate floors it was
+    skipping past, and the bottom of the ladder does not move.
+    """
+    floors = floor_stages(polyline_feature, rough_cut)
     if len(floors) < 2:
         return ''
     if SECT_FLOOR_BASE + len(floors) >= SECT_BASE:
