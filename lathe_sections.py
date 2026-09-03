@@ -2382,6 +2382,130 @@ def set_insert_orient(orient):
     return ''
 
 
+def _fup(v):
+    """LinuxCNC's FUP: round away from zero to the next whole number."""
+    n = math.ceil(abs(v) - EPS)
+    return int(n if n >= 1 else 1)
+
+
+def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
+                    pass_from=False, floors=(), sectioning=False,
+                    sect_top_r=None, sect_mode=0, windows=1):
+    """The roughing level radii, per window, worked out at generation time.
+
+    A REPLICA of what poly_lathe_mill computes at runtime, written to be
+    compared against it rather than to replace it yet. Nothing reads this in
+    the toolpath; `test_ladder_python` asserts every level the program actually
+    cuts lies on the ladder this returns, across every project and direction.
+    Replacing the O-code without that evidence is how the anisotropic stock to
+    leave cost four rounds.
+
+    Everything it needs is known before the program runs: the two radii are cfg
+    parameters (resolved through `x_limit_abs`), the offsets and the depth of
+    cut are parameters, and the floor stages and section ceiling are tables
+    this module already emits. The runtime only decides what each level DOES -
+    whether it is skipped as thin, refused as blocked, or split into intervals
+    - and none of those change the level SET, which is why this can be a pure
+    function.
+
+    Returns [(window_index, [radii])]; window_index is -1 for phase 1 and for
+    the unsectioned single pass.
+    """
+    dirsign = 1 if start_r >= final_r else -1
+    fin_off = max(fin_off, 0.0)
+    rough_target = final_r + dirsign * fin_off
+    step_target = rough_target + dirsign * prefin_off
+
+    lad_tgt = step_target
+    if len(floors) > 1:
+        lad_tgt = floors[0]
+
+    if abs(lad_tgt - start_r) <= EPS:
+        cut_step = first_step = 0.0
+    else:
+        n = _fup(abs(lad_tgt - start_r) / doc)
+        cut_step = (lad_tgt - start_r) / n
+        first_step = cut_step
+        if pass_from:
+            # anchored on the finished contour: whole depths of cut from a
+            # floor rounded outward, rather than an even division
+            sgn = -1 if step_target < start_r else 1
+            cut_step = sgn * doc
+            k_min = _fup(abs(step_target - rough_target) / doc)
+            anch_floor = rough_target - sgn * k_min * doc
+            step_target = anch_floor
+            if len(floors) <= 1:
+                lad_tgt = anch_floor
+            n = _fup(abs(lad_tgt - start_r) / doc)
+            first_step = (lad_tgt - start_r) - cut_step * (n - 1)
+
+    top = step_target
+    if sectioning and sect_top_r is not None:
+        top = sect_top_r
+        # the ceiling is clamped into the band the ladder actually spans
+        if dirsign * (top - step_target) < 0:
+            top = step_target
+        if dirsign * (top - start_r) > 0:
+            top = start_r
+
+    p1_step, p1_first = cut_step, first_step
+    p2_step, p2_first = cut_step, first_step
+    if sectioning:
+        if abs(top - start_r) > EPS:
+            p1_n = _fup(abs(top - start_r) / doc)
+            p1_sgn = -1 if top < start_r else 1
+            p1_step = p1_sgn * doc
+            p1_first = (top - start_r) - p1_step * (p1_n - 1)
+        if abs(lad_tgt - top) > EPS:
+            p2_n = _fup(abs(lad_tgt - top) / doc)
+            # SPREAD, not whole steps - see poly_lathe_mill
+            p2_step = (lad_tgt - top) / p2_n
+            p2_first = p2_step
+
+    def walk(lvl_start, lvl_floor, step, first, staged=False):
+        # THE LADDER RE-ANCHORS ON EACH FLOOR STAGE. Reaching one is not the
+        # end when others lie below it: poly_lathe_mill takes the next stage,
+        # divides the remaining distance into whole depths of cut of its own -
+        # FUP, then an even step - and carries on. Leaving that out is what the
+        # parallel run caught: 15 of 30 configurations had exactly one level
+        # off the ladder, always r20.516, which is the first level of the
+        # SECOND stage on testing_15_4, _15_5 and _15_6.
+        stages = list(floors) if (staged and len(floors) > 1) else []
+        fl_i, floor = 0, (stages[0] if stages else lvl_floor)
+        out, r, f = [], lvl_start, first
+        for _ in range(400):                    # a ladder is never this long
+            out.append(r)
+            if abs(r - floor) <= 1e-6:
+                if fl_i < len(stages) - 1:
+                    fl_i += 1
+                    floor = stages[fl_i]
+                    n = _fup(abs(floor - r) / doc)
+                    step = (floor - r) / n
+                    f = step
+                else:
+                    break
+            if abs(step) <= EPS and abs(f) <= EPS:
+                break
+            r = r + f
+            f = step
+            if start_r > floor and r < floor:
+                r = floor
+            elif start_r < floor and r > floor:
+                r = floor
+        return out
+
+    if not sectioning:
+        return [(-1, walk(start_r, step_target, cut_step, first_step, True))]
+
+    out = []
+    if abs(top - start_r) > EPS:
+        out.append((-1, walk(start_r, top, p1_step, p1_first)))
+    for w in range(windows):
+        lvl_start = start_r if sect_mode == 1 else top
+        out.append((w, walk(lvl_start, step_target, p2_step, p2_first, True)))
+    return out
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 

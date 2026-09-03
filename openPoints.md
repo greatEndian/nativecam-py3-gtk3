@@ -2592,6 +2592,24 @@ validation ones.
   need the resolved profile, which the block cannot have — they belong in the
   `[AFTER]` block or in Python at generation time.
 
+- [~] **THE LADDER IS IN PYTHON AND PROVED, stage one of two** — 2026-09-03,
+  `analysis/080`. `roughing_ladder()` computes the level radii at generation
+  time and **nothing in the toolpath reads it yet**; motion is untouched.
+  Proved by parallel run: 5 projects x 2 sectioning states x 3 directions, and
+  every level the program cuts lies on the predicted ladder within 0.002 mm.
+  `test_ladder_python` is that sweep.
+  - **The first run failed 15 of 30**, each with one level off and always
+    r20.516 - the first level of the SECOND floor stage. The replica stopped at
+    the first stage where the O-code re-anchors on each in turn. Reading had
+    not shown me that; running the two side by side did.
+  - **NEXT GATE, before the `.ngc` reads anything**: the ladder is a SUPERSET,
+    so predicted-minus-cut must be shown to equal skipped-plus-blocked-plus-
+    out-of-band, per configuration. Until then it is a verified prediction, not
+    a replacement.
+  - Also open: `roughing_ladder` currently takes its inputs read back out of
+    the generated program. Wiring it for real means taking them from the
+    Feature, and the two paths must agree.
+
 - [ ] **The ramp and stop machinery is still runtime O-code.** `s_reach`, the
   slope term, the flat-boundary clamp, the clamped-candidate rule, and the
   level scan's own perpendicular offset. Python already answers most of these
