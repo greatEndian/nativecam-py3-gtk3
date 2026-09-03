@@ -1325,20 +1325,16 @@ the two cuts only touch.
   a per-region thickness reference for the thin check, a safe-radius reference
   for the retract at `lathe_level_pass.ngc:999`. Designed, not built.
 
-- [ ] **A `skip_thin` threshold above the LADDER STEP halves the ladder — and
-  the step is under the depth of cut, so a clamp at the doc is not enough.**
-  Measured 2026-08-24 on testing_15_2: at 0.600 with doc 0.508, **13 levels and
-  a 1.0160 gap**; and after the phase-2 spread made the ladder uniform at
-  0.4991, a threshold of **0.5070 — under the 0.5080 doc — already does it**,
-  13 levels and a 0.9983 gap. It alternates: a level is thin against the last
-  one cut and skipped, `_pl_prev_lvl` stays, the next is two steps away and is
-  kept. Gaps past the doc against a part surface is the failure
-  `test_x_continuity` exists to prevent. `cfg/lathe/polyline.cfg:76` has
-  `minimum_value = 0.0` and **no maximum**, so a user can type it. The
-  recommended `doc/2` is safe and `test_ladder` now asserts that much; the
-  clamp has to be against the ladder's own step, which is a runtime number, so
-  the honest fix is to make the skip refuse to open a gap larger than the doc
-  rather than to bound the input.
+- [x] **A `skip_thin` threshold above the LADDER STEP halves the ladder** —
+  DONE 2026-09-03, `analysis/076`. The skip now refuses when the level that
+  would FOLLOW would sit more than one depth of cut from the last one cut.
+  testing_15_2: 13 levels / 0.9983 gap at 0.5070, 0.6000 and 0.9000 becomes
+  **18 levels / 0.4992 at every threshold**. Not inert - testing_15_5 carries
+  0.3 mm saved and the refusal gives back a level it was wrongly dropping,
+  458 -> 464 moves. `test_ladder`'s control was ASSERTING the bug ("a threshold
+  above the thinnest gap DOES drop a level", impossible on a uniform ladder
+  without opening the gap) and is inverted; it still fails on the old build.
+  `test_skip_thin_gap` is new.
 
 - [x] **RULED 2026-08-24 — SPREAD, not drop.** greatEndian chose the spread on
   being shown both with their numbers: nothing is removed, no step exceeds the

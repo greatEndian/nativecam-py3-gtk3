@@ -53,7 +53,10 @@ FAILED = []
 # from analysis/071 and 072 - the motion of these projects with no limit set
 BASELINE = {'testing_15_9.xml': ('6cf361a8b8f5', 1575),
             'testing_15_2.xml': ('e2744cbb6ff0', 327),
-            'testing_15_5.xml': ('128ebb273ba5', 458)}
+            # 15_5 gained a level on 2026-09-03 - it carries skip_thin at
+            # 0.3 mm and the skip was dropping one while opening a gap past
+            # the depth of cut; the refusal gives it back. 458 -> 464.
+            'testing_15_5.xml': ('d5ba90092f17', 464)}
 
 
 def check(name, cond, detail=''):

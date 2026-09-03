@@ -213,6 +213,11 @@ def main():
         # ---- every mode, by the numbers it actually produces ---------------
         # air ENTRY leads are what the gate targets. Before any gate existed
         # the Artificial front-to-back case carried 408 of them / 419.4 mm.
+        # testing_15_5 gained a level on 2026-09-03: it carries skip_thin at
+        # 0.3 mm and the skip was dropping a level while opening a gap past the
+        # depth of cut. The refusal added that day gives the level back, so its
+        # figures here rose - 57 cutting leads to 58, 1144.4 mm to 1215.6. That
+        # is the toolpath improving, not this test drifting.
         # All distances here are ROUGHING ONLY - the finish passes still shape
         # the material state but are not roughing motion, and counting them
         # inflated every figure in analysis/066 and 067.
@@ -228,7 +233,7 @@ def main():
              dict(ent_n=10, cut_n=183, feed=1445.8, rap=0)),
             ('natural, testing_15_5', 'testing_15_5.xml',
              ['polyline:param_sectioning=1'], 'nat5',
-             dict(ent_n=20, cut_n=57, feed=1144.4, rap=0)),
+             dict(ent_n=20, cut_n=58, feed=1215.6, rap=0)),
             ('natural, testing_15_2', 'testing_15_2.xml',
              ['polyline:param_sectioning=1'], 'nat2',
              dict(ent_n=16, cut_n=35, feed=530.0, rap=0)),
@@ -281,7 +286,7 @@ def main():
             ('both directions', 'testing_15_9.xml', ['polyline:param_dir=2'],
              'lo2', 1445.8, 1324.8),
             ('natural 15_5', 'testing_15_5.xml',
-             ['polyline:param_sectioning=1'], 'lo5', 1144.4, 1103.4),
+             ['polyline:param_sectioning=1'], 'lo5', 1215.6, 1173.6),
         )
         for name, project, sets, tag, f_off, f_on in pairs:
             a = measure(P, project, sets, d, tag + 'off')

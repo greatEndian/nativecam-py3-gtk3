@@ -347,11 +347,30 @@ def main():
             print('   %-14s %2d levels at %.4f, dropped %s'
                   % ('skip thin cal', len(cl), fire,
                      ' '.join('%.4f' % x for x in gone) or '(none)'))
-            check('   a threshold above the thinnest gap DOES drop a level',
-                  len(cl) < len(base),
-                  '%d levels at the %.4f threshold against %d without, though '
-                  'the thinnest gap is %.4f' % (len(cl), fire, len(base),
-                                                thinnest))
+            # INVERTED 2026-09-03, and the old wording asserted the bug.
+            # It required a level to be DROPPED at a threshold above the
+            # thinnest gap. On a UNIFORM ladder - which phase 2's spread makes
+            # by construction, 0.4991 in all 17 gaps here - dropping any level
+            # necessarily leaves the next one two steps from the last one cut,
+            # a 0.9983 gap against a 0.5080 doc. The comment below already
+            # conceded that and called it "a real fault in _pl_skip_thin"; the
+            # skip now REFUSES to open a gap past the depth of cut, so the
+            # drop this asked for can no longer happen and asking for it would
+            # be asking for the fault back.
+            # Still a real control, not a waiver: on the build before the
+            # refusal this same threshold gave 13 levels, so an assertion that
+            # the ladder is WHOLE fails there just as loudly.
+            cgaps0 = [stock_r - cl[0]] + [cl[i] - cl[i + 1]
+                                          for i in range(len(cl) - 1)]
+            check('   a threshold above the thinnest gap opens no gap past '
+                  'the depth of cut', max(cgaps0) <= DOC + 1e-3,
+                  'worst gap %.4f at the %.4f threshold, against a %.4f doc - '
+                  'a skip left the next level two steps from the last one cut'
+                  % (max(cgaps0), fire, DOC))
+            check('   and the ladder stays whole rather than halving',
+                  len(cl) == len(base),
+                  '%d levels at the %.4f threshold against %d without'
+                  % (len(cl), fire, len(base)))
             # and it drops the RIGHT one - the level bounding the thin gap,
             # not an arbitrary level somewhere else in the ladder
             cgaps = [stock_r - cl[0]] + [cl[i] - cl[i + 1]

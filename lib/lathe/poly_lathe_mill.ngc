@@ -810,9 +810,34 @@ o<poly_lathe_mill> sub
                         (aimed at - each of those is a real region's floor and)
                         (must never be skipped either. The last stage IS)
                         (step_target, so nothing changes without stages.)
+                        (AND A SKIP MAY NOT OPEN A GAP LARGER THAN THE DEPTH)
+                        (OF CUT. _pl_prev_lvl does not advance when a level is)
+                        (skipped, so the NEXT level is two steps from the last)
+                        (one actually cut - and with a threshold above the)
+                        (ladder step that alternates: thin, skip, keep, thin,)
+                        (skip, keep. Measured on testing_15_2 at 0.600 with a)
+                        (0.508 doc: 13 levels lost and a 1.0160 gap; and once)
+                        (the phase-2 spread made the ladder uniform at 0.4991,)
+                        (a threshold of 0.5070 - UNDER the doc - already did)
+                        (it, 13 levels and a 0.9983 gap. A gap past the doc)
+                        (against a part surface is the failure)
+                        (test_x_continuity exists to prevent.)
+                        (Clamping the SETTING cannot fix it: the ladder step is)
+                        (a runtime number and can be under the doc, as 0.4991)
+                        (is, so no value typed in the cfg is safe on every)
+                        (part. The skip itself has to refuse - it is the only)
+                        (place that knows both the step and what was last cut.)
+                        (nxt is where the ladder goes if this level is dropped.)
+                        (first_step is the advance actually about to be used,)
+                        (which differs from cut_step only on the first level)
+                        (after an anchor - taking cut_step there would misjudge)
+                        (exactly the level the anchoring exists to place.)
+                        #<thin_nxt> = [#<current_radius> + #<first_step>]
                         o<thin_chk> if [[#<_pl_skip_thin> GT 0.000001] AND [ABS[#<current_radius> - #<fl_prot>] GT 0.000001]]
                                 o<thin_hit> if [ABS[#<current_radius> - #<_pl_prev_lvl>] LT #<_pl_skip_thin>]
-                                        #<lvl_thin> = 1
+                                        o<thin_gap> if [ABS[#<thin_nxt> - #<_pl_prev_lvl>] LE [#<_rough_cut> + 0.000001]]
+                                                #<lvl_thin> = 1
+                                        o<thin_gap> endif
                                 o<thin_hit> endif
                         o<thin_chk> endif
                         o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [#<lvl_thin> EQ 0] AND [[#<dirsign> * [#<current_radius> - #<stock_r>]] LT 0]]
