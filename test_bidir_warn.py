@@ -116,6 +116,30 @@ def main():
                 # 3. IT NEVER BLOCKS
                 check('   %s, %s: still generates a program' % (label, way),
                       made, 'no program produced - a dialog may be waiting')
+
+        # ---- and with a REAL left-hand tool ---------------------------------
+        # T13 was added to the demo tables on 2026-09-03: the left-hand twin of
+        # T2, same 0.8 nose, orientation mirrored to Q1/CL135 AND its I/J
+        # mirrored with it. The neutral half above runs on a scratch copy with
+        # one character changed; T13 is loadable, so the mirrored path is
+        # exercised by a tool a user could actually select.
+        for direction, want in ((1, False), (0, True), (2, True)):
+            way = {0: 'front to back', 1: 'back to front',
+                   2: 'both directions'}[direction]
+            out = os.path.join(d, 't13_%d.ngc' % direction)
+            r = subprocess.run([sys.executable, GEN, '--ini',
+                                os.path.join(CFG, 'lathe-mm.ini'),
+                                '--project', 'testing_15_9.xml', '--out', out,
+                                '--set', 'tool_change:param_dnum=13',
+                                '--set', 'polyline:param_dir=%d' % direction],
+                               capture_output=True, text=True)
+            blob = (r.stdout or '') + (r.stderr or '')
+            fired = (KEY_BOTH in blob or KEY_ONE in blob)
+            check('T13, a real left-hand tool, %s: %s'
+                  % (way, 'warns' if want else 'stays quiet'),
+                  fired == want, 'warning fired' if fired else 'no warning')
+            check('   T13 %s: still generates a program' % way,
+                  os.path.isfile(out))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

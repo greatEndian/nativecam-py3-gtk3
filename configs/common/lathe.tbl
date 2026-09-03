@@ -10,3 +10,4 @@ T9 P9 D0.1 I0 J0 Q9 ;orient 9 D0.1
 T10 P10 D0.0001 I60.000000 J120.000000 Q6 ;external thread cutter
 T11 P11 D0.0001 I240.000000 J300.000000 Q8 ;internal thread cutter
 T12 P12 D0.1 I90 J90 Q6 ;parting cutter
+T13 P13 D0.1 I105.000000 J165.000000 Q1 ;left-hand twin of T2 - same 0.1 nose, orientation mirrored to CL135

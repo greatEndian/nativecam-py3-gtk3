@@ -811,12 +811,20 @@ the two cuts only touch.
     direction asked for", so Q2 warns on 1 and 2 and stays quiet on 0, and a
     mirrored insert warns on 0. cfg 1.72.
 
-- [ ] **No demo project carries a genuinely LEFT-HAND tool.** `ramp_facing` says
-  back-to-front with one should behave as front-to-back does with the shipped
-  right-hand insert, and `test_ramp_orient` shows the ramps returning when the
-  tool table's Q is mirrored - but that is a scratch copy with one character
-  changed, not a real tool entry. Worth adding one to the demo table so the
-  mirrored path is exercised by something a user could actually load.
+- [x] **No demo project carries a genuinely LEFT-HAND tool.** DONE 2026-09-03,
+  `analysis/079`. `T13` is the left-hand twin of T2 - same 0.8 nose, `Q1`, and
+  its I/J mirrored with the orientation - added to the TRACKED
+  `configs/common/lathe*.tbl` as well as the local demo copies, since those are
+  gitignored. `test_bidir_warn` now exercises it: quiet in its own direction,
+  warns in the other two, no special case needed.
+  - **It also showed the scratch control is a tool that cannot exist**:
+    `test_ramp_orient` mirrors `Q2`→`Q1` and leaves `I15 J75`, which bisect to
+    CL45 and contradict Q1 = CL135. That is why it gives 18 ramps where a real
+    left-hand tool gives 0 - the angles drive the flank envelope, and mirroring
+    the orientation without them mirrors half the tool.
+
+- [ ] **Nothing in the demo tables is a real left-hand BORING bar**, so ID work
+  has no mirrored case at all. T13 is an OD turning tool.
 
 - [x] **`flank_sides` decides the shadowed side from the ROUGHING DIRECTION
   alone** — DONE 2026-09-01, `analysis/071`. `insert_flank_side` now answers it
@@ -827,7 +835,12 @@ the two cuts only touch.
   through `rough_frame_dir`, which collapses 0/1/2 to 0, so its direction
   argument was already dead and the shadow was hard-wired to +Z.
 
-- [ ] **Does a mirrored insert really lose EVERY ramp on testing_15_9?** With
+- [ ] **Does a mirrored insert really lose EVERY ramp on testing_15_9?**
+  **NOW REPRODUCIBLE WITH A REAL TOOL, 2026-09-03**: T13 in its OWN direction
+  (back to front) arms 0 ramps, where T2 in its own direction arms 15. The
+  earlier evidence came from a scratch `Q` edit that describes an impossible
+  tool, so this is the first honest reproduction. Still unanswered - see
+  `analysis/079`. With
   the insert mirrored the entry contour halves, 40 segments to 20, and no level
   arms a ramp in either direction - so `test_ramp_orient`'s mirror control went
   from 18 ramps to 0 and no longer discriminates. The tables are consistent and
