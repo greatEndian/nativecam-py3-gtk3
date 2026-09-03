@@ -792,14 +792,31 @@ the two cuts only touch.
   at feed before the rapid, which is what avoids a witness mark at the stop
   point. That is a machining-practice decision, not a geometric one.
 
-- [ ] **Both directions WARNS but is not yet CORRECT.** `analysis/070` added the
-  warning greatEndian asked for - a directional insert plus `param_dir` 2 says
-  the trailing flank will lead on alternate passes and points at the neutral
-  orientations 6, 8, 9 - and it warns and proceeds rather than refusing. What it
-  does not do: `flank_sides` still computes the reachable envelope for ONE
-  direction while the passes run BOTH ways, and the entry/exit leads are not
-  gated per pass direction the way the ramp now is. Those two are what would
-  make the mode right rather than merely fast.
+- [x] **Both directions WARNS but is not yet CORRECT** — both halves now
+  closed. `flank_sides` was done in `analysis/071`; the leads are done in
+  `analysis/078`, and NOT by gating them.
+  - **The leads are sound in every direction** - measured with `test_leads`'
+    own criterion on 15_5 and 15_2, dir 0, 1 and 2: no lead cuts into the
+    material. The real gap was COVERAGE: that file sets `param_n_comp` and had
+    never set `param_dir` at all. It now covers all three.
+  - **Gating them would have been wrong.** The ramp is gated because its
+    purpose - arrive PARALLEL to a surface - is void when the insert cannot cut
+    that way. A plain lead eases into the cut, which survives the direction.
+    Gating by facing would drop every lead on back-to-front, a legitimate mode
+    with a left-hand tool.
+  - **What the investigation found instead**: the warning fired only for
+    `param_dir` 2, narrower than the toolpath's own belief - `_pl_ramp_face`
+    drops all 15 ramps for a right-hand insert roughed back to front and said
+    nothing to the operator. `wrong_way_dirs` now asks "can this insert cut the
+    direction asked for", so Q2 warns on 1 and 2 and stays quiet on 0, and a
+    mirrored insert warns on 0. cfg 1.72.
+
+- [ ] **No demo project carries a genuinely LEFT-HAND tool.** `ramp_facing` says
+  back-to-front with one should behave as front-to-back does with the shipped
+  right-hand insert, and `test_ramp_orient` shows the ramps returning when the
+  tool table's Q is mirrored - but that is a scratch copy with one character
+  changed, not a real tool entry. Worth adding one to the demo table so the
+  mirrored path is exercised by something a user could actually load.
 
 - [x] **`flank_sides` decides the shadowed side from the ROUGHING DIRECTION
   alone** — DONE 2026-09-01, `analysis/071`. `insert_flank_side` now answers it

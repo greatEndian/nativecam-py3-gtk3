@@ -19,11 +19,15 @@ insert in the machine may be neutral even when Q says otherwise.
 
 WHAT IS ASSERTED
 
-1. IT FIRES where it should: a directional insert (ramp_facing != 0) with
-   `param_dir` = 2.
-2. IT STAYS QUIET otherwise - the same tool in either single direction, and a
-   NEUTRAL insert in Both directions. Assertion 2 is what stops this being a
+1. IT FIRES where the insert cannot cut the direction asked for: `param_dir`
+   = 2 with any directional insert, and a single direction that opposes the
+   insert's own - Q2, which cuts toward -Z, roughed BACK TO FRONT.
+2. IT STAYS QUIET otherwise - Q2 in its OWN direction, front to back, and a
+   NEUTRAL insert in every direction. Assertion 2 is what stops this being a
    warning that always fires, which would be worth nothing.
+   The truth table `wrong_way_dirs` produces, and which this pins:
+       orient 2 (cuts -Z)   dir 0 quiet   dir 1 WARNS   dir 2 WARNS
+       orient 9 (neutral)   dir 0 quiet   dir 1 quiet   dir 2 quiet
 3. IT NEVER BLOCKS. Every one of the six combinations still produces a program.
    This is not decoration: msg_inv ends in Gtk.Dialog.run(), and before the
    headless guard added with this test, ANY validation message would hang a
@@ -44,7 +48,8 @@ sys.path.insert(0, HERE)
 
 CFG = os.path.join(HERE, 'configs/sim/axis/ncam_demo')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
-KEY = 'Both directions alternates'
+KEY_BOTH = 'Both directions alternates'
+KEY_ONE = 'This tool cuts the other way'
 FAILED = []
 
 
@@ -62,7 +67,7 @@ def gen(cfgdir, direction, out):
                         '--set', 'polyline:param_dir=%d' % direction],
                        capture_output=True, text=True)
     blob = (r.stdout or '') + (r.stderr or '')
-    return KEY in blob, os.path.isfile(out)
+    return (KEY_BOTH in blob or KEY_ONE in blob), os.path.isfile(out)
 
 
 def main():
@@ -86,8 +91,15 @@ def main():
             return
         open(tbl, 'w').write(swapped)
 
+        # WIDENED 2026-09-03. The warning used to fire only for param_dir 2,
+        # which was narrower than what the toolpath already believed:
+        # _pl_ramp_face drops every ramp for a right-hand insert roughed BACK
+        # TO FRONT, because the tool cannot cut that way - and the operator was
+        # told nothing. The question is not "is the mode alternating" but "can
+        # this insert cut the direction asked for", so Q2 now warns on 1 and 2
+        # and stays quiet on 0, its own direction.
         for cfgdir, label, want in ((CFG, 'directional insert (Q2)',
-                                     {2: True, 0: False, 1: False}),
+                                     {2: True, 0: False, 1: True}),
                                     (neutral, 'neutral insert (Q9)',
                                      {2: False, 0: False, 1: False})):
             for direction in (2, 0, 1):

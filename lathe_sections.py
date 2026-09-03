@@ -2382,6 +2382,37 @@ def set_insert_orient(orient):
     return ''
 
 
+def wrong_way_dirs(orient, rough_dir):
+    """True when the chosen roughing direction opposes the insert's own.
+
+    The warning added in `analysis/070` fired only for `param_dir` = 2, and
+    that is narrower than what the toolpath already believes. `_pl_ramp_face`
+    treats BACK TO FRONT with an ordinary right-hand insert exactly the same
+    way it treats the alternating mode - measured, testing_15_9 with T2 Q2
+    keeps 15 ramps front to back and drops all of them back to front, because
+    the tool cannot cut that way. Yet only the alternating mode said so.
+
+    So the question is not "is the mode alternating" but "can this insert cut
+    the direction asked for":
+
+      facing -1  cuts toward -Z, so FRONT TO BACK is its direction
+      facing +1  cuts toward +Z, so BACK TO FRONT is
+      facing  0  neutral - orientations 6, 8 and 9 - and nothing is refused
+
+    Both directions asks for both, so any directional insert is wrong for half
+    its passes. A single direction is wrong only when it is the opposite one -
+    which also catches a MIRRORED insert used front to back, by the same rule
+    and without a second branch.
+    """
+    face = ramp_facing(orient)
+    if not face:
+        return False
+    d = int(rough_dir or 0)
+    if d == 2:
+        return True
+    return face != (1 if d == 1 else -1)
+
+
 def insert_flank_side(orient, trailing=True):
     """Which side of a peak this insert's flank shadows, or 0 for "no view".
 

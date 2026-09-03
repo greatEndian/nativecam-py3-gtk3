@@ -169,6 +169,36 @@ def main():
                       ', '.join('%s takes %.4f mm' % (k, v)
                                 for k, v in dirty.items()))
 
+            # 1b. AND IN EVERY ROUGHING DIRECTION. This file tested the three
+            # COMPENSATION modes and never set param_dir at all, so the leads
+            # had never been checked back to front or alternating - which is
+            # what openPoints meant by "the leads are not gated per pass
+            # direction". Measured 2026-09-03: they hold up in all three, and
+            # gating them the way the RAMP is gated would have been wrong. The
+            # ramp's purpose is to arrive PARALLEL to a surface, which is void
+            # when the insert cannot cut that way; a plain lead's purpose is to
+            # ease into the cut, and that survives the direction. Gating leads
+            # by the insert facing would drop every lead on back-to-front,
+            # which is a legitimate mode.
+            for dv, dlabel in ((1, 'back to front'), (2, 'both directions')):
+                dout = os.path.join(d, '%s_dir%d.ngc' % (project[:-4], dv))
+                subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
+                                project, '--out', dout, '--config-copy',
+                                '--set', 'polyline:param_dir=%d' % dv],
+                               capture_output=True, text=True)
+                dtp = P.parse_program(dout, INI) if os.path.isfile(dout) else None
+                drep = (lead_report(dtp, P)
+                        if dtp is not None and not dtp.error else None)
+                check('%-7s generates and runs' % dlabel, drep is not None)
+                if drep is None:
+                    continue
+                ddirty = {k: v['cut'] for k, v in drep.items()
+                          if isinstance(v, dict) and v['cut'] > 1e-4}
+                check('%-7s no lead move cuts into the material' % dlabel,
+                      not ddirty,
+                      ', '.join('%s takes %.4f mm' % (k, v)
+                                for k, v in ddirty.items()))
+
             # 2. the length that was asked for. Off is the reference: it is the
             # mode with no compensation to get wrong, and greatEndian's words
             # are "be like when comp off".
