@@ -1355,10 +1355,23 @@ the two cuts only touch.
     step is 0.4897 and none is under `doc/2`. Nothing is removed and no step
     exceeds the doc, but every level in that ladder moves.~~
 
-- [ ] **THE LADDER BEHIND THE BOSS IS TRUNCATED AGAIN** on testing_15_6 with
+- [x] **THE LADDER BEHIND THE BOSS IS TRUNCATED AGAIN** on testing_15_6 with
   `param_sectioning=0`: last pass cuts 2.8021 mm against a 2.3247 step. Same
   class as the 2026-08-12 fix. Hidden until 2026-08-21 by the `#<p1_cut>`
   abort, which truncated the program the test was measuring.
+  **CLOSED 2026-09-03 — no longer reproduces, and this time the pass means
+  something.** Measured on the same case: 16 passes, deepest r25.5880, **last
+  cut 0.6017 mm against the SAME 2.3247 step**. The step matching to four
+  decimals is what says it is the same geometry and the same measurement, with
+  only the last cut changed — 2.8021 to 0.6017, comfortably inside the step, so
+  the ladder tapers out rather than stopping short.
+  **Why it can be believed now**: the program reaches `PROGRAM_END` with 482
+  moves and no error. That is exactly the check this entry said was missing —
+  the fault was hidden once by an abort truncating the program the test
+  measured, and since `8d15e86` an incomplete run is refused rather than
+  measured, so a green tick here can no longer come from a fragment.
+  Which commit fixed it is not determinable: projects are gitignored and always
+  current, so bisecting past their stored version is impossible (`analysis/075`).
 
 - [x] **`test_extension` FAILS, found 2026-09-03** — CLOSED the same day,
   `analysis/075`. It was the TEST, not the toolpath: 0.4000 is exactly
