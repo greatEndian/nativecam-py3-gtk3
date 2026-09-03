@@ -2691,6 +2691,110 @@ def resume_z(resume_env, level, search_from, w_to, mm=1.0):
     return (False, 0.0)
 
 
+def sub_spans(split_table, level, w_from, w_to, z_dirw, dm=2.0, split=True):
+    """[(sg_from, sg_to)] - the sub-spans one level is swept in, back to front.
+
+    A REPLICA of poly_lathe_mill's o<wh_seg> loop, the layer that decides where
+    each interval walk BEGINS. Nothing in the toolpath reads it; `test_sub_spans`
+    asserts the decomposition matches what the O-code walked.
+
+    Walked back to front, a level that a peak certainly blocks must not be swept
+    as one span from the window start: it would lead in through the peak. So the
+    sweep is broken at every split point the level sits below, taking them from
+    the back - `sg_to` of the next sub-span is the `sg_from` of this one - until
+    a sub-span reaches the window's own front, which ends the level.
+
+    A split point counts only when all three hold: the level is at or below the
+    radius that peak blocks, the point is genuinely past the window start, and
+    it is still inside the sub-span currently being filled. The table is read
+    ONCE across the whole level - `sg_i` is not reset per sub-span - so each
+    peak can break the sweep at most once.
+
+    `split` is the caller's sg_use: front to back leaves the table empty and
+    takes a single span, and with Sectioning on only phase 1 reads it, because
+    every other sweep is already ordered by the window table.
+    """
+    out = []
+    sg_to = w_to
+    sg_i = len(split_table) - 1 if split else -1
+    while True:
+        sg_from, hit = w_from, False
+        while sg_i >= 0:
+            z_b, r_b = split_table[sg_i]
+            sg_i -= 1
+            if (level <= r_b / dm - 0.0001
+                    and z_dirw * (z_b - w_from) < -0.0001
+                    and z_dirw * (z_b - sg_to) > 0.0001):
+                sg_from, hit = z_b, True
+                break
+        out.append((sg_from, sg_to))
+        if not hit:
+            # reached the window's own front - there is nothing in front of
+            # the first sub-span to cut
+            break
+        sg_to = sg_from
+    return out
+
+
+def roughing_windows(raw_e_z, raw_l_z, ext_bk_dz=0.0, lim=None,
+                     sections=(), sect_mode=0, sectioning=False, dm=2.0):
+    """[(w_idx, w_from, w_to, r_lo, r_hi)] - the windows roughing sweeps.
+
+    A REPLICA of poly_lathe_mill's o<wh_w> loop. Nothing in the toolpath reads
+    it; `test_roughing_windows` asserts the sequence matches what the O-code
+    walked.
+
+    Three shapes, and the index is part of the answer - lathe_level_pass
+    records each window's deepest cut at #2800 + w_idx and reads its
+    NEIGHBOURS back, so an index is a position along the part and not just a
+    counter:
+
+    - **Sectioning off**: exactly ONE window over the whole profile. The
+      runtime computes `w_len` as the whole span plus 1 precisely so the first
+      window swallows everything - sec_len belongs to Artificial mode and is
+      consumed at generation time, and letting it slice here made the
+      Sectioning switch look like it did nothing.
+    - **Artificial** (`sect_mode` 1): the table windows alone, w_idx from 0.
+      There is no ceiling phase - every window takes the full roughing depth
+      in its own Z span.
+    - **Natural**: a phase-1 window over the whole profile at index -1 first,
+      then the table windows.
+
+    The Z bounds are the profile's own first and last, displaced by the back
+    extension and THEN clamped into the Z limits - that order on purpose, a
+    limit being a hard bound where an extension is a request. `lim` is
+    (lo, hi) or None. Skipping this clamp was a safety bug: roughing read the
+    RAW record array while every contour read the trimmed tables, so a level
+    that did not cross the trimmed profile ran the full bar - measured on
+    testing_15_5 at Z-70.8000 against an End Z of -40.
+
+    A window's radius band arrives as a diameter pair and an impossible one -
+    high at or below low - means a file written before windows carried bands,
+    whose slots 3 and 4 hold the next window's Z pair. Treated as no band, so
+    a stale file still roughs the way it used to.
+    """
+    e_z, l_z = raw_e_z, raw_l_z + ext_bk_dz
+    if lim is not None:
+        lo, hi = lim
+        e_z = min(max(e_z, lo), hi)
+        l_z = min(max(l_z, lo), hi)
+    z_dirw = 1.0 if e_z >= l_z else -1.0
+    if not sectioning or not sections:
+        # the single window still has to have somewhere to go
+        if z_dirw * (e_z - l_z) <= 0.0001:
+            return []
+        return [(-1, e_z, l_z, -999999.0, 999999.0)]
+    out = []
+    if sect_mode != 1:
+        out.append((-1, e_z, l_z, -999999.0, 999999.0))
+    for i, (z_from, z_to, r_lo, r_hi) in enumerate(sections):
+        lo_r, hi_r = r_lo / dm, r_hi / dm
+        if hi_r <= lo_r:
+            lo_r, hi_r = -999999.0, 999999.0
+        out.append((i, z_from, z_to, lo_r, hi_r))
+    return out
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 
