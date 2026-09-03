@@ -64,23 +64,17 @@ PROJECTS = ('testing_15_2.xml', 'testing_15_4.xml', 'testing_15_5.xml',
             'testing_15_6.xml', 'testing_15_9.xml',
             'testing_15_blocked.xml')
 
-# A KNOWN GAP, NOT AN OVERSIGHT - analysis/088. On testing_15_blocked every
-# phase-1 level is blocked at the window start, so poly_lathe_mill takes the
-# o<p1_none> branch and REASSIGNS sect_top_r from the generation-time 31.0160
-# to 34.5720. Both predictions here are fed the generation-time ceiling, so
-# the ladder misses the levels the runtime really walks (35.072, 35.572) and
-# invents six it never visits. Skipped with this notice rather than deleted:
-# the project stays in the repo as the ready-made reproducer, and every run
-# says out loud that it is not being checked.
-SKIP = {'testing_15_blocked.xml': 'the phase-1 handover moves sect_top_r '
-        '31.0160 -> 34.5720 and these predictions read the generation-time '
-        'ceiling - analysis/088'}
 TOL = 0.002
 
 GATE = 'o<lvl_ok> if [[#<lvl_in_band> GT 0] AND [#<lvl_thin> EQ 0]'
 REC = ('                        (debug, LVLREC w=#<w_idx> r=#<current_radius>'
        ' band=#<lvl_in_band> thin=#<lvl_thin> stock=#<stock_r>'
        ' ds=#<dirsign>)\n')
+# phase 1's window and the stock radius, resolved from the record array at
+# runtime and so not readable out of the generated source at all
+WZ_ANCHOR = '        #<w_len> = [ABS[#<e_z> - #<l_z>] + 1]\n'
+WZ_REC = '        (debug, WZREC ez=#<e_z> lz=#<l_z> st=#<stock_r>)\n'
+RE_WZ = re.compile(r'WZREC ez=(-?[\d.]+) lz=(-?[\d.]+) st=(-?[\d.]+)')
 RE_REC = re.compile(r'LVLREC w=(-?[\d.]+) r=(-?[\d.]+) band=(-?[\d.]+) '
                     r'thin=(-?[\d.]+) stock=(-?[\d.]+) ds=(-?[\d.]+)')
 
@@ -110,7 +104,12 @@ def build_config(instrument):
             raise RuntimeError('the o<lvl_ok> gate matched %d lines - the '
                                'instrument needs re-aiming' % len(hit))
         lines.insert(hit[0], REC)
-        open(src, 'w').writelines(lines)
+        text = ''.join(lines)
+        if text.count(WZ_ANCHOR) != 1:
+            raise RuntimeError('the window-length anchor matched %d times'
+                               % text.count(WZ_ANCHOR))
+        text = text.replace(WZ_ANCHOR, WZ_REC + WZ_ANCHOR)
+        open(src, 'w').write(text)
     os.remove(os.path.join(cfg, 'ncam/lib'))
     os.symlink(lib, os.path.join(cfg, 'ncam/lib'))
     return os.path.join(cfg, 'lathe-mm.ini')
@@ -138,7 +137,7 @@ def num(src, pat, default=None):
     return float(m[-1]) if m else default
 
 
-def predict(src):
+def predict(src, wz):
     """roughing_ladder called on the numbers the generated program carries."""
     dm = num(src, r'#<_diameter_mode>\s*=\s*([\d.]+)', 2.0)
     sr = num(src, r'#<_pl_rgh_hi_r>\s*=\s*([-\d.]+)')
@@ -152,17 +151,52 @@ def predict(src):
     floors = [vals[3380 + i] for i in range(fn) if 3380 + i in vals]
     cnt = int(num(src, r'#<_pl_sect_count>\s*=\s*([\d.]+)', 0.0) or 0)
     topd = num(src, r'#<_pl_sect_top_dia>\s*=\s*([-\d.]+)')
-    return ls.roughing_ladder(
-        sr, fr,
-        num(src, r'#3144\s*=\s*([-\d.]+)', 0.0),
-        num(src, r'#3156\s*=\s*\[?([-\d.]+)', 0.0),
-        doc,
-        (num(src, r'#<_pl_pass_from>\s*=\s*([-\d.]+)', 0.0) or 0) > 0,
-        floors,
-        (num(src, r'#<_pl_sectioning>\s*=\s*([-\d.]+)', 0.0) or 0) > 0 and cnt > 0,
-        (topd / dm) if topd is not None else None,
-        int(num(src, r'#<_pl_sect_mode>\s*=\s*([\d.]+)', 0.0) or 0),
-        max(cnt, 1))
+    args = (sr, fr,
+            num(src, r'#3144\s*=\s*([-\d.]+)', 0.0),
+            num(src, r'#3156\s*=\s*\[?([-\d.]+)', 0.0),
+            doc,
+            (num(src, r'#<_pl_pass_from>\s*=\s*([-\d.]+)', 0.0) or 0) > 0,
+            floors,
+            (num(src, r'#<_pl_sectioning>\s*=\s*([-\d.]+)', 0.0) or 0) > 0
+            and cnt > 0,
+            (topd / dm) if topd is not None else None,
+            int(num(src, r'#<_pl_sect_mode>\s*=\s*([\d.]+)', 0.0) or 0),
+            max(cnt, 1))
+    lad = ls.roughing_ladder(*args)
+    # THE PHASE-1 HANDOVER, predicted rather than assumed absent. Where phase 1
+    # is blocked from its own window start with nothing cut, poly_lathe_mill
+    # abandons it and hands that radius to phase 2 - see phase1_stop and
+    # analysis/088. Nothing changes on a part where phase 1 gets going.
+    p1 = [r for w, radii in lad if w < 0 for r in radii]
+    flc = pair_table(src, '_pl_flc_base', '_pl_flc_n')
+    if p1 and flc:
+        stop = ls.phase1_stop(
+            p1, flc, wz[2], doc, wz[0], wz[1],
+            skip_thin=num(src, r'#<_pl_skip_thin>\s*=\s*([-\d.]+)', 0.0) or 0.0,
+            multi_cross=(num(src, r'#<_pl_multi_cross>\s*=\s*([-\d.]+)', 0.0)
+                         or 0) > 0,
+            mm=num(src, r'#<_mm>\s*=\s*([-\d.]+)', 1.0))
+        if stop is not None:
+            lad = ls.roughing_ladder(*args, top_override=stop)
+    return lad
+
+
+def pair_table(src, base_name, n_name):
+    """A Python-emitted (a, b) table. The defaults block assigns the base as a
+    placeholder 0, so only the non-placeholder assignments are counted."""
+    real = [int(v) for v
+            in re.findall(r'#<%s>\s*=\s*(\d+)' % base_name, src) if int(v) > 0]
+    n = num(src, r'#<%s>\s*=\s*(\d+)' % n_name)
+    if len(real) != 1 or not n:
+        return None
+    vals = {int(m.group(1)): float(m.group(2))
+            for m in re.finditer(r'^#(\d+) = ([-\d.]+)$', src, re.M)}
+    out = []
+    for i in range(int(n)):
+        if real[0] + 2 * i + 1 not in vals:
+            return None
+        out.append((vals[real[0] + 2 * i], vals[real[0] + 2 * i + 1]))
+    return out
 
 
 def near(x, pool):
@@ -184,7 +218,10 @@ def account(ngc, ini):
     if tp.error:
         return None
     src = open(ngc).read()
-    lad = predict(src)
+    wz = RE_WZ.search(_canon[(ngc, ini)][0])
+    if wz is None:
+        return None
+    lad = predict(src, tuple(float(x) for x in wz.groups()))
     if lad is None:
         return None
     pred = set()
@@ -242,9 +279,6 @@ def main():
     ran = 0
     tally = dict(pred=0, cut=0, thin=0, band=0, stock=0, blocked=0, unvis=0)
     for project in PROJECTS:
-        if project in SKIP:
-            print('SKIP  %s - %s' % (project, SKIP[project]))
-            continue
         for sect in (0, 1):
             for direction in (0, 1, 2):
                 tag = '%s sect=%d dir=%d' % (project[:-4], sect, direction)

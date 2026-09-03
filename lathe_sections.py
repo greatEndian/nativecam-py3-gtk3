@@ -2390,7 +2390,8 @@ def _fup(v):
 
 def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
                     pass_from=False, floors=(), sectioning=False,
-                    sect_top_r=None, sect_mode=0, windows=1):
+                    sect_top_r=None, sect_mode=0, windows=1,
+                    top_override=None):
     """The roughing level radii, per window, worked out at generation time.
 
     A REPLICA of what poly_lathe_mill computes at runtime, written to be
@@ -2497,6 +2498,16 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     if not sectioning:
         return [(-1, walk(start_r, step_target, cut_step, first_step, True))]
 
+    # WHERE PHASE 2 STARTS AND WHAT ITS STEP IS COME FROM DIFFERENT CEILINGS,
+    # and that is the O-code's own behaviour rather than an accident: p1_step
+    # and p2_step are worked out ONCE above the window loop from the ceiling
+    # Python emitted, while lvl_start reads sect_top_r at the moment the window
+    # runs - which the phase-1 handover may have moved. On testing_15_blocked
+    # the steps stay +/-0.500, from (36.016 - 31.016)/10 against the ORIGINAL
+    # 31.016, while every phase-2 window starts at the MOVED 34.572. Feeding
+    # the moved value into both gives 0.4813 and a ladder that matches nothing.
+    p2_start = top if top_override is None else top_override
+
     out = []
     # ARTIFICIAL SECTIONING HAS NO PHASE 1. poly_lathe_mill starts w_idx at 0
     # rather than -1 there - every window takes the full roughing depth in its
@@ -2506,9 +2517,18 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     # them: no cut lands on an invented level, so "every cut level is on the
     # ladder" stayed true. The accounting gate caught them as a HOLE.
     if sect_mode != 1 and abs(top - start_r) > EPS:
-        out.append((-1, walk(start_r, top, p1_step, p1_first)))
+        p1 = walk(start_r, top, p1_step, p1_first)
+        if top_override is not None:
+            # phase 1 stopped early: it never walked past the handover radius
+            keep = []
+            for r in p1:
+                keep.append(r)
+                if abs(r - top_override) <= 0.002:
+                    break
+            p1 = keep
+        out.append((-1, p1))
     for w in range(windows):
-        lvl_start = start_r if sect_mode == 1 else top
+        lvl_start = start_r if sect_mode == 1 else p2_start
         out.append((w, walk(lvl_start, step_target, p2_step, p2_first, True)))
     return out
 
@@ -2793,6 +2813,51 @@ def roughing_windows(raw_e_z, raw_l_z, ext_bk_dz=0.0, lim=None,
             lo_r, hi_r = -999999.0, 999999.0
         out.append((i, z_from, z_to, lo_r, hi_r))
     return out
+
+
+def phase1_stop(levels, floor_contour, stock_r, doc, e_z, l_z,
+                skip_thin=0.0, multi_cross=True, mm=1.0):
+    """The radius phase 1 really stops at, or None if it reaches its ceiling.
+
+    A REPLICA of poly_lathe_mill's o<p1_none> branch (line 1035): on the first
+    phase-1 level whose pass comes back BLOCKED with nothing yet cut on it and
+    the sub-span starting at the window's own start, the runtime does
+
+        sect_top_r = current_radius
+        _pl_ph1_front_cut = 0
+        break
+
+    - it abandons phase 1 there and hands that exact radius to phase 2.
+
+    THIS IS THE ONE PLACE A RUNTIME OUTCOME FEEDS BACK INTO THE GEOMETRY, and
+    for a long time it looked inert: all three of its sites measured 0 fires
+    over 30 configurations (analysis/086). They were not inert, the sample was
+    too narrow - `testing_15_blocked` leaves the front section at full stock
+    diameter, which gives phase 1 real depth while blocking every one of its
+    levels at the window start, and moves the ceiling 31.0160 -> 34.5720
+    (analysis/088).
+
+    A level only gets a pass if it enters o<lvl_ok>: at or past the stock it is
+    skipped, and a level too thin to be worth cutting is skipped as well -
+    `_pl_prev_thin` stays at the stock radius through phase 1 precisely because
+    nothing has cut yet, which is what makes the thin test predictable here.
+    """
+    if not levels:
+        return None
+    prev_thin = stock_r
+    dirsign = 1.0 if levels[0] >= levels[-1] else -1.0
+    for i, r in enumerate(levels):
+        if dirsign * (r - stock_r) >= 0:
+            continue                      # at or past the stock: nothing there
+        if skip_thin > 0.000001:
+            nxt = levels[i + 1] if i + 1 < len(levels) else r
+            if (abs(r - prev_thin) < skip_thin
+                    and abs(nxt - prev_thin) <= doc + 0.000001):
+                continue                  # too thin to be worth a pass
+        if level_blocked(floor_contour, r, e_z, l_z, multi_cross, mm):
+            return r
+        prev_thin = r
+    return None
 
 
 def wrong_way_dirs(orient, rough_dir):

@@ -59,19 +59,15 @@ PROJECTS = ('testing_15_2.xml', 'testing_15_4.xml', 'testing_15_5.xml',
             'testing_15_6.xml', 'testing_15_9.xml',
             'testing_15_blocked.xml')
 
-# A KNOWN GAP, NOT AN OVERSIGHT - analysis/088. On testing_15_blocked every
-# phase-1 level is blocked at the window start, so poly_lathe_mill takes the
-# o<p1_none> branch and REASSIGNS sect_top_r from the generation-time 31.0160
-# to 34.5720. Both predictions here are fed the generation-time ceiling, so
-# the ladder misses the levels the runtime really walks (35.072, 35.572) and
-# invents six it never visits. Skipped with this notice rather than deleted:
-# the project stays in the repo as the ready-made reproducer, and every run
-# says out loud that it is not being checked.
-SKIP = {'testing_15_blocked.xml': 'the phase-1 handover moves sect_top_r '
-        '31.0160 -> 34.5720 and these predictions read the generation-time '
-        'ceiling - analysis/088'}
 
 SUB = 'lathe/lathe_level_pass.ngc'
+# WHICH PHASE A CALL BELONGS TO cannot be seen from lathe_level_pass: phase 1
+# ends by a branch in its CALLER. poly_lathe_mill emits one header per
+# sub-span so each run of calls carries its window index.
+MILL = 'lathe/poly_lathe_mill.ngc'
+MILL_ANCHOR = '                                o<wh_seg> while [1]\n'
+MILL_REC = ('                                (debug, SEGREC w=#<w_idx> '
+            'r=#<current_radius>)\n')
 ANCHORS = (
     ('\t\to<mc_decide> if [#<mc_wf_state> GT 0]\n',
      '\t\t\t(debug, BLKREC lvl=#<level> wf=#<w_from> wt=#<w_to> blk=1)\n'),
@@ -84,7 +80,8 @@ ANCHORS = (
 )
 RE_ANY = re.compile(
     r'(?:BLKREC lvl=(-?[\d.]+) wf=(-?[\d.]+) wt=(-?[\d.]+) blk=(\d))'
-    r'|(?:ZEREC ze=(-?[\d.]+) raw=(-?[\d.]+) zc=(-?[\d.]+))')
+    r'|(?:ZEREC ze=(-?[\d.]+) raw=(-?[\d.]+) zc=(-?[\d.]+))'
+    r'|(?:SEGREC w=(-?[\d.]+) r=(-?[\d.]+))')
 
 FAILED = []
 
@@ -105,6 +102,12 @@ def build_config(instrument):
     if instrument:
         src = os.path.join(lib, SUB)
         text = open(src).read()
+        mp = os.path.join(lib, MILL)
+        mt = open(mp).read()
+        if mt.count(MILL_ANCHOR) != 1:
+            raise RuntimeError('the sub-span anchor matched %d times'
+                               % mt.count(MILL_ANCHOR))
+        open(mp, 'w').write(mt.replace(MILL_ANCHOR, MILL_REC + MILL_ANCHOR))
         for anchor, rec in ANCHORS:
             if text.count(anchor) != 1:
                 raise RuntimeError('anchor matched %d times, the instrument '
@@ -165,8 +168,10 @@ def records(canon):
         if g[0] is not None:
             out.append(('blk', float(g[0]), float(g[1]), float(g[2]),
                         int(g[3])))
-        else:
+        elif g[4] is not None:
             out.append(('ze', float(g[4]), float(g[5]), float(g[6])))
+        else:
+            out.append(('seg', int(float(g[7]))))
     return out
 
 
@@ -176,7 +181,11 @@ def passes(recs):
     z_end is None on a blocked call - the subroutine returns before exporting
     it, and poly_lathe_mill correctly searches from w_from in that case."""
     out = []
+    phase = 0
     for i, r in enumerate(recs):
+        if r[0] == 'seg':
+            phase = r[1]
+            continue
         if r[0] != 'blk':
             continue
         ze = raw = zc = None
@@ -187,7 +196,7 @@ def passes(recs):
                     break
                 if nxt[0] == 'blk':
                     break
-        out.append((r[1], r[2], r[3], bool(r[4]), ze, raw, zc))
+        out.append((r[1], r[2], r[3], bool(r[4]), ze, raw, zc, phase))
     return out
 
 
@@ -234,9 +243,6 @@ def main():
     ran = walks = multi = steps = raw_ok = raw_n = 0
     ctrl = 0
     for project in PROJECTS:
-        if project in SKIP:
-            print('SKIP  %s - %s' % (project, SKIP[project]))
-            continue
         for sect in (0, 1):
             for direction in (0, 1, 2):
                 tag = '%s sect=%d dir=%d' % (project[:-4], sect, direction)
@@ -252,6 +258,8 @@ def main():
                 mc = (num(src, r'#<_pl_multi_cross>\s*=\s*([-\d.]+)', 0.0)
                       or 0) > 0
                 oz = num(src, r'#<_pl_rgh_oz>\s*=\s*([-\d.]+)', 0.0) or 0.0
+                sect_on = (num(src, r'#<_pl_sectioning>\s*=\s*([-\d.]+)',
+                               0.0) or 0) > 0
                 mm = num(src, r'#<_mm>\s*=\s*([-\d.]+)', 1.0)
                 ps = passes(records(_canon[(ngc, ini)][0]))
                 if not ps or env is None or flc is None:
@@ -262,7 +270,8 @@ def main():
                     walks += 1
                     if len(g) > 1:
                         multi += 1
-                    for i, (lvl, wf, wt, blk, ze, raw, zc) in enumerate(g):
+                    cut_yet = False
+                    for i, (lvl, wf, wt, blk, ze, raw, zc, ph) in enumerate(g):
                         steps += 1
                         # where the NEXT search starts: the interval's own
                         # start when this pass was refused, the cut end when
@@ -277,6 +286,19 @@ def main():
                             wrong.append(('z_end %.4f vs %.4f' % (pze, ze),
                                           lvl, wf))
                             break
+                        # PHASE 1 ABANDONS THE WHOLE LEVEL HERE. Blocked
+                        # from the sub-span's own start with nothing cut on
+                        # this level yet, poly_lathe_mill's o<p1_none> hands
+                        # the radius to phase 2 and breaks out - there is no
+                        # resume attempt at all. Only phase 1 does this; a
+                        # phase-2 window blocked the same way goes looking.
+                        if sect_on and ph < 0 and blk and not cut_yet and i == 0:
+                            if i + 1 < len(g):
+                                wrong.append(('phase 1 should have stopped',
+                                              lvl, wf))
+                            break
+                        if not blk:
+                            cut_yet = True
                         sf = wf if blk else pze
                         found, z = ls.resume_z(env, lvl, sf, wt, mm)
                         nxt = g[i + 1] if i + 1 < len(g) else None
@@ -306,8 +328,8 @@ def main():
                             plain = zc if zd * (zc - raw) > 0 else raw
                             raw_ok += abs(ze - plain) < 0.0005
                 check('%s: the interval walk goes where Python says' % tag,
-                      not wrong, '%d wrong, first %s' % (len(wrong),
-                                                         wrong[:1]))
+                      not wrong, '%d wrong, first 3 %s' % (len(wrong),
+                                                           wrong[:3]))
 
     check('the sweep actually ran', ran >= 25, '%d configurations' % ran)
     check('multi-interval levels are exercised', multi > 0,

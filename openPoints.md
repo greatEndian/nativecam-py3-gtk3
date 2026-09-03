@@ -2701,7 +2701,7 @@ validation ones.
     stock-diameter points, so the ceiling comes from the step while the window
     start is solid stock.
 
-- [ ] **THE TWO PREDICTIONS THAT READ `sect_top_r` ARE WRONG ON THAT PART** -
+- [x] ~~**THE TWO PREDICTIONS THAT READ `sect_top_r` ARE WRONG ON THAT PART** -
   `analysis/088`, and they are SKIPPED WITH A PRINTED NOTICE rather than
   deleted, so every run says so:
   - `test_ladder_account` - the O-code walks 35.072 and 35.572, both ABOVE the
@@ -2719,7 +2719,30 @@ validation ones.
     whether phase 1 can cut anywhere, and agrees with the O-code on all 3496
     calls INCLUDING this part. Feeding that back so `roughing_ladder` uses the
     ceiling the runtime will arrive at is the fix - real work, not a parameter
-    change, and the last thing between here and a table-walking `.ngc`.
+    change, and the last thing between here and a table-walking `.ngc`.~~
+  - **CLOSED 2026-09-03, `analysis/089`.** `phase1_stop()` predicts where the
+    handover fires and `roughing_ladder` takes a `top_override`; the interval
+    walk learns which phase it is in. Both gates now RUN the part - the SKIP is
+    gone - at **36 configurations, pred=888 cut=792 unvis=0, no phantom**, and
+    2731 interval walks over 3496 calls.
+  - Three things only measurement gave: the O-code uses the ORIGINAL ceiling
+    for the step and the MOVED one for the window start (feeding the moved
+    value into both gives 0.4813 and matches nothing); a floor stage can sit
+    ABOVE the stock, so phase 2 walks upward to it; and phase 1's window starts
+    at the first ITEM's endpoint, Z-20, not the polyline origin.
+
+- [ ] **THE STACK IS PREDICTED - NOTHING IS WIRED.** `window (085) -> sub-span
+  (084) -> interval (083, 089) -> level set (080..082, 089)`, all at generation
+  time, on 36 configurations including the part built to break it. The `.ngc`
+  still decides everything at runtime and the motion is untouched. What changed
+  is that there is no longer a KNOWN REASON it could not read tables instead -
+  the open question since `analysis/080`. Wiring it is a separate decision with
+  its own evidence.
+
+- [ ] **Still unexercised, and each needs a part to settle it**: `sect_top_r`
+  sites 2 and 3 (resume-disagreement and split-table handovers) remain at 0
+  fires; `band=0` across the whole sweep - no project has split windows; and
+  the stop-contour reach clamp still moves `z_end` on 0 of 1902 cutting calls.
 
   `skip_thin` still comes after the blocked decision, not before -
   `_pl_prev_thin` advances only where a level actually cuts.
