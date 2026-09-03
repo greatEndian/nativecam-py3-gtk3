@@ -2256,6 +2256,41 @@ the two cuts only touch.
 
 ## Tool shape
 
+- [ ] **AN EXPANDED TOOL TABLE IS THE PREREQUISITE, and it now blocks real
+  geometry.** greatEndian, 2026-09-03: *"we need to insert expanded tool table
+  or tool table wizard tab where we will add more dimensions to be able to see
+  to real tool setup"*. LinuxCNC's table carries D, I, J, Q and the offsets and
+  nothing else, so everything about the tool's BODY is either a NativeCAM
+  parameter on the Tool Change or parsed out of the description comment.
+  - What it must carry, from `ref/tool-shank/NOTES.md`: the shank height `h`
+    (built already, `param_shank_h`), the insert dimension `h` is derived from,
+    the shank width `b` for turn-mill clearance, and **the radial datum -
+    where the shank sits relative to the nose**. That last one is the single
+    number blocking the geometry below; the rest is already derivable.
+  - greatEndian ruled `h = 0` does not occur: *"h every time depends at tool
+    tip insert dimension which we have to grab from expanded tool table"*.
+
+- [ ] **The shank bounds the PICTURE but not the reachable contour.** Verified
+  2026-08-08 and re-confirmed today: a 25 mm shank and a 0 shank produce a
+  byte-identical program. So the tool the preview draws and the tool
+  `flank_envelope` believes in are different tools — the picture shows a holder
+  that stops, the geometry dilates by an unbounded wedge.
+  - **Not the same question as `FLANK_BOUNDS_CONTOUR`**, which bounded the
+    shadow by the INSERT length and was withdrawn deliberately in `310a06b`,
+    re-confirmed 2026-09-03. The shank is a larger, differently-shaped
+    obstruction: near the nose the insert binds, far behind it a constant-height
+    block binds instead of an ever-growing wedge. That is why a proper tool
+    model may honestly recover some of the 10.0899 mm behind the boss that the
+    infinite wedge refuses.
+  - **greatEndian ruled the holder may move through metal that is already
+    gone** — *"if material was cutted out, then it does not present there
+    anymore and shank of tool can move around without any questions"*. So it is
+    judged against the CUT STATE, not raw stock; the conservative reading is
+    rejected.
+  - Blocked on the radial datum above. Acceptance for boring bars and grooving
+    holders is *"left to real world testing"*.
+
+
 > The tool as it stands is written up in full in **`TOOL-DEFINITION.md`** —
 > every line, where each number comes from, and what the collision check counts
 > as tool. Read that before changing any of it.
@@ -2429,12 +2464,19 @@ is not, and it is the one to look at.
   0.3562 mm of radius. Every migrated project's roughing moved. Whether 2° is
   the right standoff is a judgement in AXIS, not a number measurable here —
   **this is the one worth your eyes.**
-- [ ] The **unbounded flank leaves up to 10.0899 mm of radius uncut** behind the
+- [x] The **unbounded flank leaves up to 10.0899 mm of radius uncut** behind the
   boss on testing_15_2, Z−70.22 to Z−35.77, from `unreachable_spans` with the
   live arguments. *(The 9.73 mm over Z−70.22..−36.31 recorded here before was
   the clearance-0 figure, from before the 2° default.)* testing_15_4 is the
-  same to four decimals. Still a consequence of the tool and the setup, not a
-  defect: reaching it needs a second tool or a second setup.
+  same to four decimals.
+  **CLOSED 2026-09-03 as physical, by greatEndian's ruling** — *"tool has some
+  dimensions and some of the material behind the boss segment is not
+  reachable"*. It is a limitation of the tool and the setup, not a defect, and
+  `FLANK_BOUNDS_CONTOUR` stays False: bounding the shadow by the INSERT length
+  was withdrawn deliberately in `310a06b` and is not being reinstated.
+  What this does NOT settle is whether the shadow should be bounded by the
+  HOLDER rather than by nothing — see the tool-model entry below, which is the
+  live question.
 - [x] **Skip short passes off by default — verified a true no-op**, 2026-08-08.
   Identical program at the default; 0.3 changes 307 moves.
 - [x] **Flank length is picture-only — verified**, 2026-08-08. 16 mm and 25 mm
