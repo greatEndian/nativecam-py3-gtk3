@@ -2833,6 +2833,11 @@ class Preferences(object):
             self.default += ("#<_pl_lad_cstep>           = 0.0\n")
             self.default += ("#<_pl_lad_fstep>           = 0.0\n")
             self.default += ("#<_pl_lad_np>              = 1\n")
+            self.default += ("#<_pl_lad_top>             = 0.0\n")
+            self.default += ("#<_pl_lad_p1s>             = 0.0\n")
+            self.default += ("#<_pl_lad_p1f>             = 0.0\n")
+            self.default += ("#<_pl_lad_p2s>             = 0.0\n")
+            self.default += ("#<_pl_lad_p2f>             = 0.0\n")
             self.default += ("#<_pl_eramp_n>             = 0\n")
             # Which Z direction the loaded insert can cut in: +1, -1, or 0 for
             # a facing or on-the-point tool with no axial preference. The

@@ -2471,6 +2471,46 @@ def ladder_consts(start_r, final_r, fin_off, prefin_off, doc,
             'rough_passes': passes}
 
 
+def ladder_phases(start_r, lad_tgt, step_target, cut_step, first_step, doc,
+                  dirsign, sect_on, sect_count, sect_top_r=None):
+    """(top, p1_step, p1_first, p2_step, p2_first) - the ceiling and the two
+    phase step sizes poly_lathe_mill works out above its window loop.
+
+    THE TWO GATES ARE NOT THE SAME GATE, and mirroring that is the whole point
+    of taking `sect_on` and `sect_count` separately. The ceiling is resolved
+    only when Sectioning is on AND a window table exists; the phase steps are
+    computed whenever Sectioning is on at all. A profile with Sectioning on
+    that `build_sections_gcode` declined to describe therefore falls to
+    `sect_top_r = step_target` and STILL takes phase-1 steps off that span - a
+    single conflated flag would quietly give it cut_step instead.
+
+    The ceiling is clamped twice, into the band the ladder actually spans: never
+    past the floor it is aiming at, never above the stock it starts from.
+    """
+    top = step_target
+    if sect_on and sect_count > 0 and sect_top_r is not None:
+        top = sect_top_r
+        if dirsign * (top - step_target) < 0:
+            top = step_target
+        if dirsign * (top - start_r) > 0:
+            top = start_r
+
+    p1_step, p1_first = cut_step, first_step
+    p2_step, p2_first = cut_step, first_step
+    if sect_on:
+        if abs(top - start_r) > EPS:
+            p1_n = max(_fup(abs(top - start_r) / doc), 1)
+            p1_sgn = -1 if top < start_r else 1
+            p1_step = p1_sgn * doc
+            p1_first = (top - start_r) - p1_step * (p1_n - 1)
+        if abs(lad_tgt - top) > EPS:
+            p2_n = max(_fup(abs(lad_tgt - top) / doc), 1)
+            # SPREAD, not whole steps - see poly_lathe_mill
+            p2_step = (lad_tgt - top) / p2_n
+            p2_first = p2_step
+    return top, p1_step, p1_first, p2_step, p2_first
+
+
 def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
     """The ladder head as globals, or '' to leave poly_lathe_mill computing.
 
@@ -2492,6 +2532,15 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
                       _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
                       rough_cut, _p('param_pass_from') > 0,
                       floor_stages(polyline_feature, rough_cut))
+    # the ceiling and the phase steps, with the O-code's own two gates kept
+    # apart - see ladder_phases
+    got = section_windows(polyline_feature)
+    sect_on = _p('param_sectioning') > 0
+    n_win = len(got[0]) if got is not None else 0
+    top_r = (got[2] / DIAMETER_MODE) if got is not None else None
+    top, p1s, p1f, p2s, p2f = ladder_phases(
+        start_r, c['lad_tgt'], c['step_target'], c['cut_step'],
+        c['first_step'], rough_cut, c['dirsign'], sect_on, n_win, top_r)
     return '\n'.join([
         '(the ladder head, worked out at generation time: the direction, the)',
         '(two targets, the depth of cut and the first step. poly_lathe_mill)',
@@ -2505,6 +2554,11 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
         '#<_pl_lad_cstep> = %s' % _fmt(c['cut_step']),
         '#<_pl_lad_fstep> = %s' % _fmt(c['first_step']),
         '#<_pl_lad_np>    = %d' % c['rough_passes'],
+        '#<_pl_lad_top>   = %s' % _fmt(top),
+        '#<_pl_lad_p1s>   = %s' % _fmt(p1s),
+        '#<_pl_lad_p1f>   = %s' % _fmt(p1f),
+        '#<_pl_lad_p2s>   = %s' % _fmt(p2s),
+        '#<_pl_lad_p2f>   = %s' % _fmt(p2f),
     ]) + '\n'
 
 
@@ -2541,28 +2595,9 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     cut_step = c['cut_step']
     first_step = c['first_step']
 
-    top = step_target
-    if sectioning and sect_top_r is not None:
-        top = sect_top_r
-        # the ceiling is clamped into the band the ladder actually spans
-        if dirsign * (top - step_target) < 0:
-            top = step_target
-        if dirsign * (top - start_r) > 0:
-            top = start_r
-
-    p1_step, p1_first = cut_step, first_step
-    p2_step, p2_first = cut_step, first_step
-    if sectioning:
-        if abs(top - start_r) > EPS:
-            p1_n = _fup(abs(top - start_r) / doc)
-            p1_sgn = -1 if top < start_r else 1
-            p1_step = p1_sgn * doc
-            p1_first = (top - start_r) - p1_step * (p1_n - 1)
-        if abs(lad_tgt - top) > EPS:
-            p2_n = _fup(abs(lad_tgt - top) / doc)
-            # SPREAD, not whole steps - see poly_lathe_mill
-            p2_step = (lad_tgt - top) / p2_n
-            p2_first = p2_step
+    top, p1_step, p1_first, p2_step, p2_first = ladder_phases(
+        start_r, lad_tgt, step_target, cut_step, first_step, doc, dirsign,
+        sectioning, 1 if sectioning else 0, sect_top_r)
 
     def walk(lvl_start, lvl_floor, step, first, staged=False):
         # THE LADDER RE-ANCHORS ON EACH FLOOR STAGE. Reaching one is not the

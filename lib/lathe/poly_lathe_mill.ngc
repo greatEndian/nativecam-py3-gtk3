@@ -613,6 +613,18 @@ o<poly_lathe_mill> sub
                 #<p2_first> = #<p2_step>
             o<lad_p2> endif
         o<lad2> endif
+        (THE CEILING AND THE TWO PHASE STEPS, worked out at generation)
+        (time. sect_top_r is only INITIALISED here - the phase-1 handover)
+        (below still moves it at runtime, and the level table stands down)
+        (when it does. Same fallback rule as the head above: _pl_lad_ok is)
+        (0 on an older project and the computation above is what runs.)
+        o<lad_rd2> if [#<_pl_lad_ok> GT 0]
+                #<sect_top_r> = #<_pl_lad_top>
+                #<p1_step>    = #<_pl_lad_p1s>
+                #<p1_first>   = #<_pl_lad_p1f>
+                #<p2_step>    = #<_pl_lad_p2s>
+                #<p2_first>   = #<_pl_lad_p2f>
+        o<lad_rd2> endif
 
         #<w_from> = #<e_z>
         (Artificial - _pl_sect_mode 1 - has no violet/ceiling phase at all -)
