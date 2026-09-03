@@ -2731,7 +2731,13 @@ validation ones.
     ABOVE the stock, so phase 2 walks upward to it; and phase 1's window starts
     at the first ITEM's endpoint, Z-20, not the polyline origin.
 
-- [ ] **THE STACK IS PREDICTED - NOTHING IS WIRED.** `window (085) -> sub-span
+- [~] **THE STACK IS PREDICTED, AND THE LADDER IS NOW WIRED** — `8006d64`,
+  `analysis/091`: `poly_lathe_mill` READS its level radii from the `#1000`
+  table, gated on motion identical with the table on and off across 36
+  configurations. The rest of the stack is still prediction only.
+  Superseded text follows.
+
+- [ ] **~~THE STACK IS PREDICTED - NOTHING IS WIRED.~~** `window (085) -> sub-span
   (084) -> interval (083, 089) -> level set (080..082, 089)`, all at generation
   time, on 36 configurations including the part built to break it. The `.ngc`
   still decides everything at runtime and the motion is untouched. What changed
