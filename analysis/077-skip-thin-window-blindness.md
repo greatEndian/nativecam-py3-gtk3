@@ -51,7 +51,37 @@ rule then declines to act on it.
 Motion is byte-identical on testing_15_9, _15_2 and _15_5 in all three
 directions, so the separation ships as a no-op.
 
-## THE DECISION THIS LEAVES, and it is not mine
+## THE 0.0387 IS A FLOOR, AND THE QUESTION BELOW WAS WRONG
+
+Checked afterwards, and it overturns what this file first concluded.
+
+The thin step is not near the ceiling at all - it is at **index 27 of 29**,
+near the bottom - and it lands EXACTLY on a floor stage:
+
+```
+floor stages:  21.0160   20.0160
+last radii:  ... 21.5528   21.0547   21.0160   20.5160
+                             |- 0.0387 -|
+```
+
+That 0.0387 pass IS the region's roughing floor, the surface roughing has to
+leave for the pre-finish pass. `fl_prot` already protects it - "each of those
+is a real region's floor and must never be skipped either" - and the guard
+works: with the gap rule from `analysis/076` fully neutralised, the 21.0160
+level is still there. So it is not the safety rule keeping it, and skipping it
+would not be a trade against chatter. **It would leave a region's floor uncut.**
+
+So the ladder is not leaving a stray remainder. It is landing on a floor it is
+required to land on, and the short step before it is the cost of doing that -
+`floor_ladder` re-anchoring per region, which greatEndian asked for: *"floor
+has to follow the profile per region"*.
+
+Nothing to fix, and nothing to decide. The section below is kept because it is
+what I believed before measuring, and because the reasoning in it - that a
+tolerance would separate a 7.6% overshoot from a 98% one - may still be wanted
+if a genuine thin non-floor pass ever appears.
+
+## THE DECISION I THOUGHT THIS LEFT - withdrawn, see above
 
 Skipping the ceiling pass overshoots the depth of cut by **0.0387 mm — 7.6%**.
 Refusing it keeps a pass that removes 0.0387 mm, which is the scraping,

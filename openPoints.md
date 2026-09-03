@@ -1327,17 +1327,16 @@ the two cuts only touch.
     level 0.0387 below the ceiling leaves the next cutting 0.5467 against a
     0.5080 doc.
 
-- [ ] **NEEDS A CALL — should a thin skip be allowed to overshoot the depth of
-  cut slightly?** Skipping the 0.0387 ceiling pass overshoots by 7.6%; refusing
-  it keeps a scraping pass that removes 0.0387 mm, which is what `skip_thin`
-  exists to remove. A tolerance would let that through and still refuse the
-  uniform-ladder halving, which overshoots by 0.4991 - an order of magnitude
-  more. But any tolerance is a chosen number, and this file already says *"Two
-  'halves' are choices, not measurements"*.
-  - Alternative worth weighing first: the 0.0387 and 0.0903 steps appear ONLY
-    with `sec_len` set, so they may be a defect of the Artificial ladder - a
-    remainder that should have been spread the way phase 2's is. Fixing that
-    would remove the question instead of answering it. Not looked at.
+- [x] **NEEDS A CALL — should a thin skip be allowed to overshoot the depth of
+  cut slightly?** WITHDRAWN 2026-09-03, same day, `analysis/077`: the premise
+  was wrong. The 0.0387 step is not a stray remainder near the ceiling - it is
+  at index 27 of 29 and lands EXACTLY on the floor stage 21.0160. **It is the
+  region's roughing floor**, and `fl_prot` already protects it: with the gap
+  rule fully neutralised the level is still there. Skipping it would leave a
+  region's floor uncut, not trade chatter against tool load. The Artificial
+  ladder is landing on a floor it is required to land on, and the short step
+  before it is the cost of `floor_ladder` re-anchoring per region - which is
+  what greatEndian asked for. Nothing to fix and nothing to decide.
 
 - [x] **A `skip_thin` threshold above the LADDER STEP halves the ladder** —
   DONE 2026-09-03, `analysis/076`. The skip now refuses when the level that
