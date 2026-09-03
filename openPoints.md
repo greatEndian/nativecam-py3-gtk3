@@ -1867,6 +1867,14 @@ the two cuts only touch.
   HEAD, so the number moved with the later commits and nobody saw it — which is
   the argument for the file.
 
+- [~] **DEFERRED TO FINALISATION — greatEndian, 2026-09-03: *"let the roughing
+  other operations to finalisation steps .. its not worth time to do now until
+  everything in roughing external is done"*.** The gap below is real and the
+  standing rule still stands; it is a question of ORDER, not of whether. The
+  external (OD polyline) roughing is the thing being finished first, and the
+  parametric ops' roughing compensation is picked up after it — not before.
+  Nothing here is withdrawn, and nothing about it has been measured away.
+
 - [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
   still switch it on inside the finishing loop only.** Standing rule in
   `CLAUDE.md` and memory. Done: the **OD taper** (`analysis/005`) and the
