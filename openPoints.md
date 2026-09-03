@@ -2664,14 +2664,22 @@ validation ones.
     emitted. Both fixes are the same: the direction is a cfg parameter, read it
     at generation time.
 
-- [ ] **THE ONE THING THAT IS NOT A GENERATION-TIME QUESTION: the phase-1
-  handover.** `poly_lathe_mill` reassigns `sect_top_r` when phase 1 stops on an
-  obstruction, and sets `_pl_ph1_front_cut` / `_pl_ph1_z_end` from how far it
-  actually got - a runtime OUTCOME feeding back into the geometry later windows
-  use. Everything else in roughing is now a table walk Python reproduces. This
-  is the honest boundary of the migration: a `.ngc` that merely walked tables
-  would have to drop the handover or keep that one decision at runtime. Decide
-  which before wiring anything.
+- [ ] **THE PHASE-1 HANDOVER — MEASURED, AND MY EARLIER CLAIM RETRACTED** —
+  2026-09-03, `analysis/086`. I said the boundary of the migration was the
+  handover reassigning `sect_top_r`. **All three of its sites fire 0 times over
+  30 configurations** - the ceiling is never moved. That claim was wrong, and
+  wrong in the direction that mattered: I reported a hard runtime dependency
+  the stack does not have.
+  - What DOES fire is narrower: `_pl_ph1_front_cut` / `_pl_ph1_z_end`, **6 of
+    30** - 15_5 and 15_6 sectioned, all three directions. It records how far
+    phase 1 got so phase-2 windows it already covered start one level deeper.
+  - **It may reduce to nothing.** `_pl_ph1_z_end` is `_pl_level_z_end`, which
+    `level_stop_z` already predicts exactly (1854 of 1854, `analysis/083`), and
+    the firing is gated on `p1_cut`, which the proved layers determine.
+    HYPOTHESIS, not a result - it is the next gate.
+  - **First understand the gap**: 27 configurations run a ceiling phase and
+    only 6 hand over. Whatever separates them is the real condition, and a
+    narrow path is where a wrong general rule hides.
 
   `skip_thin` still comes after the blocked decision, not before -
   `_pl_prev_thin` advances only where a level actually cuts.

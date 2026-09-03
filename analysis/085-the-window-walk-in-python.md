@@ -78,3 +78,10 @@ to either drop the handover or keep that one decision at runtime.
 `test_ladder`, `test_leftover`, `test_x_continuity`, `test_ramps`,
 `test_sections`, `test_bidir_warn`, `cam_map`, flake8. Motion untouched: no
 `.ngc` or `cfg` edited, and the instrument is proved inert.
+
+## Correction, 2026-09-03
+
+The boundary this file names - the handover reassigning `sect_top_r` - was
+reasoned from reading, not measured. All three of its sites fire **0 times**
+over the same 30 configurations. See `analysis/086`. What fires is the narrower
+`_pl_ph1_front_cut` / `_pl_ph1_z_end`, in 6 of 30.
