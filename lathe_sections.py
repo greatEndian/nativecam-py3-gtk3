@@ -3274,8 +3274,10 @@ def window_calls(levels, protected, floor_contour, resume_env, split_table,
                  w_from, w_to, w_rlo, w_rhi, stock_r, dirsign, doc,
                  skip_thin=0.0, prev_thin0=None, oz=0.0, multi_cross=False,
                  mm=1.0, dm=2.0, z_dirw=1.0, split=False, phase1=False):
-    """[(level, why, [(from, to), ...])] - every level of one window and every
-    call it makes, with `why` naming what stopped a level that made none.
+    """[(level, why, [(from, to, first, blocked), ...])] - every level of one
+    window and every call it makes, with `why` naming what stopped a level that
+    made none. `first` marks a sub-span start and `blocked` whether the call
+    cut - the emitter places the runtime's state writes from those.
 
     SKIP_THIN CANNOT BE A FUNCTION OF THE LADDER ALONE, which is why this
     simulates the window rather than answering per level. `_pl_prev_thin` is
@@ -3327,10 +3329,14 @@ def window_calls(levels, protected, floor_contour, resume_env, split_table,
                                         dm, split):
             seq = level_calls(floor_contour, resume_env, r, sg_from, sg_to,
                               oz, multi_cross, mm, phase1)
-            calls.extend(seq)
-            for a, b in seq:
+            for j, (a, b) in enumerate(seq):
                 blocked, _ze = level_stop_z(floor_contour, r, a, b, oz,
                                             multi_cross, mm)
+                # `first` marks a sub-span start, which is where the runtime
+                # resets _pl_level_z_end; `blocked` says whether the call cut,
+                # which is where it advances _pl_prev_lvl. The emitter needs
+                # both to put the state writes where the loop puts them.
+                calls.append((a, b, j == 0, bool(blocked)))
                 if blocked is False:
                     cut = True
         if cut:
@@ -3471,6 +3477,107 @@ def roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r=0.0,
     return out
 
 
+def flat_sub_number(polyline_feature):
+    """The numbered subroutine this polyline's flat roughing lives in.
+
+    UNUSED, kept for the record. The plan was one numbered sub per polyline,
+    called indirectly as `o[#<n>] call` - which works from the MAIN program.
+    It does NOT work from inside a subroutine: LinuxCNC looks a numbered sub up
+    in the executing FILE's offset table and then on disk, so
+    poly_lathe_mill got "Subroutine 'O90001' not found -- not in offset table".
+
+    NUMBERED SUBS ARE FILE-LOCAL, NAMED SUBS ARE GLOBAL. The flat sub is
+    therefore named, which means exactly one per program - see
+    build_flat_roughing_gcode's guard.
+    """
+    digits = ''.join(ch for ch in polyline_feature.get_attr('id') or ''
+                     if ch.isdigit())
+    return 90000 + (int(digits) if digits else 0)
+
+
+def build_flat_roughing_gcode(polyline_feature, rough_cut, back_deg,
+                              nose_r=0.0, flank_len=0.0, clearance=0.0,
+                              orient=0):
+    """The polyline's numbered flat-roughing sub, or '' to keep the loop.
+
+    THE LOOPS STOP EXISTING. poly_lathe_mill works the whole nest out at
+    runtime - windows, sub-spans, levels, intervals, and the four decisions
+    that skip a level - and this emits the answer instead. Every predictor was
+    proved against the running O-code first, one at a time (analysis/080-098),
+    and then the whole sequence together: 36 configurations, 0 differ
+    (analysis/099).
+
+    It is sound because `lathe_level_pass` is THE ONLY THING IN THAT NEST THAT
+    EMITS MOTION - the four lathe_level_next_start calls are scans and there is
+    no bare G-code between them - so the same calls with the same arguments and
+    the same global state give the same motion.
+
+    THREE GLOBALS ARE THE WHOLE STATE. lathe_level_pass reads exactly
+    `_pl_w_idx`, `_pl_prev_lvl` and `_pl_level_z_end` of what the loop sets; it
+    does NOT read `_pl_prev_thin` or `_pl_ph1_*`, which are poly_lathe_mill's
+    own and are what this replaces. So the sub sets the window index, resets
+    `_pl_prev_lvl` to the stock at each window and advances it after every
+    cutting call, and resets `_pl_level_z_end` at each sub-span start - exactly
+    where the loop does.
+
+    The record-array pointer is the ONE argument: `m_pds` and `lvl_d` are each
+    assigned once in poly_lathe_mill, so they are constants, and `lvl_d` is
+    dirsign * (fin_off + prefin_off), which is known here.
+
+    A skipped level is emitted as a comment saying WHY. That is not decoration:
+    a generated program nobody can read back is one nobody can check, and the
+    reasons are the part a machinist would want to argue with.
+    """
+    plan = roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r,
+                              flank_len, clearance, orient)
+    if not plan:
+        return ''
+
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    start_r, final_r = rough_radius_bounds(polyline_feature)
+    fin = _p('param_f_off')
+    pre = _p('param_pf_off') * (1 if _p('param_pf_on') else 0)
+    dirsign = 1 if start_r >= final_r else -1
+    lvl_d = dirsign * (fin + pre)
+    stock_r = _stock_x(polyline_feature)
+    if stock_r is None:
+        return ''
+    stock_r = stock_r / DIAMETER_MODE
+    leads = ' '.join('[%s]' % _fmt(_p(n)) for n in
+                     ('param_li_len', 'param_li_ang', 'param_li_feed',
+                      'param_lo_len', 'param_lo_ang', 'param_lo_feed',
+                      'param_li_rad', 'param_lo_rad'))
+
+    out = ['o<ncam_flat_rough> sub',
+           '(THE ROUGHING PASSES, worked out at generation time. Every call the)',
+           '(loop this replaces would have made, in the order it would have)',
+           '(made them - see analysis/099. #1 is the record-array pointer.)',
+           '#<pds> = #1']
+    w_seen = None
+    for w_idx, level, why, calls in plan:
+        if w_idx != w_seen:
+            w_seen = w_idx
+            out.append('(window %d)' % w_idx)
+            out.append('#<_pl_w_idx> = %d' % w_idx)
+            out.append('#<_pl_prev_lvl> = %s' % _fmt(stock_r))
+        if why:
+            out.append('(level %s skipped - %s)' % (_fmt(level), why))
+            continue
+        for a, b, first, blocked in calls:
+            if first:
+                out.append('#<_pl_level_z_end> = %s' % _fmt(a))
+            out.append('o<lathe_level_pass> CALL [#<pds>] [%s] [%s] [%s] [%s] '
+                       '[#<_rough_feed>] %s'
+                       % (_fmt(level), _fmt(lvl_d), _fmt(a), _fmt(b), leads))
+            if not blocked:
+                out.append('#<_pl_prev_lvl> = %s' % _fmt(level))
+    out.append('o<ncam_flat_rough> endsub')
+    return '\n'.join(out) + '\n'
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 
@@ -3549,7 +3656,7 @@ def flank_sides(rough_dir):
 
 
 def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
-                   clearance=0.0, front_deg=None):
+                   clearance=0.0, front_deg=None, orient=None):
     """The profile widened into the shape the tool can actually reach.
 
     A wedge dilation by the trailing flank: a point (zp, rp) on the shadowed
@@ -3611,7 +3718,16 @@ def flank_envelope(points, back_deg, rough_dir=0, flank_len=0.0,
         # For orientation 2 this override returns exactly what flank_sides
         # already returned, trailing and leading alike, so nothing moves on any
         # normally-oriented tool.
-        side_ov = insert_flank_side(INSERT_ORIENT, trailing)
+        # THE ORIENT ARRIVES AS AN ARGUMENT WHEN THE CALLER HAS IT.
+        # It used to be read only from the module global that
+        # set_insert_orient publishes - which the polyline's own AFTER
+        # block sets, so nothing that runs EARLIER than that could build
+        # a contour at all. That is what stopped the flat roughing sub
+        # being emitted from DEFINITIONS, where it has to live.
+        # The global stays as the default so every existing caller is
+        # unchanged.
+        _or = INSERT_ORIENT if orient is None else int(orient or 0)
+        side_ov = insert_flank_side(_or, trailing)
         sides = (side_ov,) if side_ov else flank_sides(dirn)
         return [(side, kk * DIAMETER_MODE, rr) for side in sides]
 
@@ -3790,7 +3906,7 @@ def front_flank_envelope(points, front_deg, rough_dir=0, flank_len=0.0,
 
 
 def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
-                      clearance=0.0):
+                      clearance=0.0, orient=None):
     """Literal G-code building the reachable envelope as a record array, or ''.
 
     Emitted as records so poly_lathe_mill can hand it straight to the level
@@ -3823,7 +3939,7 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     # none: roughing stops on the same unbounded ramp the finishing passes
     # trace, so the two cannot describe different surfaces
     env = flank_envelope(points, back_deg, rough_dir,
-                         _contour_flank(flank_len), clearance)
+                         _contour_flank(flank_len), clearance, orient=orient)
     # the scans walk records in profile order, so hand the envelope back the
     # same way round the profile was drawn rather than sorted ascending
     if points[0][0] > points[-1][0]:
@@ -4816,7 +4932,7 @@ def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
     # cost testing_15_2 nine of its 29 levels - the only thing that may change
     # here is the ALLOWANCE.
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r,
-                                flank_len, clearance)
+                                flank_len, clearance, orient)
     if not pts or len(pts) < 2:
         return None
     d = polyline_feature.get_param('param_dir')
@@ -5072,7 +5188,7 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 
 
 def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
-                   clearance=0.0):
+                   clearance=0.0, orient=None):
     """(points, soft) - the contour the finishing passes should follow.
 
     Returns the hard contour and soft=False when nothing constrains it: no back
@@ -5114,7 +5230,8 @@ def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     # flank_len belongs to the tool change, so it arrives as an argument -
     # see build_flank_gcode and FLANK_BOUNDS_CONTOUR
     env = flank_envelope(points, back_deg, fin_dir,
-                         _contour_flank(flank_len), clearance, fdeg)
+                         _contour_flank(flank_len), clearance, fdeg,
+                         orient=orient)
     if not env or len(env) < 2:
         return points, False
     if points[0][0] > points[-1][0]:
