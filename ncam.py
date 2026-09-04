@@ -2835,6 +2835,8 @@ class Preferences(object):
             self.default += ("#<_pl_lad_cstep>           = 0.0\n")
             self.default += ("#<_pl_lad_fstep>           = 0.0\n")
             self.default += ("#<_pl_lad_np>              = 1\n")
+            self.default += ("#<_pl_lad_ez>              = 0.0\n")
+            self.default += ("#<_pl_lad_lz>              = 0.0\n")
             self.default += ("#<_pl_lad_top>             = 0.0\n")
             self.default += ("#<_pl_lad_p1s>             = 0.0\n")
             self.default += ("#<_pl_lad_p1f>             = 0.0\n")

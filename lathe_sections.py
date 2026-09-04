@@ -2528,6 +2528,10 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
     start_r, final_r = rough_radius_bounds(polyline_feature)
     if abs(start_r - final_r) <= EPS:
         return ''
+    raw = resolve_points(polyline_feature, trim=False, extend=False)
+    if not raw or len(raw) < 2:
+        return ''
+    raw_ez, raw_lz = raw[0][0], raw[-1][0]
     c = ladder_consts(start_r, final_r, _p('param_f_off'),
                       _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
                       rough_cut, _p('param_pass_from') > 0,
@@ -2554,6 +2558,14 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
         '#<_pl_lad_cstep> = %s' % _fmt(c['cut_step']),
         '#<_pl_lad_fstep> = %s' % _fmt(c['first_step']),
         '#<_pl_lad_np>    = %d' % c['rough_passes'],
+        # THE PROFILE'S RAW Z BOUNDS, as the record array will hold them.
+        # resolve_points excludes the polyline's origin for exactly this
+        # reason - poly_add_item never stores it either - so the first and
+        # last points here are record 1 and record n. Emitted so the runtime
+        # can be checked against them; the extension and the Z-limit clamp are
+        # applied by poly_lathe_mill afterwards, in that order.
+        '#<_pl_lad_ez>   = %s' % _fmt(raw_ez),
+        '#<_pl_lad_lz>   = %s' % _fmt(raw_lz),
         '#<_pl_lad_top>   = %s' % _fmt(top),
         '#<_pl_lad_p1s>   = %s' % _fmt(p1s),
         '#<_pl_lad_p1f>   = %s' % _fmt(p1f),
@@ -3231,6 +3243,75 @@ def level_calls(floor_contour, resume_env, level, sg_from, lv_to, oz=0.0,
             break
         l_fr = z
     return calls
+
+
+def window_calls(levels, protected, floor_contour, resume_env, split_table,
+                 w_from, w_to, w_rlo, w_rhi, stock_r, dirsign, doc,
+                 skip_thin=0.0, prev_thin0=None, oz=0.0, multi_cross=False,
+                 mm=1.0, dm=2.0, z_dirw=1.0, split=False, phase1=False):
+    """[(level, why, [(from, to), ...])] - every level of one window and every
+    call it makes, with `why` naming what stopped a level that made none.
+
+    SKIP_THIN CANNOT BE A FUNCTION OF THE LADDER ALONE, which is why this
+    simulates the window rather than answering per level. `_pl_prev_thin` is
+    the surface immediately above the level being judged, and it advances only
+    where a level ACTUALLY CUTS - so the thin test reads the cut history, the
+    cut history reads the blocked answer, and the blocked answer comes from the
+    interval walk. They have to be walked together, in order.
+
+    `why` is '' when the level ran. Otherwise: 'band' outside this window's
+    radius band, 'stock' at or past the stock, 'thin' too little metal to be
+    worth a pass.
+
+    The thin rule refuses in two steps and both matter. A level closer to the
+    surface above it than the threshold is a candidate - but it is only dropped
+    if doing so leaves the NEXT level within one depth of cut of that surface,
+    because `_pl_prev_thin` does not advance on a skip and the level after a
+    dropped one is otherwise two steps from the last real cut. Measured on
+    testing_15_2: without the second test a 0.600 threshold lost 13 levels and
+    opened a 1.0160 gap against a 0.508 depth of cut.
+
+    A PROTECTED FLOOR IS NEVER DROPPED whatever the threshold - it is the
+    surface roughing has to leave for the pre-finish pass.
+    """
+    prev_thin = stock_r if prev_thin0 is None else prev_thin0
+    out = []
+    for i, r in enumerate(levels):
+        nxt = levels[i + 1] if i + 1 < len(levels) else r
+        why = ''
+        # THE O-CODE'S OWN ORDER, and it is not the obvious one: lvl_thin is
+        # computed INDEPENDENTLY of the stock test - o<lvl_ok> requires band
+        # AND not-thin AND below-stock - so a level sitting at the stock can
+        # carry the thin flag as well. Testing stock first would name 30 levels
+        # 'stock' that the runtime calls 'thin'. Both skip the level either
+        # way; the order only matters for saying WHY, and the reason is what a
+        # reader of a generated program has to trust.
+        if r > w_rhi + 0.000001 or r < w_rlo - 0.000001:
+            why = 'band'
+        elif (skip_thin > 0.000001 and not protected[i]
+                and abs(r - prev_thin) < skip_thin
+                and abs(nxt - prev_thin) <= doc + 0.000001):
+            why = 'thin'
+        elif dirsign * (r - stock_r) >= 0:
+            why = 'stock'
+        if why:
+            out.append((r, why, []))
+            continue
+        calls, cut = [], False
+        for sg_from, sg_to in sub_spans(split_table, r, w_from, w_to, z_dirw,
+                                        dm, split):
+            seq = level_calls(floor_contour, resume_env, r, sg_from, sg_to,
+                              oz, multi_cross, mm, phase1)
+            calls.extend(seq)
+            for a, b in seq:
+                blocked, _ze = level_stop_z(floor_contour, r, a, b, oz,
+                                            multi_cross, mm)
+                if blocked is False:
+                    cut = True
+        if cut:
+            prev_thin = r
+        out.append((r, '', calls))
+    return out
 
 
 def wrong_way_dirs(orient, rough_dir):
