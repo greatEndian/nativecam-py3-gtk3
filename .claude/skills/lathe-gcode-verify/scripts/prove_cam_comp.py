@@ -213,6 +213,12 @@ def main():
                     help='mm at each end of the profile to treat as lead-in / '
                          'lead-out territory and report separately instead of '
                          'judging. 0 judges the whole path')
+    ap.add_argument('--mode', type=int, default=2, choices=(1, 2),
+                    help='compensation to test: 2 = In CAM (the default, the '
+                         'path is computed here), 1 = Native LinuxCNC (the '
+                         'interpreter offsets it from G41.1/G42.1). The proof '
+                         'itself is mechanism-blind - both must pass it - so '
+                         'this only chooses which one is generated.')
     ap.add_argument('--side', type=int, default=42, choices=(41, 42),
                     help='only selects which reference cut calibrates the '
                          'orientation offset; the offset itself is the same')
@@ -223,13 +229,14 @@ def main():
     # finishing only, one pass, no pre-finish: the file then contains exactly
     # the pass under test, so uncompensated roughing cannot pollute the proof
     ngc = generate(ini, args.project, os.path.join(tmp, 'cam.ngc'),
-                   {'param_n_comp': '2', 'param_op': '2',
+                   {'param_n_comp': str(args.mode), 'param_op': '2',
                     'param_f_pass': '1', 'param_pf_on': '0'})
 
     segments, side = target_profile(ini, args.project, args.machine)
-    print('profile: %d segments, from %s to %s, %s work'
+    print('profile: %d segments, from %s to %s, %s work, %s compensation'
           % (len(segments), segments[0][0], segments[-1][1],
-             'outside' if side > 0 else 'inside'))
+             'outside' if side > 0 else 'inside',
+             'In-CAM' if args.mode == 2 else 'Native'))
 
     tbl = _resolve_tbl_path(ini, None)
     tool = tool_from_ngc(ngc)
