@@ -261,6 +261,32 @@ def x_limit_abs(polyline_feature, which, nose_r=None, contact=True):
     return v
 
 
+def z_limit_band(polyline_feature):
+    """(lo, hi) - the Z band roughing may work in, or None when neither limit
+    is set.
+
+    Split out of build_z_limit_bounds_gcode so the roughing window can be
+    clamped at generation time from the same band the runtime is handed.
+    999999 stands for unbounded on that side, so one limit can be set without
+    the other and the single limit still bites.
+    """
+    fz = z_limit_abs(polyline_feature, 'front')
+    ez = z_limit_abs(polyline_feature, 'end')
+    if fz is None and ez is None:
+        return None
+    lo, hi = -999999.0, 999999.0
+    for v in (fz, ez):
+        if v is None:
+            continue
+        if fz is not None and ez is not None:
+            lo, hi = min(fz, ez), max(fz, ez)
+        elif v == fz:
+            hi = v
+        else:
+            lo = v
+    return lo, hi
+
+
 def build_z_limit_bounds_gcode(polyline_feature):
     """The Z band the operation may machine in, for the ROUGHING window.
 
@@ -287,22 +313,10 @@ def build_z_limit_bounds_gcode(polyline_feature):
     the other. `_pl_lim_on` is 0 when neither is, and the clamp is then skipped
     entirely - which is every project that sets no limit.
     """
-    fz = z_limit_abs(polyline_feature, 'front')
-    ez = z_limit_abs(polyline_feature, 'end')
-    if fz is None and ez is None:
+    got = z_limit_band(polyline_feature)
+    if got is None:
         return '#<_pl_lim_on> = 0'
-    lo, hi = -999999.0, 999999.0
-    for v in (fz, ez):
-        if v is None:
-            continue
-        # the band is whatever the set limits enclose; with only one set, the
-        # other side stays unbounded and the single limit still bites
-        if fz is not None and ez is not None:
-            lo, hi = min(fz, ez), max(fz, ez)
-        elif v == fz:
-            hi = v
-        else:
-            lo = v
+    lo, hi = got
     return '\n'.join([
         '(the Z band roughing may work in. The contours are trimmed by the)',
         '(limits already; the roughing window comes from the RAW record array)',
@@ -1595,6 +1609,35 @@ def _split_level_intervals(windows, points, sections, allowance):
     return out
 
 
+def split_peaks(polyline_feature):
+    """([(z, height)], allowance) - the peaks that split a roughing level, or
+    ([], 0.0).
+
+    Split out of build_level_split_gcode so the sub-span walk can be worked out
+    at generation time from the same peaks the runtime is handed.
+
+    BACK TO FRONT ONLY. Direction 2 shares direction 0's window order and its
+    single-span levels; a split table there would re-order intervals that
+    direction 0 does not, and the cut set has to match it.
+    """
+    dir_param = polyline_feature.get_param('param_dir')
+    rough_dir = (int(_to_float(dir_param.get_ngc_value()))
+                 if dir_param is not None else 0)
+    if rough_dir != 1:
+        return [], 0.0
+    allowance = level_allowance(polyline_feature)
+    if allowance <= EPS:
+        return [], 0.0
+    points = resolve_points(polyline_feature)
+    if not points or len(points) < 2:
+        return [], 0.0
+    sections = detect_sections(points)
+    if not sections or len(sections) < 2:
+        return [], 0.0
+    return [(z_b, h_b) for z_b, h_b, peak in _boundary_list(sections, points)
+            if peak], allowance
+
+
 def build_level_split_gcode(polyline_feature):
     """The #3160 table of split points a level's intervals are ordered by.
 
@@ -1638,25 +1681,7 @@ def build_level_split_gcode(polyline_feature):
     twenty peaks. NOT 3140: cfg/lathe/polyline.cfg stages its own CALL
     arguments in #3141-#3159, which is why cam_map now has a cfg_scratch check.
     """
-    dir_param = polyline_feature.get_param('param_dir')
-    rough_dir = int(_to_float(dir_param.get_ngc_value())) if dir_param is not None else 0
-    # BACK TO FRONT ONLY. Direction 2 shares direction 0's window order and
-    # its single-span levels; a split table there would re-order intervals
-    # that direction 0 does not re-order, and the cut set has to match it.
-    if rough_dir != 1:
-        return ''
-
-    allowance = level_allowance(polyline_feature)
-    if allowance <= EPS:
-        return ''
-    points = resolve_points(polyline_feature)
-    if not points or len(points) < 2:
-        return ''
-    sections = detect_sections(points)
-    if not sections or len(sections) < 2:
-        return ''
-    peaks = [(z_b, h_b) for z_b, h_b, peak in _boundary_list(sections, points)
-             if peak]
+    peaks, allowance = split_peaks(polyline_feature)
     if not peaks:
         return ''
     # a truncated table is a level split at the wrong place, which is metal
@@ -3311,6 +3336,138 @@ def window_calls(levels, protected, floor_contour, resume_env, split_table,
         if cut:
             prev_thin = r
         out.append((r, '', calls))
+    return out
+
+
+def rough_nose_terms(polyline_feature, nose_r=0.0, orient=0):
+    """(ox, oz) - the orientation term roughing carries, already gated.
+
+    Zero unless this polyline actually compensates, which is `_comp_nose`'s
+    question. Shared with the emitter so the two cannot answer differently.
+    """
+    _nr, _or = _comp_nose(polyline_feature, nose_r, orient)
+    if _nr > EPS and 0 < int(_or) < len(NOSE_OFFSET):
+        vec = NOSE_OFFSET[int(_or)]           # (X, Z), raw - not a unit vector
+        return _nr * vec[0], _nr * vec[1]
+    return 0.0, 0.0
+
+
+def roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r=0.0,
+                       flank_len=0.0, clearance=0.0, orient=0):
+    """[(w_idx, level, why, [(from, to), ...])] - EVERY roughing call the
+    program will make, in order, or None when this cannot be described.
+
+    The capstone. It composes the predictors proved one at a time against the
+    running O-code - windows (085), sub-spans (084), the ladder (080/081),
+    blocked (082), the interval walk (083/089), protected floors (094), the
+    phase-1 handover (089) and skip_thin (098) - into the whole sequence.
+
+    `lathe_level_pass` is THE ONLY THING IN poly_lathe_mill's loop nest THAT
+    EMITS MOTION - the four lathe_level_next_start calls are scans and there is
+    no bare G-code between them - so a flat sequence making these calls with
+    the same arguments and the same global state reproduces the motion exactly.
+    That is what makes emitting them as literal G-code sound rather than
+    hopeful.
+
+    `why` is '' when the level ran, otherwise 'band', 'stock' or 'thin'.
+    """
+    def _p(name, default=0.0):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else default
+
+    if rough_cut <= EPS:
+        return None
+    start_r, final_r = rough_radius_bounds(polyline_feature)
+    if abs(start_r - final_r) <= EPS:
+        return None
+    raw = resolve_points(polyline_feature, trim=False, extend=False)
+    if not raw or len(raw) < 2:
+        return None
+    fc = floor_contour_data(polyline_feature, back_deg, nose_r, flank_len,
+                            clearance, orient, rough_cut)
+    if fc is None:
+        return None
+    flc, renv, _rd = fc
+
+    fin = _p('param_f_off')
+    pre = _p('param_pf_off') * (1 if _p('param_pf_on') else 0)
+    stgs = floor_stages(polyline_feature, rough_cut)
+    c = ladder_consts(start_r, final_r, fin, pre, rough_cut,
+                      _p('param_pass_from') > 0, stgs)
+
+    got = section_windows(polyline_feature)
+    sect_on = _p('param_sectioning') > 0
+    sects = list(got[0]) if got is not None else []
+    sect_mode = int(got[1]) if got is not None else 0
+    top_r = (got[2] / DIAMETER_MODE) if got is not None else None
+    sectioning = sect_on and bool(sects)
+    top = ladder_phases(start_r, c['lad_tgt'], c['step_target'], c['cut_step'],
+                        c['first_step'], rough_cut, c['dirsign'],
+                        sect_on, len(sects), top_r)[0]
+
+    wins = roughing_windows(raw[0][0], raw[-1][0],
+                            ext_dz(polyline_feature, 'back'),
+                            z_limit_band(polyline_feature),
+                            sects, sect_mode, sectioning, DIAMETER_MODE)
+    if not wins:
+        return None
+
+    peaks, allw = split_peaks(polyline_feature)
+    split_table = [(z_b, h_b + allw) for z_b, h_b in peaks]
+    rough_dir = int(_p('param_dir'))
+    z_dirw = 1.0 if wins[0][1] >= wins[0][2] else -1.0
+    stock_r = _stock_x(polyline_feature)
+    if stock_r is None:
+        return None
+    stock_r = stock_r / DIAMETER_MODE
+    _ox, oz = rough_nose_terms(polyline_feature, nose_r, orient)
+    skip_thin = _p('param_skip_thin')
+
+    # the ladder, with the handover it will really take - see phase1_stop
+    def _ladder(over=None):
+        return roughing_ladder(start_r, final_r, fin, pre, rough_cut,
+                               _p('param_pass_from') > 0, stgs, sectioning,
+                               top_r, sect_mode, max(len(sects), 1),
+                               top_override=over)
+
+    lad = _ladder()
+    eff_top = top
+    p1 = [r for w, radii in lad if w < 0 for r in radii]
+    if p1 and sectioning and sect_mode != 1:
+        stop = phase1_stop(p1, flc, stock_r, rough_cut, wins[0][1], wins[0][2],
+                           skip_thin, True, 1.0)
+        if stop is not None:
+            # THE HANDOVER MOVES THE THIN REFERENCE TOO, not just the ladder.
+            # A phase-2 window takes _pl_prev_thin from sect_top_r, and where
+            # phase 1 handed over that is the MOVED value - so the first level
+            # of every later window sits zero from its own reference and is
+            # skipped as thin. Feeding the nominal ceiling here emitted three
+            # calls the runtime never makes, on testing_15_blocked.
+            lad, eff_top = _ladder(stop), stop
+    runs = {w: radii for w, radii in lad}
+
+    out = []
+    for w_idx, w_from, w_to, r_lo, r_hi in wins:
+        radii = runs.get(w_idx if w_idx >= 0 else -1)
+        if not radii:
+            continue
+        phase1 = sectioning and w_idx < 0
+        prot = protected_flags(radii, stgs, c['step_target'], not phase1)
+        # the thin reference: the surface immediately above this window's
+        # levels. Phase 1 has only the bar above it; a phase-2 window has the
+        # ceiling phase 1 already took down - unless the clamp made the two
+        # the same number, which is the O-code's own discriminator.
+        prev0 = stock_r
+        if sectioning and abs((eff_top if phase1 else c['step_target'])
+                              - eff_top) > 0.000001:
+            prev0 = eff_top
+        for level, why, calls in window_calls(
+                radii, prot, flc, renv, split_table, w_from, w_to,
+                r_lo, r_hi, stock_r, c['dirsign'], rough_cut,
+                skip_thin=skip_thin, prev_thin0=prev0, oz=oz,
+                multi_cross=True, mm=1.0, dm=DIAMETER_MODE, z_dirw=z_dirw,
+                split=(rough_dir == 1 and bool(split_table)), phase1=phase1):
+            out.append((w_idx, level, why, calls))
     return out
 
 
