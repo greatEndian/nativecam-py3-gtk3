@@ -262,7 +262,16 @@ class NCamProjectIOMixin:
                 if parent_feature is not None :
                     parent_feature.child_features.append(f)
                 sub_ldr += f.getindent()
-                gcode_def += f.get_definitions()
+                # DEFINITIONS ARE COLLECTED IN A SECOND PASS, below. Taken
+                # here they run BEFORE the feature's own children are walked,
+                # so a feature does not yet know its own shape: a lathe
+                # polyline's resolve_points came back empty and anything built
+                # from the profile - the flat roughing sub - could not be
+                # emitted at all. See analysis/101.
+                # The order they appear in the program is unchanged: they are
+                # prepended either way, and the pass below walks the same
+                # features in the same order.
+                def_order.append(f)
                 gcode += f.process(f.attr["before"], ldr)
                 gcode += f.process(f.attr["call"], ldr)
             # an "items"-type param row sits between a feature and its item
@@ -282,6 +291,7 @@ class NCamProjectIOMixin:
 
         gcode = ""
         gcode_def = ""
+        def_order = []
         ncam.DEFINITIONS = []
         ncam.INCLUDE = []
         itr = self.treestore.get_iter_first()
@@ -290,6 +300,10 @@ class NCamProjectIOMixin:
             gcode += g
             gcode_def += d
             itr = self.treestore.iter_next(itr)
+        # the second pass - every feature now knows its children, so a
+        # definition may be built from the geometry the feature describes
+        for f_def in def_order :
+            gcode_def += f_def.get_definitions()
         if self.pref.use_pct :
             return self.pref.default + gcode_def + \
             _("(end sub definitions)\n\n") + gcode + self.pref.ngc_post_amble + '\n%\n'

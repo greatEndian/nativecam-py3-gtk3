@@ -645,6 +645,15 @@ o<poly_lathe_mill> sub
         (that radius in the sections that pass already covered)
         #<_pl_ph1_z_end> = #<e_z>
         (roughing levels begin - bracket for the flank clearance proof)
+        (THE ROUGHING PASSES, WORKED OUT AT GENERATION TIME - one call per)
+        (interval, emitted into a sub of its own, and this whole loop is)
+        (skipped. Proved against this loop first: analysis/080-099. The)
+        (loop stays as the fallback and runs whenever _pl_flat_sub is 0 -)
+        (an older project, a second polyline, or a profile Python declines)
+        (to describe.)
+        o<flat_go> if [#<_pl_flat_sub> GT 0]
+                o<ncam_flat_rough> call [#<m_pds>]
+        o<flat_go> else
         o<wh_w> while [1]
                 #<w_rlo> = -999999
                 #<w_rhi> =  999999
@@ -1443,6 +1452,7 @@ o<poly_lathe_mill> sub
                 #<w_from> = #<w_to>
                 #<w_idx> = [#<w_idx> + 1]
         o<wh_w> endwhile
+        o<flat_go> endif
         (roughing levels end)
         (the contour passes below carry their own direction flag into)
         (cam_load, so the level flag is put back before they run - and the)

@@ -2825,6 +2825,7 @@ class Preferences(object):
             self.default += ("#<_pl_lvl_base>            = 1000\n")
             self.default += ("#<_pl_lvlf_base>           = 1000\n")
             self.default += ("#<_pl_lvlz_base>           = 1000\n")
+            self.default += ("#<_pl_flat_sub>            = 0\n")
             # the ladder head - 0 means "work it out at runtime", the
             # path every project took before this existed
             self.default += ("#<_pl_lad_ok>              = 0\n")
