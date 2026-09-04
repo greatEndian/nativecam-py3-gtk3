@@ -70,3 +70,29 @@ It is not being made blind.
 
 The two reproducers. They cost nothing, they carry the modes the note describes,
 and they are where the instrument work will be checked.
+
+## Correction, same day - the diagnosis above is WRONG
+
+`prove_cam_comp` OVERRIDES the project when it generates:
+
+```
+{"param_n_comp": "2", "param_op": "2", "param_f_pass": "1", "param_pf_on": "0"}
+```
+
+It always tests IN-CAM FINISHING ONLY, whatever the project saved. So:
+
+- **identical results across the three reproducers is EXPECTED**, not evidence
+  of a broken instrument - all three were tested as In-CAM;
+- the two reproducers are **pointless**: `n_comp` is overridden either way;
+- `testing_14_inside` having `n_comp = 0` does not matter to this tool at all,
+  so my first objection was also void;
+- the wrong-side control DID fail correctly - gouge 0.8000, which is 2R, fully
+  into the material - so the proof discriminates exactly as designed.
+
+**The tool is not broken. The failure is real.** In-CAM compensation on this
+bore leaves 3 of 4 profile segments UNCOVERED with a 0.3542 contour gouge, and
+that is the defect to chase.
+
+I reached for "the instrument is untrustworthy" - which has been true four times
+today - without first reading what the tool does to the project. Being right
+about instruments repeatedly is not a licence to assume it a fifth time.
