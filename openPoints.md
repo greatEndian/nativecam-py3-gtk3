@@ -2810,6 +2810,20 @@ validation ones.
     the generated program. Wiring it for real means taking them from the
     Feature, and the two paths must agree.~~
 
+- [~] **THE ROUGHING LADDER IS TABLE-DRIVEN, INCLUDING THE LOOP'S END** —
+  2026-09-04, `analysis/091`-`096`. `poly_lathe_mill` reads its level
+  radii, the protected-floor flag, the per-level floor and the ladder head
+  from Python, and the loop now ENDS from the table: 176 table
+  terminations against 15 fallback ones. Every step gated on motion
+  identical with the table on and off, 36 configurations.
+  - The table is 2.3x smaller since identical runs share one copy
+    (544 radii -> 32 on 15_9), which also removed a silent-fallback risk.
+  - **NOT SHRUNK YET.** Every migration kept its fallback, so the `.ngc`
+    has not lost a line. With termination now table-driven the stage
+    bookkeeping is the first block that can be DELETED rather than
+    bypassed - that is the shrink, and it waits until this has cut on the
+    machine.
+
 - [ ] **The ramp and stop machinery is still runtime O-code.** `s_reach`, the
   slope term, the flat-boundary clamp, the clamped-candidate rule, and the
   level scan's own perpendicular offset. Python already answers most of these

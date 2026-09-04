@@ -1332,10 +1332,28 @@ o<poly_lathe_mill> sub
                                 o<ph1_brk> endif
                         o<lvl_ok> endif
 
+                        (IS THERE ANOTHER FLOOR STAGE BELOW THIS ONE. With the level table)
+                        (driving, the run itself is the answer - its last entry IS the)
+                        (part's deepest floor - so the stage bookkeeping is not needed and)
+                        (the loop ends when the run does. Without the table the runtime)
+                        (walks the #3380 stages as it always has. p1_end and the break are)
+                        (shared by both paths and are untouched: the phase-1 handover hangs)
+                        (off exactly that branch.)
+                        #<fl_go> = 0
+                        o<fg_src> if [#<lvl_tn> GT 0]
+                                o<fg_tbl> if [#<lvl_k> LT [#<lvl_tn> - 1]]
+                                        #<fl_go> = 1
+                                o<fg_tbl> endif
+                        o<fg_src> else
+                                o<fg_run> if [[#<fl_i> GE 0] AND [#<fl_i> LT [#<_pl_floor_n> - 1]]]
+                                        #<fl_go> = 1
+                                o<fg_run> endif
+                        o<fg_src> endif
                         o<if_next> if [#<current_radius> EQ #<lvl_floor>]
                                 (this floor is reached. Re-anchor on the next)
                                 (one down, if the profile is entitled to one)
-                                o<fl_more> if [[#<fl_i> GE 0] AND [#<fl_i> LT [#<_pl_floor_n> - 1]]]
+                                o<fl_more> if [#<fl_go> GT 0]
+                                        o<fl_upd> if [#<lvl_tn> LE 0]
                                         #<fl_i> = [#<fl_i> + 1]
                                         #<lvl_floor> = #[3380 + #<fl_i>]
                                         #<fl_prot> = #<lvl_floor>
@@ -1363,6 +1381,7 @@ o<poly_lathe_mill> sub
                                         (over the depth of cut.)
                                         #<cut_step> = [[#<lvl_floor> - #<current_radius>] / #<fl_n>]
                                         #<first_step> = #<cut_step>
+                                        o<fl_upd> endif
                                 o<fl_more> else
                                         (PHASE 1 REACHED ITS OWN FLOOR - the section)
                                         (ceiling - instead of handing over on an)
@@ -1396,6 +1415,7 @@ o<poly_lathe_mill> sub
                                 #<lvl_k> = [#<lvl_k> + 1]
                                 o<lvl_more> if [#<lvl_k> LT #<lvl_tn>]
                                         #<current_radius> = #[#<_pl_lvl_base> + #<lvl_ti> + #<lvl_k>]
+                                        #<lvl_floor> = #[#<_pl_lvlz_base> + #<lvl_ti> + #<lvl_k>]
                                         o<lvl_a1> if [[#<lvl_k> + 1] LT #<lvl_tn>]
                                                 #<first_step> = [#[#<_pl_lvl_base> + #<lvl_ti> + #<lvl_k> + 1] - #<current_radius>]
                                         o<lvl_a1> else

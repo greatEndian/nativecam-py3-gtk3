@@ -3042,20 +3042,14 @@ def level_floors(levels, floors, window_floor):
     the current one. The level table already encodes that walk, so the answer
     can be emitted per level.
 
-    NOT WIRED, AND MEASURED RATHER THAN ASSUMED. This agrees with the
-    runtime's own `lvl_floor` on all 4542 levels of the sweep - so the answer
-    is right - but writing it into poly_lathe_mill BREAKS the part. The window
-    start's write lands BEFORE the stage-arming block, which decides whether to
-    arm `fl_i` by testing `lvl_floor` against the LAST stage; overwritten to
-    stage 0 that test fails, the stage machinery never arms, and the ladder
-    breaks at the first floor instead of walking them - 466 moves against 472
-    on testing_15_5.
-
-    So `lvl_floor` cannot be moved on its own: the runtime's value is already
-    correct, and the arming depends on reading it before any table value.
-    Moving it means moving `fl_i` and the loop's own termination with it, which
-    is a larger change. Kept here because that change needs exactly this.
-    See analysis/095.
+    WRITTEN ONLY AT THE ADVANCE, never at the window start. The first attempt
+    wrote it at the window start too and BROKE the part - 466 moves against
+    472 on testing_15_5 - because that write lands before the stage-arming
+    block, which decides whether to arm `fl_i` by testing `lvl_floor` against
+    the LAST stage. Overwritten to stage 0 the test fails, the machinery never
+    arms, and the ladder breaks at the first floor instead of walking them.
+    The window's own floor is still the runtime's, and only the per-level
+    stage comes from here. See analysis/095 and 096.
     """
     cur, fl_i = window_floor, -1
     if len(floors) > 1 and abs(window_floor - floors[-1]) <= 0.000001:
@@ -3140,7 +3134,8 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     data = LVL_BASE + 3 * len(ladder)
     n_rad = sum(len(radii) for radii, _st in runs)
     flag = data + n_rad
-    total = flag + n_rad
+    flr = flag + n_rad
+    total = flr + n_rad
     if total > LVL_TOP:
         return ('(WARNING - the roughing level table needs %d parameter slots '
                 'and only %d are free, so the levels are computed at runtime '
@@ -3155,7 +3150,8 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
              '(the stages as the ladder reached them)',
              '#<_pl_lvl_n>    = %d' % len(ladder),
              '#<_pl_lvl_base> = %d' % data,
-             '#<_pl_lvlf_base> = %d' % flag]
+             '#<_pl_lvlf_base> = %d' % flag,
+             '#<_pl_lvlz_base> = %d' % flr]
     starts, off = [], 0
     for radii, _st in runs:
         starts.append(off)
@@ -3178,11 +3174,20 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
         _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
         rough_cut, _p('param_pass_from') > 0, stgs)
     stgt = cc['step_target']
+    # the CLAMPED ceiling - the raw _pl_sect_top_dia is not it
+    top = ladder_phases(start_r, cc['lad_tgt'], stgt, cc['cut_step'],
+                        cc['first_step'], rough_cut, cc['dirsign'],
+                        sectioning, n_win, top_r)[0]
     for radii, staged in runs:
         # phase 1 aims at the ceiling, which is not a floor - the same
         # discriminator the O-code uses against the last stage
         for f in protected_flags(radii, stgs, stgt, staged):
             lines.append('#%d = %d' % (flag + off, f))
+            off += 1
+    off = 0
+    for radii, staged in runs:
+        for z in level_floors(radii, stgs, stgt if staged else top):
+            lines.append('#%d = %s' % (flr + off, _fmt(z)))
             off += 1
     return '\n'.join(lines) + '\n'
 
