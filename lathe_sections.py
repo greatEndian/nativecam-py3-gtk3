@@ -3192,6 +3192,47 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     return '\n'.join(lines) + '\n'
 
 
+def level_calls(floor_contour, resume_env, level, sg_from, lv_to, oz=0.0,
+                multi_cross=False, mm=1.0, phase1=False):
+    """[(from, to)] - every lathe_level_pass call one level makes in one
+    sub-span, in order.
+
+    The whole interval walk: the pass runs until the profile rises above the
+    level, the resume envelope says where it may begin again, and it is called
+    once more - as many times as the profile allows. Proved call for call
+    against the running O-code by `test_level_intervals`, which now uses this
+    rather than its own copy.
+
+    BLOCKED CALLS ARE PART OF THE SEQUENCE AND MUST NOT BE DROPPED. They emit
+    no motion, so leaving them out looks free - but `o<p1_none>` fires exactly
+    when a call comes back blocked with nothing yet cut on the level, and that
+    is the phase-1 handover, which really does fire and moves the ceiling by
+    3.556 mm on testing_15_blocked (analysis/088). A sequence of only the
+    cutting intervals would silently stop the handover happening.
+
+    `phase1` is that branch: in phase 1 a first call blocked from the
+    sub-span's own start abandons the level outright, where a phase-2 window
+    blocked the same way goes looking for a resume.
+    """
+    calls, l_fr, cut_yet = [], sg_from, False
+    for _ in range(200):                 # a level is never split this often
+        calls.append((l_fr, lv_to))
+        blocked, z_end = level_stop_z(floor_contour, level, l_fr, lv_to, oz,
+                                      multi_cross, mm)
+        if blocked is None:
+            return calls
+        if phase1 and blocked and not cut_yet and len(calls) == 1:
+            break
+        if not blocked:
+            cut_yet = True
+        found, z = resume_z(resume_env, level,
+                            l_fr if blocked else z_end, lv_to, mm)
+        if not found:
+            break
+        l_fr = z
+    return calls
+
+
 def wrong_way_dirs(orient, rough_dir):
     """True when the chosen roughing direction opposes the insert's own.
 
@@ -4485,10 +4526,19 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     return '\n'.join(lines)
 
 
-def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
                               flank_len=0.0, clearance=0.0, orient=0,
                               rough_cut=0.0):
-    """Where a roughing LEVEL stops: the profile offset by the floor allowance.
+    """(env, renv, rough_dir) - the floor contour and the resume
+    envelope as DATA, or None.
+
+    Split out of build_floor_contour_gcode so the interval walk can be
+    worked out at generation time from the same two tables the runtime
+    is handed. Both come from ONE `env` here, which is what stops them
+    drifting - see the emitter for what that cost when they did.
+
+    Originally: where a roughing LEVEL stops - the profile offset by the
+    floor allowance.
 
     The subroutine used to work this out itself, offsetting every segment of
     the record array perpendicular by one scalar at runtime. That cannot hold
@@ -4519,7 +4569,7 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
         pf_off = 0.0
     floor_x, floor_z = fin_off + pf_off, fin_off_z + pf_off
     if max(floor_x, floor_z) <= 0:
-        return ''
+        return None
 
     # THE RAW PROFILE, not the reachable one. The scan this replaces walks the
     # record array, which is the polyline as drawn; the back-angle shadow is a
@@ -4530,7 +4580,7 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r,
                                 flank_len, clearance)
     if not pts or len(pts) < 2:
-        return ''
+        return None
     d = polyline_feature.get_param('param_dir')
     # one decomposition frame - see rough_frame_dir
     rough_dir = rough_frame_dir(
@@ -4539,7 +4589,33 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
                         floor_x, rough_dir, _nr, _or, floor_z)
     if len(env) < 2:
+        return None
+    if FLOORC_BASE + 2 * len(env) > FLOORC_TOP:
+        return ('(WARNING - the floor contour needs %d parameter slots and only '
+                '%d are free, so roughing works its own floor out as before and '
+                'a separate Z offset will not reach it.)'
+                % (2 * len(env), FLOORC_TOP - FLOORC_BASE))
+    li_len = polyline_feature.get_param('param_li_len')
+    li_ang = polyline_feature.get_param('param_li_ang')
+    lead_z = 0.0
+    if li_len is not None:
+        _l = _to_float(li_len.get_ngc_value())
+        _a = _to_float(li_ang.get_ngc_value()) if li_ang is not None else 45.0
+        lead_z = abs(_l * math.cos(math.radians(_a)))
+    renv = resume_envelope(env, 1 if rough_dir == 0 else -1, lead_z,
+                           rough_cut)
+    return env, renv, rough_dir
+
+
+def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                              flank_len=0.0, clearance=0.0, orient=0,
+                              rough_cut=0.0):
+    """The #3700 floor contour and the #3000 resume envelope."""
+    got = floor_contour_data(polyline_feature, back_deg, nose_r,
+                            flank_len, clearance, orient, rough_cut)
+    if got is None:
         return ''
+    env, renv, rough_dir = got
     if FLOORC_BASE + 2 * len(env) > FLOORC_TOP:
         return ('(WARNING - the floor contour needs %d parameter slots and only '
                 '%d are free, so roughing works its own floor out as before and '
@@ -4562,15 +4638,6 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     # stopped in front of it was never resumed behind it - testing_15_5 lost
     # two passes and took a 1.524 mm bite against a 0.508 depth of cut.
     # Emitting both tables from one `env` is what makes them unable to drift.
-    li_len = polyline_feature.get_param('param_li_len')
-    li_ang = polyline_feature.get_param('param_li_ang')
-    lead_z = 0.0
-    if li_len is not None:
-        _l = _to_float(li_len.get_ngc_value())
-        _a = _to_float(li_ang.get_ngc_value()) if li_ang is not None else 45.0
-        lead_z = abs(_l * math.cos(math.radians(_a)))
-    renv = resume_envelope(env, 1 if rough_dir == 0 else -1, lead_z,
-                           rough_cut)
     if renv and RESUME_BASE + 2 * len(renv) <= RESUME_TOP:
         lines += ['(where a blocked level may plunge back in, per level. Monotone)',
                   '(by construction: a level never resumes in front of the one)',

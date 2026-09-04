@@ -270,6 +270,20 @@ def main():
                     walks += 1
                     if len(g) > 1:
                         multi += 1
+                    # THE WALK ITSELF NOW COMES FROM lathe_sections. This
+                    # test used to carry its own copy; comparing the library's
+                    # sequence against the O-code's is the same proof and
+                    # leaves exactly one implementation.
+                    lvl0, wf0, wt0 = g[0][0], g[0][1], g[0][2]
+                    mine = ls.level_calls(flc, env, lvl0, wf0, wt0, oz, mc, mm,
+                                          phase1=(sect_on and g[0][7] < 0))
+                    if len(mine) != len(g) or any(
+                            abs(a_[0] - b_[1]) > 0.002
+                            or abs(a_[1] - b_[2]) > 0.002
+                            for a_, b_ in zip(mine, g)):
+                        wrong.append(('sequence %s vs %s'
+                                      % (mine, [(b_[1], b_[2]) for b_ in g]),
+                                      lvl0, wf0))
                     cut_yet = False
                     for i, (lvl, wf, wt, blk, ze, raw, zc, ph) in enumerate(g):
                         steps += 1
