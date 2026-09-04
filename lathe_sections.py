@@ -3033,6 +3033,42 @@ def protected_flags(levels, floors, step_target, staged):
     return flags
 
 
+def level_floors(levels, floors, window_floor):
+    """The floor each level is AIMING AT - poly_lathe_mill's `lvl_floor`.
+
+    It is the window's own floor, except that a ladder walking floor stages
+    re-anchors on each in turn: the runtime starts on stage 0 when the window's
+    floor IS the last stage, and steps to the next each time a level lands on
+    the current one. The level table already encodes that walk, so the answer
+    can be emitted per level.
+
+    NOT WIRED, AND MEASURED RATHER THAN ASSUMED. This agrees with the
+    runtime's own `lvl_floor` on all 4542 levels of the sweep - so the answer
+    is right - but writing it into poly_lathe_mill BREAKS the part. The window
+    start's write lands BEFORE the stage-arming block, which decides whether to
+    arm `fl_i` by testing `lvl_floor` against the LAST stage; overwritten to
+    stage 0 that test fails, the stage machinery never arms, and the ladder
+    breaks at the first floor instead of walking them - 466 moves against 472
+    on testing_15_5.
+
+    So `lvl_floor` cannot be moved on its own: the runtime's value is already
+    correct, and the arming depends on reading it before any table value.
+    Moving it means moving `fl_i` and the loop's own termination with it, which
+    is a larger change. Kept here because that change needs exactly this.
+    See analysis/095.
+    """
+    cur, fl_i = window_floor, -1
+    if len(floors) > 1 and abs(window_floor - floors[-1]) <= 0.000001:
+        fl_i, cur = 0, floors[0]
+    out = []
+    for r in levels:
+        out.append(cur)
+        if abs(r - cur) <= 0.000001 and 0 <= fl_i < len(floors) - 1:
+            fl_i += 1
+            cur = floors[fl_i]
+    return out
+
+
 def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     """The #1000 roughing level table, or '' to leave poly_lathe_mill computing.
 
@@ -3088,8 +3124,21 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
     if not ladder:
         return ''
 
+    # IDENTICAL RUNS SHARE ONE COPY. Artificial sectioning gives every window
+    # the same ladder - 17 windows x 32 levels stored 17 times reached 2683
+    # slots against a 2600 ceiling, and would have fallen back silently on
+    # testing_15_9. The directory already addresses runs by offset, so two
+    # windows can simply point at the same one. Keyed on the radii AND the
+    # staged flag, because phase 1 aims at the ceiling rather than a floor and
+    # so carries different per-level answers for the same radii.
+    runs, index = [], {}
+    for w, radii in ladder:
+        key = (tuple(radii), not (sectioning and w < 0))
+        if key not in index:
+            index[key] = len(runs)
+            runs.append((radii, key[1]))
     data = LVL_BASE + 3 * len(ladder)
-    n_rad = sum(len(radii) for _w, radii in ladder)
+    n_rad = sum(len(radii) for radii, _st in runs)
     flag = data + n_rad
     total = flag + n_rad
     if total > LVL_TOP:
@@ -3107,29 +3156,32 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
              '#<_pl_lvl_n>    = %d' % len(ladder),
              '#<_pl_lvl_base> = %d' % data,
              '#<_pl_lvlf_base> = %d' % flag]
-    off = 0
+    starts, off = [], 0
+    for radii, _st in runs:
+        starts.append(off)
+        off += len(radii)
     for i, (w, radii) in enumerate(ladder):
         slot = LVL_BASE + 3 * i
+        r = index[(tuple(radii), not (sectioning and w < 0))]
         lines.append('#%d = %d' % (slot, w))
-        lines.append('#%d = %d' % (slot + 1, off))
+        lines.append('#%d = %d' % (slot + 1, starts[r]))
         lines.append('#%d = %d' % (slot + 2, len(radii)))
-        off += len(radii)
     off = 0
-    for _w, radii in ladder:
+    for radii, _st in runs:
         for r in radii:
             lines.append('#%d = %s' % (data + off, _fmt(r)))
             off += 1
     off = 0
     stgs = floor_stages(polyline_feature, rough_cut)
-    stgt = ladder_consts(
+    cc = ladder_consts(
         start_r, final_r, _p('param_f_off'),
         _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
-        rough_cut, _p('param_pass_from') > 0, stgs)['step_target']
-    for w, radii in ladder:
+        rough_cut, _p('param_pass_from') > 0, stgs)
+    stgt = cc['step_target']
+    for radii, staged in runs:
         # phase 1 aims at the ceiling, which is not a floor - the same
         # discriminator the O-code uses against the last stage
-        for f in protected_flags(radii, stgs, stgt,
-                                 not (sectioning and w < 0)):
+        for f in protected_flags(radii, stgs, stgt, staged):
             lines.append('#%d = %d' % (flag + off, f))
             off += 1
     return '\n'.join(lines) + '\n'
