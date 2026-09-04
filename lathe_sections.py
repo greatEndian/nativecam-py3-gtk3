@@ -4471,9 +4471,30 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
             return extra
         return fin_off_z * (extra / fin_off)
 
-    paths = [offset_contour(points, nose_r, int(orient), side, extra,
+    # THE OFFSET MUST DEPEND ON THE PART, NOT ON THE DIRECTION OF CUT.
+    # offset_contour takes its normal from each segment's direction - nz, nr =
+    # ur*side, -uz*side - so handing it the profile REVERSED flips every normal
+    # and the path offsets the wrong way. On a bore that puts the nose centre
+    # at wall + R instead of wall - R: a gouge of exactly 2R, the whole nose
+    # diameter into the wall.
+    # finish_profile returns its points in the FINISHING direction, which for a
+    # right-hand boring bar runs the other way round the profile than it does
+    # for an OD tool - so testing_14_inside_bar came out reversed and every
+    # In-CAM bore with that tool was cut 0.8 mm oversize. Measured: reversed
+    # input gives the mouth control point at r17.8 against the correct r17.0,
+    # matching the emitted program exactly. See analysis/107.
+    # Offset in the drawn order and put the result back the way it came, so the
+    # cut direction is preserved and only the geometry is corrected.
+    _ref = resolve_points(polyline_feature)
+    _rev = (len(points) > 1 and len(_ref) > 1
+            and (points[0][0] - points[-1][0])
+            * (_ref[0][0] - _ref[-1][0]) < 0)
+    _src = list(reversed(points)) if _rev else points
+    paths = [offset_contour(_src, nose_r, int(orient), side, extra,
                             _z_for(extra))
              for extra in offsets]
+    if _rev:
+        paths = [list(reversed(p)) for p in paths]
     if any(len(p) < 2 for p in paths):
         return _refuse('the offset path collapsed - the nose radius is too '
                        'large for this profile')
