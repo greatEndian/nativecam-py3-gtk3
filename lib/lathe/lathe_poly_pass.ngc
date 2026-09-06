@@ -331,7 +331,25 @@ o<lathe_poly_pass> sub
 	#<_pass_z_dir> = #<z_dir>
 	o<trace_lathe> CALL [#<pds>] [0] [1] [0] [0] [0] [2]
 
-	o<tip_comp_off> CALL
+	(CANCEL COMPENSATION IN FREE AIR, NOT ON THE PART. G40 here left the)
+	(retreat below running UNCOMPENSATED from the profile's own last)
+	(point, so the nose sat R inside the wall for that point. Measured on)
+	(testing_14_inside_bar under native compensation: 620 sampled points,)
+	(exactly one gouging, the bore mouth at centre r17.4000 against a)
+	(r17.0000 wall - and the mouth is where this pass ENDS, because a)
+	(right-hand boring bar traverses the profile the other way round.)
+	(Keeping comp on through the retreat is the mirror of what the)
+	(arc-entry branch does at the start, and G41.1 carries through a)
+	(straight-then-arc perfectly well - measured, analysis/111.)
+	(ID ONLY: the OD path is proved clean at 0.0000 and comp behaviour is)
+	(inverted between OD and ID, so the rule is not copied across.)
+	#<lo_late> = 0
+	o<lo_lt> if [[#<_pl_side> EQ 1] AND [#<_tip_comp_d> GT 0.0001] AND [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]]
+		#<lo_late> = 1
+	o<lo_lt> endif
+	o<co_off1> if [#<lo_late> EQ 0]
+		o<tip_comp_off> CALL
+	o<co_off1> endif
 
 	o<lead_out> if [[#<lo_len> GT 0] OR [#<lo_rad> GT 0]]
 		(the blend radius still leaves the part, so it stays at the pass feed;)
@@ -481,5 +499,9 @@ o<lathe_poly_pass> sub
 		o<lo_str> endif
 		F#<pass_feed>
 	o<lead_out> endif
+	(and now it is clear of the wall)
+	o<co_off2> if [#<lo_late> GT 0]
+		o<tip_comp_off> CALL
+	o<co_off2> endif
 
 o<lathe_poly_pass> endsub
