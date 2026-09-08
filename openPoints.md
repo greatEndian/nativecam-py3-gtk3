@@ -1453,6 +1453,31 @@ the two cuts only touch.
 
 ## Next — before anything else
 
+- [x] **THE ARC-FIRST ABORT — FIXED**, 2026-09-08, `analysis/115`. The three
+  `testing_13_arc_first*` projects died at load with *"Straight feed in concave
+  corner cannot be reached by the tool without gouging"*, 2832 moves in. Not a
+  nose-comp bug despite `n_comp = 0`: the pre-finish holds its stock with
+  `G41.1 D[2 × shift_r] L0`, so compensation is genuinely active. `ext_bz`
+  slid the entry along the entry segment to reach Begin Z, measuring the slide
+  from `comp_ez` — so it also had to cancel the comp normal's Z, and could only
+  buy that in Z along the segment. An arc-first contour enters on the arc's
+  first chord, near-radial at `ex_uz = -0.1467`: 0.5025 of Z cost **3.39 in
+  radius**. Entry landed at R11.4621 with the profile start at R8.0000, `G42.1`
+  came on out there, and the first compensated move plunged back in. Split into
+  the profile extension (always paid) and the comp correction (bounded by
+  `comp_r`). Sweep: **43 of 46 byte-identical, the only 3 that changed are the
+  3 that were broken.** Whole suite green.
+  - Three fixes were tried and measured first — an angle guard and an
+    excursion guard each changed 7 unrelated projects, because `comp_r = 0`
+    In CAM and the extension is legitimate there; measuring from `entry_z`
+    broke `test_ladder`'s mode 1 Begin Z equality. Each is written up.
+- [ ] **Native-comp coverage gap on the `testing_13_*` family.** `prove_cam_comp
+  --mode 1` reports 21–23 uncovered segments across the family. Gouge is
+  **0.0000** on the three arc-first projects and **0.0358** on `testing_13_arcs`,
+  which is untouched by the fix above and byte-identical in the sweep — so it is
+  pre-existing, not from that change. Measured, not diagnosed.
+- [ ] **No arc-first project has cut metal.** The fix is proved in rs274 only.
+
 - [x] **THE "KLINGY" ARC — FIXED**, 2026-08-10, `ac61573`, `analysis/024`
   addendum 4. With *Separate Z offset* on, the dashed contours were jagged on
   the boss's rising arc. `curve_offsets` now offsets along the **curve's own

@@ -170,7 +170,39 @@ o<lathe_poly_pass> sub
 		(a Z, and must not be: dividing by its zero Z component would throw the)
 		(entry to infinity)
 		o<ext_uz> if [ABS[#<ex_uz>] GT 0.001]
-			#<ex_t> = [[#<comp_ez> - #<_pl_begin_z>] / #<ex_uz>]
+			(THE SLIDE DOES TWO JOBS AND ONLY ONE OF THEM IS ALWAYS AFFORDABLE.)
+			(ex_pt carries the PROFILE POINT from its own Z to Begin Z - a real)
+			(extension of the contour, and whatever radius it costs is the)
+			(radius the contour actually has there, so it is always paid. In)
+			(CAM mode comp_ez IS entry_z and ex_pt is the whole term, which is)
+			(why every In CAM pass is unchanged to the byte - testing_15_blocked)
+			(still slides its full 21.146.)
+			(ex_ct cancels the Z that the comp normal and the orientation term)
+			(added just above, so the compensated entry still lands on Begin Z.)
+			(It is a correction, not travel, and it can only buy Z along the)
+			(entry segment - so the steeper that segment, the more RADIUS a)
+			(little Z costs, without bound.)
+			(That is what killed testing_13_arc_first and its two siblings. A)
+			(contour starting on an arc arrives with the arc's first chord,)
+			(which climbs almost radially: ex_uz -0.1467. Buying back the 0.5025)
+			(of Z the comp terms contributed cost 3.39 in RADIUS - the entry)
+			(landed at R11.4621 with the profile start at R8.0000, G42.1 came on)
+			(out there, and the first compensated move plunged radially back)
+			(into the corner. "Straight feed in concave corner cannot be reached)
+			(by the tool without gouging", 2832 moves in, three projects dead)
+			(since before this branch. analysis/115.)
+			(So bound the correction by comp_r, the scale of the terms it is)
+			(cancelling. An axial entry - every case this extension was built)
+			(for - has ex_ux near zero and pays nothing, so it still lands)
+			(exactly on Begin Z and test_ladder's mode 1 equality holds. A near)
+			(radial entry keeps the plain comp point instead, which sits in free)
+			(air in front of the face and is a valid compensation entry.)
+			#<ex_pt> = [[#<entry_z> - #<_pl_begin_z>] / #<ex_uz>]
+			#<ex_ct> = [[#<comp_ez> - #<entry_z>] / #<ex_uz>]
+			o<ext_cc> if [ABS[#<ex_ct> * #<ex_ux>] GT #<comp_r>]
+				#<ex_ct> = 0
+			o<ext_cc> endif
+			#<ex_t> = [#<ex_pt> + #<ex_ct>]
 			#<comp_ez> = [#<comp_ez> - [#<ex_t> * #<ex_uz>]]
 			#<comp_ex> = [#<comp_ex> - [#<ex_t> * #<ex_ux>]]
 		o<ext_uz> endif
