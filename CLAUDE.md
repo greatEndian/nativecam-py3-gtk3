@@ -159,6 +159,10 @@ python3 test_lathe_validation.py   # checks cfg/lathe subroutine calls against .
 python3 test_coord_mapping.py      # turn-mill coordinate mapping math
 python3 test_vkb.py                # virtual keyboard arithmetic parser
 
+# Whole-catalogue sweeps - slow (they generate every project), run before a commit
+python3 test_project_sweep.py      # every lathe project still generates and runs
+python3 test_surface_equality.py   # roughing's stop surface holds every finishing point
+
 # What touches what, across cfg / Python / O-code - run BEFORE planning a change
 python3 cam_map.py                 # six static checks, exit 1 on failure
 python3 cam_map.py --map           # and regenerate CAM-MAP.md

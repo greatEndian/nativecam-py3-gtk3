@@ -1488,9 +1488,14 @@ the two cuts only touch.
   - **Latent at every project's current settings** — the truncated corners lie
     outside the stock or below the roughing floor, which is why the sweep shows
     no change and why nothing caught it. No gate asserts the two surfaces are
-    equal; the invariant lives only in a comment. A check that `_pl_env_*`
-    contains every `_pl_fc_*` point would have caught it the day `protect` was
-    added to one site — worth adding.
+    equal; the invariant lived only in a comment.
+  - **`test_surface_equality.py` now asserts it** — every `_pl_fc_*` point is a
+    vertex of `_pl_env_*`, read back out of each generated program rather than
+    from the builders, because the bug was a missing argument at one call site
+    and both functions were correct. 38 of 46 projects carry both tables and all
+    38 pass; with the fix reverted it fails on 4, three points each. Carries its
+    own comparator self-check and a zero-count guard, since this project has
+    shipped a vacuous pass twice.
 - [ ] **Native-comp coverage gap — DIAGNOSED, blocked on a parameter window.**
   `prove_cam_comp --mode 1` reports 21–23 uncovered segments across the
   `testing_13_*` family. Cause: the finish pass walks **30 records, all

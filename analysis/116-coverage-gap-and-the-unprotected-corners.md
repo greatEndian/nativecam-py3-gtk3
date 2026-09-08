@@ -154,3 +154,52 @@ that `_pl_env_*` contains every `_pl_fc_*` point would have caught it the day
 - The coverage gap itself, above - blocked on the FLANK window.
 - Whether any real part has been cut with a truncated corner inside the stock.
   Nothing here has touched metal.
+
+## Addendum, same day — the gate
+
+greatEndian: *"add the surface-equality gate"*, following "no gate asserts the
+two surfaces are equal" above. `test_surface_equality.py`.
+
+**Three candidate invariants were measured and two were thrown away**, which is
+the useful part of the record:
+
+1. *The stop surface never lies inside the finished profile.* False. It flags
+   4.94 mm on the ID projects and 0.43 on testing_15_7, because `profile_bound`
+   takes the OUTERMOST radius on a multi-valued profile, so a legitimately
+   shadowed boss reads as buried.
+2. *If an env segment's endpoints both lie on the profile, a corner between them
+   must lie on that segment.* False. The reachable envelope deliberately BRIDGES
+   unreachable pockets, and a bridge has both ends on the profile - 15 projects
+   flagged, worst 9.84 mm, all legitimate. Adding a sign test and a
+   single-valued test still left 15.
+3. *Every finishing-contour point is a vertex of the flank envelope.* **True** -
+   38 of 38 projects that carry both tables, no exceptions.
+
+Three rounds of patching an invariant against fresh counterexamples is the
+signal that it is not an invariant. A gate with false positives fails the suite
+for everyone, so it is worth more to measure a candidate across the catalogue
+before shipping it than to reason about whether it should hold.
+
+The gate reads the SHIPPED TABLES back out of each generated program rather than
+testing the builders: the bug was a missing argument at one call site while both
+functions were correct, so a unit test on either would have passed.
+
+**Negative control, and a false one first.** `git stash push lathe_sections.py`
+reported success and stashed nothing - the fix was already committed - so the
+first control re-tested the fixed code and "passed". That is the same shape as
+the patch earlier in this branch whose assert fired before any write while the
+gate reported MOTION IDENTICAL. Redone with `git checkout f8c5fdd^ --` and the
+revert VERIFIED by grep before measuring:
+
+    protected call sites 1 (pre-fix)  ->  exit 1, 4 projects, 3 points each
+    protected call sites 2 (fixed)    ->  exit 0, 38 of 38
+
+It also carries a comparator self-check that does not need the code reverted,
+and fails on a zero project count - this project has shipped a vacuous pass
+twice.
+
+Not covered: the stop contour `_pl_stop_*` (4400) is a third table and a
+different surface. And the two envelopes are not built from identical inputs -
+the finishing one also takes a front-flank angle and `fin_dir` where the flank
+one uses `rough_dir` - so containment is asserted as the documented intent
+rather than proved from construction. It holds across the whole catalogue today.
