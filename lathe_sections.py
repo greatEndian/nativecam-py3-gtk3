@@ -3920,7 +3920,8 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     """
     if back_deg is None or back_deg <= 0:
         return ''
-    points = resolve_points(polyline_feature)
+    corners = []
+    points = resolve_points(polyline_feature, corners)
     if not points or len(points) < 2:
         return ''
 
@@ -3954,7 +3955,27 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     # cleaned one; if the two differ, roughing eats into the pre-finish
     # allowance at every sawtooth valley - which is what put the behind-boss
     # levels inside the pre-finish band. One surface, both users.
-    env = _min_segment(_clean_ramp(env, points), 2.4 * nose_r)
+    #
+    # `corners` IS PART OF "EXACTLY". It was added to the finishing call for
+    # the reason _min_segment's own docstring gives - a densified arc's last
+    # chord is the remainder of the sweep, routinely shorter than the limit, so
+    # dropping it runs the path from the last chord vertex to the NEXT ITEM'S
+    # far end and cuts the corner off - but this call was left without it, and
+    # the two surfaces have disagreed ever since, at exactly the corners the
+    # protection exists for. Measured on testing_13_arc_first, the finishing
+    # contour held three corners this envelope did not:
+    #
+    #     Z  -4.0000 R 12.0000   0.0186 mm   end of the R4 nose arc
+    #     Z -25.0000 R 22.0000   0.6270 mm
+    #     Z -51.0000 R 28.0000   0.9338 mm   end of the R6 fillet
+    #
+    # which is the docstring's own worked example arriving in the shipped
+    # table: its 90 degree sweep stopping at 81 and the 19 mm cylinder at
+    # r 28.000 left as a ramp from r 27.061. Roughing stops against THIS
+    # surface, so it stopped 0.9338 mm INSIDE the finished cylinder - the
+    # pre-finish allowance eaten, which is the failure the comment above
+    # describes. analysis/116.
+    env = _min_segment(_clean_ramp(env, points), 2.4 * nose_r, corners)
 
     base = FLANK_BASE
     if base + 2 * len(env) > FLANK_TOP:

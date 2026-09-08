@@ -1471,11 +1471,44 @@ the two cuts only touch.
     excursion guard each changed 7 unrelated projects, because `comp_r = 0`
     In CAM and the extension is legitimate there; measuring from `entry_z`
     broke `test_ladder`'s mode 1 Begin Z equality. Each is written up.
-- [ ] **Native-comp coverage gap on the `testing_13_*` family.** `prove_cam_comp
-  --mode 1` reports 21–23 uncovered segments across the family. Gouge is
-  **0.0000** on the three arc-first projects and **0.0358** on `testing_13_arcs`,
-  which is untouched by the fix above and byte-identical in the sweep — so it is
-  pre-existing, not from that change. Measured, not diagnosed.
+- [x] **ROUGHING STOPPED PAST THE CORNER — FIXED**, 2026-09-08,
+  `analysis/116`. Found while chasing the coverage gap below.
+  `_min_segment(pts, limit, protect)` takes `protect` so the profile's real
+  corners survive; it was passed at the finishing call site and **not** at the
+  flank one, directly under a comment saying *"Cleaned exactly as the finishing
+  contour is … One surface, both users."* They were not. The flank envelope
+  dropped three corners the finishing contour kept — 0.0186, 0.6270 and
+  **0.9338 mm** — leaving `Z-50.9261 R27.0614 → Z-69.9998 R28.0000`, a 19 mm
+  phantom ramp where the part is a flat R28 cylinder. Roughing stops against
+  that surface, so with the offsets zeroed it ran **8.96 mm and 4.44 mm past
+  the corner**, cutting 0.49 mm into two finished surfaces. Fix: collect and
+  pass `corners` at the flank site too. Env 31 = fc 31, 0 points missing; no
+  window WARNING on any of the 46, max env 32 against the cap of 50; motion
+  identical on all 46 at their own settings; whole suite green.
+  - **Latent at every project's current settings** — the truncated corners lie
+    outside the stock or below the roughing floor, which is why the sweep shows
+    no change and why nothing caught it. No gate asserts the two surfaces are
+    equal; the invariant lives only in a comment. A check that `_pl_env_*`
+    contains every `_pl_fc_*` point would have caught it the day `protect` was
+    added to one site — worth adding.
+- [ ] **Native-comp coverage gap — DIAGNOSED, blocked on a parameter window.**
+  `prove_cam_comp --mode 1` reports 21–23 uncovered segments across the
+  `testing_13_*` family. Cause: the finish pass walks **30 records, all
+  `dir = 1`** — no arc survives — because `_min_segment(env, 2.4 × nose_r)`
+  thins the densified arcs, keeping every 3rd chord. Across an R6 fillet: In-CAM
+  20 points all at 0.4000, native 6 chords whose midpoints leave **0.0416 mm of
+  stock**. `poly_mesh_lathe` is not involved (0 calls — the `_pl_env_count > 0`
+  branch replaces it).
+  - The blanket `2.4 × nose_r` is ~60× the per-corner requirement for an arc
+    chord (`R·tan(deficit/2)` = 0.0157 at 4.5°), so a per-corner rule would keep
+    the resolution — **but the surface is emitted to both FLANK (3600–3700,
+    50 points) and FC (4000–4200, 100 points), and the two must stay identical.
+    Un-thinned it is 66 points: fits FC, overflows FLANK.** Enlarging FLANK
+    means moving FLOORC at 3700 and its O-code readers.
+  - Better route: the table is points-only, so arcs must be chorded at all.
+    Carrying `dir` + centre per record would let `g123_lathe` — which already
+    emits `G2`/`G3` for `dir` 2/3 — trace the true arc exactly, in **one**
+    record instead of 20.
 - [ ] **No arc-first project has cut metal.** The fix is proved in rs274 only.
 
 - [x] **THE "KLINGY" ARC — FIXED**, 2026-08-10, `ac61573`, `analysis/024`
