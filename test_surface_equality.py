@@ -58,7 +58,15 @@ INI = os.path.join(HERE, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECTS = os.path.join(HERE,
                         'configs/sim/axis/ncam_demo/ncam/catalogs/lathe/projects')
-ENV_BASE, FC_BASE = 3600, 4000
+
+# TAKEN FROM THE MODULE, NEVER RETYPED. These were 3600 and 4000 as literals for
+# exactly one commit, and the flank window then moved to 2600 - after which this
+# gate read an empty region, called 42 of 46 projects "without both tables" and
+# would have passed on nothing. A window moved in Python with its readers naming
+# it separately is the bug cam_map.py exists to catch; a gate is not exempt.
+sys.path.insert(0, HERE)
+import lathe_sections as L                                       # noqa: E402
+ENV_BASE, FC_BASE = L.FLANK_BASE, L.FC_BASE
 QUANT = 4
 
 FAILED = []

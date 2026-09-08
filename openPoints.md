@@ -1496,7 +1496,36 @@ the two cuts only touch.
     38 pass; with the fix reverted it fails on 4, three points each. Carries its
     own comparator self-check and a zero-count guard, since this project has
     shipped a vacuous pass twice.
-- [ ] **Native-comp coverage gap — DIAGNOSED, blocked on a parameter window.**
+- [ ] **Native-comp coverage gap — CLOSES, blocked on a window re-layout.**
+  2026-09-08, `analysis/117`. Built and measured in a working tree: keeping the
+  drawn arcs instead of thinning them takes `testing_13_arc_first` mode 1 from
+  **21 uncovered segments to 0** — **PASS**, gouge 0.0000, 3469 tangent points
+  against 1407, wrong-side control still correctly failing. `testing_13_arcs`
+  goes 23 → 2, and those 2 are a front-face reach question, not chording.
+  **Reverted, not shipped**, because two windows overflow at 66 points:
+  - **FLANK** 3600–3700, 100 slots, needs 132 — overflows with a WARNING and
+    roughing loses its stop surface (4 projects emitted `env0 fc66 WARNING`).
+  - **ERAMP** 3200–3380, 180 slots, needs `65×4+3 = 263` — and
+    `build_entry_ramp_gcode` drops the table with a bare `return ''`, **no
+    WARNING anywhere**. This is what removed the back-angle ramps:
+    testing_15_2/4/5 went 9 shallow roughing feeds → **0**. It looked like a
+    geometric coupling for three attempts; it is a silent resource fallback.
+  - Space exists in exactly one place: **LVL is allocated 1000–2600 and reaches
+    slot 1179 across all 46 — 179 of 1600.** Everything else is contiguous from
+    3380 up. Taking it means moving windows past consumers that name each
+    other's bounds, and one has already been caught doing that. Plan-mode job.
+- [ ] **`build_entry_ramp_gcode` falls back silently.** `return ''` with no
+  `(WARNING - ...)` comment, unlike every other table here. Worth fixing on its
+  own merits whatever happens to the resolution above.
+- [x] **`section_windows` capped itself with the NEXT window's base** —
+  2026-09-08, `analysis/117`. `if SECT_BASE + 4 * len(out) > FLANK_BASE:` is
+  correct only while the windows are contiguous; moving FLANK made every profile
+  "overflow" and fall back to one full-span window, silently. Now `SECT_TOP`,
+  **set to 3600 — the value the old expression produced** — so nothing changes
+  today. Also fixed the same shape in `test_sections`' layout check and in
+  `test_surface_equality.py`, which hardcoded 3600/4000 and would have passed on
+  nothing after a move.
+- [ ] ~~Native-comp coverage gap — DIAGNOSED, blocked on a parameter window.~~
   `prove_cam_comp --mode 1` reports 21–23 uncovered segments across the
   `testing_13_*` family. Cause: the finish pass walks **30 records, all
   `dir = 1`** — no arc survives — because `_min_segment(env, 2.4 × nose_r)`

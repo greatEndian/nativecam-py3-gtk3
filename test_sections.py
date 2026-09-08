@@ -562,12 +562,22 @@ def test_table_layout():
     around, with no error anywhere.
     """
     import lathe_sections as L
-    regions = [('sections', L.SECT_BASE, L.FLANK_BASE),
+    # EVERY REGION NAMES ITS OWN TOP. This list used to give the sections table
+    # FLANK_BASE as its top and so assumed the windows were contiguous; when the
+    # flank envelope moved to 2600 that made the region run backwards, and
+    # section_windows - which read FLANK_BASE as its ceiling for the same reason
+    # - fell back to a single full-span window on every profile. Sorted rather
+    # than assumed in order, so the next move is checked rather than encoded.
+    regions = [('level ladder', L.LVL_BASE, L.LVL_TOP),
                ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
+               ('per-window deepest cut', L.WDEEP_BASE, L.WDEEP_TOP),
+               ('sections', L.SECT_BASE, L.SECT_TOP),
+               ('floor contour', L.FLOORC_BASE, L.FLOORC_TOP),
                ('finish contour', L.FC_BASE, L.FC_TOP),
                ('entry contour', L.ENTRY_BASE, L.ENTRY_TOP),
                ('stop contour', L.STOP_BASE, L.STOP_TOP),
                ('In-CAM offsets', L.CAM_BASE, L.CAM_TOP)]
+    regions.sort(key=lambda r: r[1])
     for i in range(len(regions) - 1):
         n0, _b0, t0 = regions[i]
         n1, b1, _t1 = regions[i + 1]
@@ -630,9 +640,12 @@ def test_interval_windows():
     check('a zero allowance leaves every window alone',
           L._split_level_intervals(win, pts, secs, 0.0) == win)
 
-    # the guard: 200 slots is 50 windows, and a truncated table is metal left
-    # standing, so an overflow keeps the unsplit list
-    many = [(0.0, -60.0, 44.0, L.BAND_ALL)] * 20
+    # the guard: a truncated table is metal left standing, so an overflow keeps
+    # the unsplit list. SIZED FROM THE WINDOW, not from a number: this was 20
+    # copies against a 200-slot table and stopped testing anything the moment
+    # SECT_TOP moved to 3700, because 60 windows then fit where 50 had not.
+    # Each input window splits into 3, at 4 slots each.
+    many = [(0.0, -60.0, 44.0, L.BAND_ALL)] * ((L.SECT_TOP - L.SECT_BASE) // 12 + 2)
     check('a split that would overflow the window table is refused',
           L._split_level_intervals(many, pts, secs, 3.0) == many,
           'produced %d windows, %d slots'

@@ -1600,11 +1600,17 @@ def _split_level_intervals(windows, points, sections, allowance):
         pieces.sort(key=lambda p: -abs(p[0] - z0))
         out += pieces
 
-    # The table is 200 slots - 50 windows - and nothing above it is spare. A
-    # profile that would overflow keeps the unsplit list: the interval order
+    # A profile that would overflow keeps the unsplit list: the interval order
     # inside a level is a consistency nicety, and a truncated window table is
     # metal left standing.
-    if SECT_BASE + 4 * len(out) > FLANK_BASE:
+    #
+    # THE CEILING IS SECT_TOP, NOT THE NEXT WINDOW'S BASE. This read FLANK_BASE
+    # while the windows happened to be contiguous, so moving the flank envelope
+    # down to 2600 put a SMALLER number here than SECT_BASE and every profile
+    # "overflowed" - section_windows fell back to one full-span window, silently,
+    # exactly the way the comment above says a truncated table would. Caught by
+    # test_sections' own interval-window case. analysis/117.
+    if SECT_BASE + 4 * len(out) > SECT_TOP:
         return windows
     return out
 
@@ -4640,6 +4646,11 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 WDEEP_BASE = 2800
 WDEEP_TOP = 3000
 SECT_BASE = 3400
+# Its own ceiling rather than whatever window happens to sit above it - see
+# section_windows, which read FLANK_BASE for this and so would have silently
+# fallen back to one full-span window the moment that window moved. Same value
+# the old expression produced, so nothing about the table changes.
+SECT_TOP = 3600
 FLANK_BASE = 3600
 # the flank envelope has never needed more than 58 slots of its 400, measured
 # across four projects, so 100 is left to it and the rest goes to the floor
