@@ -1496,24 +1496,32 @@ the two cuts only touch.
     38 pass; with the fix reverted it fails on 4, three points each. Carries its
     own comparator self-check and a zero-count guard, since this project has
     shipped a vacuous pass twice.
-- [ ] **Native-comp coverage gap — CLOSES, blocked on a window re-layout.**
-  2026-09-08, `analysis/117`. Built and measured in a working tree: keeping the
-  drawn arcs instead of thinning them takes `testing_13_arc_first` mode 1 from
-  **21 uncovered segments to 0** — **PASS**, gouge 0.0000, 3469 tangent points
-  against 1407, wrong-side control still correctly failing. `testing_13_arcs`
-  goes 23 → 2, and those 2 are a front-face reach question, not chording.
-  **Reverted, not shipped**, because two windows overflow at 66 points:
-  - **FLANK** 3600–3700, 100 slots, needs 132 — overflows with a WARNING and
-    roughing loses its stop surface (4 projects emitted `env0 fc66 WARNING`).
-  - **ERAMP** 3200–3380, 180 slots, needs `65×4+3 = 263` — and
-    `build_entry_ramp_gcode` drops the table with a bare `return ''`, **no
-    WARNING anywhere**. This is what removed the back-angle ramps:
-    testing_15_2/4/5 went 9 shallow roughing feeds → **0**. It looked like a
-    geometric coupling for three attempts; it is a silent resource fallback.
-  - Space exists in exactly one place: **LVL is allocated 1000–2600 and reaches
-    slot 1179 across all 46 — 179 of 1600.** Everything else is contiguous from
-    3380 up. Taking it means moving windows past consumers that name each
-    other's bounds, and one has already been caught doing that. Plan-mode job.
+- [x] **NATIVE-COMP COVERAGE GAP — CLOSED**, 2026-09-09, `analysis/119`.
+  `testing_13_arc_first` mode 1: **21 uncovered segments → 0, PASS**, gouge
+  0.0000, wrong-side control still failing correctly. `testing_13_arcs` 23 → 2
+  with gouge 0.0358 → **0.0183**; its residual 2 are the front-face reach bug
+  below, not chording. `_min_segment`'s blanket `2.4 × nose_r` was ~60× what an
+  arc chord needs — the shrink is `R·tan(deficit/2)` per end and a densified
+  chord turns 4.5° — so it is now computed per corner, with a 2× margin, a
+  0.02 mm floor and the deficit clamped at 160°. Sharp corners now ask for
+  *more* than the blanket did and are still dropped.
+  - **The better-looking route had to be abandoned.** Protecting every
+    on-profile point gave 0 uncovered and gouge 0.0000 on `testing_13_arcs` —
+    and **aborted the real project** at runtime with the concave-corner gouge.
+    `prove_cam_comp` passed it, because it overrides the project
+    (`n_comp 2, op 2, pf_on 0`) and tests a program the operator never runs.
+    A green prover is not a green project; the sweep is what caught it.
+  - **Three attempts read this as geometry and it was a window all along.**
+    `analysis/117` rejected the per-corner rule because ramps went 9 → 0; that
+    was ERAMP overflowing silently. With commit A's 600 slots the same rule
+    keeps every ramp — `test_ramps` reports **68 ramps checked**.
+  - The fix pushed **ENTRY to exactly 100%** of its window (`entry_n = 100`,
+    fitting by one slot; 61% before), so 3600–4600 was repacked — FLOORC 250,
+    FC 200, ENTRY 280, STOP 270, CAM untouched. No window now above 80%, no
+    project emits a WARNING.
+- [ ] **Front-face reach on `testing_13_arcs`.** Its finish pass stops at
+  Z −2.6788, leaving profile segments 0 and 1 uncovered. Measured, not
+  diagnosed; the only thing between that project and a native-comp PASS.
 - [x] **THE RAMP TABLE WAS OVERFLOWING TODAY — FIXED**, 2026-09-09,
   `analysis/118`. Not a future risk: `testing_13_arc_first` generated
   `entry_n 60` and `eramp_n 0`, needing `59×4+3 = 239` slots against ERAMP's

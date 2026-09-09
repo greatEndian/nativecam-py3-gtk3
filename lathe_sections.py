@@ -4001,6 +4001,21 @@ def build_flank_gcode(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
     # allowance at every sawtooth valley - which is what put the behind-boss
     # levels inside the pre-finish band. One surface, both users.
     #
+    # AND THE ARCS ARE KEPT WHOLE. The limit is a blanket 2.4 * nose_r, about
+    # sixty times what an arc chord actually needs to survive compensation - the
+    # shrink is R*tan(deficit/2) per end and a densified chord turns 4.5 degrees
+    # - so two thirds of every arc was thrown away. The finish pass then walked
+    # 6 chords across an R6 fillet where the In CAM path walks 20, leaving
+    # 0.0416 mm of stock at each chord midpoint and 21 profile segments the nose
+    # never came tangent to.
+    #
+    # Protecting the points that lie ON the drawn profile keeps the operator's
+    # own geometry whole and leaves the RAMP stretches thinned exactly as
+    # before. That distinction is the point: the blanket limit was doing two
+    # jobs, and the second is not compensation at all - it smooths the
+    # envelope's sawtooth into a ramp. Relaxing the limit itself, per corner,
+    # took testing_15_2's shallow entry ramps from 9 to 0. analysis/119.
+    #
     # `corners` IS PART OF "EXACTLY". It was added to the finishing call for
     # the reason _min_segment's own docstring gives - a densified arc's last
     # chord is the remainder of the sweep, routinely shorter than the limit, so
@@ -4667,8 +4682,10 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 #   1800  ramp directions         i*4, one per entry segment - moved from 3200
 #   2400  flank envelope          i*2, capped below - moved from 3600
 #   3400  sections window table   i*4
-#   3700  floor contour           i*2 - where a roughing LEVEL stops
-#   4000  finish soft contour     i*2, capped below
+#   3600  floor contour           i*2 - where a roughing LEVEL stops
+#   3850  finish soft contour     i*2, capped below
+#   4050  entry contour           i*2 - where a roughing LEVEL may begin
+#   4330  stop contour            i*2 - the pre-finish surface
 #   4400  In-CAM offsets          directory + points, capped at CAM_TOP
 #
 # test_table_layout in test_sections.py asserts they stay disjoint.
@@ -4703,20 +4720,28 @@ FLANK_BASE = 2400
 # tables built from the simplified reachable one: 226 slots on testing_15_2,
 # where 200 was not enough and it silently fell back to the old scan
 FLANK_TOP = 2600
-FLOORC_BASE = 3700
+# THE 3600..4600 REGION IS REPACKED, all four of these windows reading their
+# base from a global the O-code never hardcodes, so this is a Python-only move.
+# Keeping the drawn arcs pushed the entry contour to 100 points on
+# testing_13_arc_first - EXACTLY the 200 slots ENTRY had, 100% of it, where it
+# sat at 61% before - and STOP to 96%. 3600..3700 came free when the flank
+# envelope moved out, and FLOORC gives up 50 of the 300 it uses 192 of. CAM is
+# left alone at 4600..4984; it is the tightest of the rest at 306 of 384.
+# analysis/119.
+FLOORC_BASE = 3600
 # floor_contour_data's third answer, beside a (env, renv, dir) tuple and None
 FLOORC_OVERFLOW = object()
-FLOORC_TOP = 4000
-FC_BASE = 4000
-FC_TOP = 4200
+FLOORC_TOP = 3850
+FC_BASE = 3850
+FC_TOP = 4050
 # the ENTRY contour - see entry_contour(). It shares 4000-4400 with the finish
 # contour, which was given 200 points and has never needed more than 20; both
 # are bounded and both refuse rather than run into their neighbour.
-ENTRY_BASE = 4200
-ENTRY_TOP = 4400
+ENTRY_BASE = 4050
+ENTRY_TOP = 4330
 # the STOP contour - see build_stop_contour_gcode. Carved out of the
 # In-CAM range, which had 600 slots and has never needed more than 200.
-STOP_BASE = 4400
+STOP_BASE = 4330
 STOP_TOP = 4600
 
 
@@ -5451,14 +5476,74 @@ def _min_segment(pts, limit, protect=()):
     """
     if limit <= 0 or len(pts) < 3:
         return list(pts)
+    nose_r = limit / BLANKET_MIN_SEG
     safe = set(protect)
     keep = [pts[0]]
-    for q in pts[1:-1]:
-        if q in safe or math.hypot(q[0] - keep[-1][0],
-                                   (q[1] - keep[-1][1]) / DIAMETER_MODE) >= limit:
+    for i, q in enumerate(pts[1:-1], 1):
+        if q in safe:
+            keep.append(q)
+            continue
+        p = keep[-1]
+        if math.hypot(q[0] - p[0], (q[1] - p[1]) / DIAMETER_MODE) >= _shrink_need(
+                keep[-2] if len(keep) > 1 else None, p, q, pts[i + 1], nose_r):
             keep.append(q)
     keep.append(pts[-1])
     return keep
+
+
+# The blanket limit this used to apply everywhere, as a multiple of the nose
+# radius, and still the way callers express it. _min_segment divides it back out
+# to recover the radius the shrink is computed from.
+BLANKET_MIN_SEG = 2.4
+
+# Headroom on the computed shrink. The interpreter's own margin is not
+# published, so the requirement is doubled rather than met exactly.
+SHRINK_MARGIN = 2.0
+
+# A segment shorter than this is not worth keeping whatever its corners say.
+SHRINK_FLOOR = 0.02
+
+# tan(deficit/2) runs away as a corner approaches a reversal, so the deficit is
+# clamped before it is taken. Past this the point is dropped either way.
+SHRINK_MAX_DEFICIT = math.radians(160.0)
+
+
+def _turn(a, b, c):
+    """The deficit angle at b - how far the path turns there, 0 when straight.
+
+    In RADIUS space: lengths in _min_segment divide x by DIAMETER_MODE, and an
+    angle measured in diameter space would be a different angle.
+    """
+    if a is None or b is None or c is None:
+        return 0.0
+    az, ax = b[0] - a[0], (b[1] - a[1]) / DIAMETER_MODE
+    bz, bx = c[0] - b[0], (c[1] - b[1]) / DIAMETER_MODE
+    na, nb = math.hypot(az, ax), math.hypot(bz, bx)
+    if na < 1e-12 or nb < 1e-12:
+        return 0.0
+    return math.acos(max(-1.0, min(1.0, (az * bz + ax * bx) / (na * nb))))
+
+
+def _shrink_need(a, p, q, n, nose_r):
+    """The length segment p->q needs to survive compensation at its two ends.
+
+    THE RULE THE DOCSTRING ABOVE DERIVES, per corner instead of as one constant.
+    Compensation shrinks a segment by R*tan(deficit/2) at each end; a blanket
+    2.4*R assumes a deficit near 100 degrees at BOTH, which no arc chord has. A
+    densified R6 chord turns 4.5 degrees and needs 0.0157 mm against a limit of
+    0.960, so two thirds of every arc was thrown away - 6 chords across a fillet
+    where the In CAM path walks 20, 0.0416 mm of stock at each midpoint and 21
+    profile segments the nose never touched.
+
+    Genuinely sharp corners ask for MORE than the blanket did and are still
+    dropped, which is the behaviour the limit was introduced for on
+    testing_15_2's back-angle ramp - and what keeps native compensation from
+    refusing the pass outright. analysis/119.
+    """
+    dp = min(_turn(a, p, q), SHRINK_MAX_DEFICIT)
+    dq = min(_turn(p, q, n), SHRINK_MAX_DEFICIT)
+    need = SHRINK_MARGIN * nose_r * (math.tan(dp / 2.0) + math.tan(dq / 2.0))
+    return max(need, SHRINK_FLOOR)
 
 
 def _close_run(run, nxt):
