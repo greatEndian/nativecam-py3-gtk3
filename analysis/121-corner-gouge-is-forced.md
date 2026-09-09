@@ -73,9 +73,13 @@ sharp corner.
 ## What would actually fix it
 
 - **Use In CAM** (`n_comp = 2`) on such profiles. Already exact, measured above,
-  no work required. Worth saying in the `PARAM_N_COMP` tooltip - not done here,
-  because a `.cfg` edit needs a `version` bump and that migrates every saved
-  project.
+  no work required. **The `PARAM_N_COMP` tooltip now says this**, with the
+  number - `cfg/lathe/polyline.cfg` 1.75 -> 1.76. The bump is what makes a
+  tooltip edit visible at all: a saved project embeds the whole template and
+  NativeCAM reads the stored copy until migration is triggered. Verified rather
+  than assumed - `testing_13_arcs` stores `version="1.24"` and comes back at
+  1.76 carrying the new text after `update_features`, with motion identical on
+  all 46 projects.
 - **Carry arcs as real `G2`/`G3` records** so the interpreter compensates the
   true arc and no chord direction exists to be wrong. That is the route
   `analysis/116` named and greatEndian decided against on 2026-09-09, in favour

@@ -1549,10 +1549,13 @@ the two cuts only touch.
     carrying the parameter have `n_comp = 0`, where the finish pass has `D = 0`
     and no compensation at all. It applies to the pre-finish pass, ~0.025 out of
     stock the finish pass removes anyway.
-  - Real remedies: use **In-CAM** on arc-into-corner profiles (already exact —
-    worth a `PARAM_N_COMP` tooltip, not done here because a `.cfg` edit needs a
-    `version` bump that migrates every saved project), or carry arcs as real
-    `G2`/`G3` records, the route declined on 2026-09-09.
+  - Real remedies: use **In-CAM** on arc-into-corner profiles (already exact),
+    or carry arcs as real `G2`/`G3` records, the route declined on 2026-09-09.
+  - **The `PARAM_N_COMP` tooltip now says so**, `cfg/lathe/polyline.cfg`
+    version 1.75 → **1.76**. Migration verified rather than assumed: a project
+    storing `version="1.24"` comes back at 1.76 with the new text after
+    `update_features`. Motion identical on all 46 — a tooltip must not move
+    G-code, and it did not.
 - [x] **NATIVE-COMP COVERAGE GAP — CLOSED**, 2026-09-09, `analysis/119`.
   `testing_13_arc_first` mode 1: **21 uncovered segments → 0, PASS**, gouge
   0.0000, wrong-side control still failing correctly. `testing_13_arcs` 23 → 2
