@@ -16,7 +16,7 @@ projects are broken, which is the cheapest possible bug report.
 NOT a correctness check - a program that runs is not a program that cuts the
 right shape. This only catches the projects that do not run at all.
 """
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 HERE='/home/user/nativeCamDev'; sys.path.insert(0,HERE)
 import ncam_preview as P
 INI=os.path.join(HERE,'configs/sim/axis/ncam_demo/lathe-mm.ini')
@@ -31,6 +31,25 @@ for pr in projs:
                       '--config-copy'],capture_output=True,text=True,timeout=600)
     if not os.path.isfile(out):
         bad.append((pr,'DID NOT GENERATE',(r.stderr or r.stdout)[-160:].replace('\n',' ')))
+        continue
+    # A TABLE THAT DID NOT FIT LEAVES ITS COUNT AT THE DEFAULT-BLOCK ZERO and
+    # says nothing. That is how four projects came to run with no ramp-direction
+    # table for months: eramp_n is entry_n - 1 on every project that fits, so a
+    # 0 beside a non-zero entry_n is the whole signature. Cheap, and it is what
+    # actually found the bug - see analysis/118.
+    src = open(out).read()
+    def _last(name):
+        m = [x for x in re.finditer(r'#<%s>\s*=\s*(\d+)' % name, src)]
+        return int(m[-1].group(1)) if m else 0
+    entry_n, eramp_n = _last('_pl_entry_n'), _last('_pl_eramp_n')
+    # > 2, matching build_entry_ramp_gcode's own `len(points) < 3` guard: a
+    # two-point entry contour has one segment and no ramp table by design, and
+    # testing_12_1 is exactly that. Caught by running the negative control -
+    # the threshold that looks right is one the builder disagrees with.
+    if entry_n > 2 and eramp_n == 0:
+        bad.append((pr, 'TABLE DROPPED',
+                    'entry contour has %d points but the ramp-direction table '
+                    'is empty - it overflowed its window' % entry_n))
         continue
     tp=P.parse_program(out,INI)
     if tp.error:

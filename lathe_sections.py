@@ -1693,7 +1693,10 @@ def build_level_split_gcode(polyline_feature):
     # a truncated table is a level split at the wrong place, which is metal
     # left standing - refuse it and keep the front-first order instead
     if LVLSPLIT_BASE + 2 * len(peaks) > LVLSPLIT_TOP:
-        return ''
+        return ('(WARNING - the level-split table needs %d parameter slots and '
+                'only %d are free, so levels keep the front-first interval '
+                'order instead of splitting at the peaks.)'
+                % (2 * len(peaks), LVLSPLIT_TOP - LVLSPLIT_BASE))
 
     lines = [
         '(peaks that split a roughing level into more than one interval, with)',
@@ -1730,6 +1733,9 @@ BAND_ALL = 1.0e6
 #   3380  floor stages, i           the floors the ladder re-anchors on,
 #                                   shallowest first - see floor_ladder
 SECT_FLOOR_BASE = 3380
+# Its own ceiling rather than the next window's base, like SECT_TOP. Same value
+# the old `>= SECT_BASE` expression produced, so nothing changes today.
+SECT_FLOOR_TOP = 3400
 
 
 def region_floor(min_dia, fin_off, prefin_off, rough_cut, anchored):
@@ -1899,8 +1905,15 @@ def floor_ladder(points, fin_off, prefin_off, rough_cut, anchored):
 RESUME_BASE = 3000
 RESUME_TOP = 3140
 
-ERAMP_BASE = 3200
-ERAMP_TOP = 3380
+# MOVED DOWN FROM 3200/3380, WHERE 180 SLOTS WERE NOT ENOUGH AND THE OVERFLOW
+# WAS SILENT. This table costs 4 slots per ENTRY-contour segment, and the entry
+# contour is about twice the finish contour: testing_13_arc_first has fc_n 31
+# and entry_n 60, so it needed 239 and got nothing - four projects have been
+# running with no profile-angle ramps at all. Six more sat at 160/180.
+# 600 slots carries 149 segments. The O-code reads #<_pl_eramp_base> now
+# instead of a literal 3200. analysis/118.
+ERAMP_BASE = 1800
+ERAMP_TOP = 2400
 
 
 def ramp_facing(orient):
@@ -1984,11 +1997,21 @@ def build_entry_ramp_gcode(points, rough_cut):
     if not points or len(points) < 3 or rough_cut <= EPS:
         return ''
     dirs = entry_ramp_dirs(points, 10.0 * rough_cut)
-    if ERAMP_BASE + len(dirs) * 4 + 3 >= ERAMP_TOP:
-        return ''
+    need = len(dirs) * 4 + 3
+    if ERAMP_BASE + need >= ERAMP_TOP:
+        # SAY SO. This used to be a bare `return ''`, and it had already fired
+        # on four shipped projects - testing_13_arc_first, _0, _1 and
+        # testing_13_arcs - which ran with no profile-angle ramps at all and
+        # nothing anywhere reporting it. It also cost three wrong diagnoses in
+        # analysis/117, where losing the ramps read as a geometric coupling.
+        return ('(WARNING - the ramp-direction table needs %d parameter slots '
+                'and only %d are free, so roughing ramps will use the segment '
+                'they start on instead of the profile angle.)'
+                % (need, ERAMP_TOP - ERAMP_BASE))
     lines = ['(the direction a profile-angle ramp should copy, one per entry)',
              '(segment - the dominant surface just ahead of it, which is what)',
              '(a crossing would have named. See entry_ramp_dirs.)',
+             '#<_pl_eramp_base> = %d' % ERAMP_BASE,
              '#<_pl_eramp_n> = %d' % len(dirs)]
     for i, (dz, dx, az, ax) in enumerate(dirs):
         slot = ERAMP_BASE + i * 4
@@ -2145,9 +2168,14 @@ def build_floor_ladder_gcode(polyline_feature, rough_cut=0.0):
     floors = floor_stages(polyline_feature, rough_cut)
     if len(floors) < 2:
         return ''
-    if SECT_FLOOR_BASE + len(floors) >= SECT_BASE:
-        raise ValueError('%d floor stages will not fit under #%d'
-                         % (len(floors), SECT_BASE))
+    # its own ceiling, not the next window's base - the same correction
+    # SECT_TOP got, and a fallback rather than a raise: an overflow here used
+    # to abort generation outright, which is the one response no other table
+    # here gives
+    if SECT_FLOOR_BASE + len(floors) >= SECT_FLOOR_TOP:
+        return ('(WARNING - the floor-stage table needs %d parameter slots and '
+                'only %d are free, so roughing uses a single floor as before.)'
+                % (len(floors), SECT_FLOOR_TOP - SECT_FLOOR_BASE))
 
     lines = ['(the floors this profile is entitled to, shallowest first: a)',
              '(level lands on the floor of the region it is cutting, not on)',
@@ -3045,7 +3073,15 @@ def phase1_stop(levels, floor_contour, stock_r, doc, e_z, l_z,
 # part at 32 levels needs 544 radii plus 51 directory slots, so it fits with
 # room to spare.
 LVL_BASE = 1000
-LVL_TOP = 2600
+# 800 slots, down from 1600. Measured peak across all 46 projects is 180, and
+# the design worst case this window was sized against - a 17-window Artificial
+# part at 32 levels, 544 radii plus 51 directory slots - is 595, so 800 still
+# clears it. The tail went to ERAMP and FLANK, which were the two windows
+# actually overflowing. LVL_BASE does NOT move: poly_lathe_mill's directory
+# read is a bare `#[1000 + ...]`, it is absent from cam_map's LITERAL_WINDOWS,
+# and ngc_literals' regex floor is 3160 - so a base move here is the one thing
+# no static check would catch. analysis/118.
+LVL_TOP = 1800
 
 
 def protected_flags(levels, floors, step_target, staged):
@@ -3397,7 +3433,10 @@ def roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r=0.0,
         return None
     fc = floor_contour_data(polyline_feature, back_deg, nose_r, flank_len,
                             clearance, orient, rough_cut)
-    if fc is None:
+    # OVERFLOW COUNTS AS ABSENT HERE. The table the runtime gets is the one this
+    # has to reason from; planning off a contour that was never emitted is the
+    # two-answers trap.
+    if fc is None or fc is FLOORC_OVERFLOW:
         return None
     flc, renv, _rd = fc
 
@@ -4625,8 +4664,9 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 #   2800  per-window deepest cut  i     - WRITTEN AT RUNTIME by
 #                                         lathe_level_pass, one slot per
 #                                         window, cleared to 999999 here
+#   1800  ramp directions         i*4, one per entry segment - moved from 3200
+#   2400  flank envelope          i*2, capped below - moved from 3600
 #   3400  sections window table   i*4
-#   3600  flank envelope          i*2, capped below
 #   3700  floor contour           i*2 - where a roughing LEVEL stops
 #   4000  finish soft contour     i*2, capped below
 #   4400  In-CAM offsets          directory + points, capped at CAM_TOP
@@ -4651,14 +4691,21 @@ SECT_BASE = 3400
 # fallen back to one full-span window the moment that window moved. Same value
 # the old expression produced, so nothing about the table changes.
 SECT_TOP = 3600
-FLANK_BASE = 3600
+# MOVED DOWN FROM 3600, where 100 slots held 50 points against a finish contour
+# that reaches 66 when the arcs are kept. 200 slots matches what the finish
+# contour, entry contour and stop contour already have - they are one surface
+# and want one ceiling. The O-code has always read #<_pl_env_base>, so nothing
+# in lib/ changes for this.
+FLANK_BASE = 2400
 # the flank envelope has never needed more than 58 slots of its 400, measured
 # across four projects, so 100 is left to it and the rest goes to the floor
 # contour - which is built from the RAW profile and so has more points than the
 # tables built from the simplified reachable one: 226 slots on testing_15_2,
 # where 200 was not enough and it silently fell back to the old scan
-FLANK_TOP = 3700
+FLANK_TOP = 2600
 FLOORC_BASE = 3700
+# floor_contour_data's third answer, beside a (env, renv, dir) tuple and None
+FLOORC_OVERFLOW = object()
 FLOORC_TOP = 4000
 FC_BASE = 4000
 FC_TOP = 4200
@@ -4997,11 +5044,18 @@ def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
                         floor_x, rough_dir, _nr, _or, floor_z)
     if len(env) < 2:
         return None
+    # A SENTINEL, NOT A WARNING STRING. This returned the comment itself, while
+    # both callers test `is None` and then unpack three names - so a string is
+    # not None, `env, renv, rough_dir = got` ran on it, and an overflow here did
+    # not degrade: it raised "too many values to unpack" and killed generation.
+    # The one table meant to fall back with a comment was the one that aborted.
+    #
+    # Overflow and "nothing to say" are different answers and both callers have
+    # to tell them apart - the emitter owes a WARNING for one and silence for
+    # the other, and the planner must fall back for both, or it would reason
+    # from a contour the runtime never received.
     if FLOORC_BASE + 2 * len(env) > FLOORC_TOP:
-        return ('(WARNING - the floor contour needs %d parameter slots and only '
-                '%d are free, so roughing works its own floor out as before and '
-                'a separate Z offset will not reach it.)'
-                % (2 * len(env), FLOORC_TOP - FLOORC_BASE))
+        return FLOORC_OVERFLOW
     li_len = polyline_feature.get_param('param_li_len')
     li_ang = polyline_feature.get_param('param_li_ang')
     lead_z = 0.0
@@ -5020,14 +5074,14 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     """The #3700 floor contour and the #3000 resume envelope."""
     got = floor_contour_data(polyline_feature, back_deg, nose_r,
                             flank_len, clearance, orient, rough_cut)
+    if got is FLOORC_OVERFLOW:
+        return ('(WARNING - the floor contour does not fit the %d parameter '
+                'slots free for it, so roughing works its own floor out as '
+                'before and a separate Z offset will not reach it.)'
+                % (FLOORC_TOP - FLOORC_BASE))
     if got is None:
         return ''
     env, renv, rough_dir = got
-    if FLOORC_BASE + 2 * len(env) > FLOORC_TOP:
-        return ('(WARNING - the floor contour needs %d parameter slots and only '
-                '%d are free, so roughing works its own floor out as before and '
-                'a separate Z offset will not reach it.)'
-                % (2 * len(env), FLOORC_TOP - FLOORC_BASE))
     lines = ['(where a roughing LEVEL stops: the profile offset by the floor)',
              '(allowance, joined at its corners and blended between the radial)',
              '(and axial values by each surface own normal. The scan walks this)',

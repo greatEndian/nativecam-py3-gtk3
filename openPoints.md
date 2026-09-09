@@ -1514,9 +1514,37 @@ the two cuts only touch.
     slot 1179 across all 46 — 179 of 1600.** Everything else is contiguous from
     3380 up. Taking it means moving windows past consumers that name each
     other's bounds, and one has already been caught doing that. Plan-mode job.
-- [ ] **`build_entry_ramp_gcode` falls back silently.** `return ''` with no
-  `(WARNING - ...)` comment, unlike every other table here. Worth fixing on its
-  own merits whatever happens to the resolution above.
+- [x] **THE RAMP TABLE WAS OVERFLOWING TODAY — FIXED**, 2026-09-09,
+  `analysis/118`. Not a future risk: `testing_13_arc_first` generated
+  `entry_n 60` and `eramp_n 0`, needing `59×4+3 = 239` slots against ERAMP's
+  **180**, so `build_entry_ramp_gcode` returned `''` silently. Same on `_0`,
+  `_1`, `testing_13_arcs`; six more sat at 160/180. ERAMP moved to 1800–2400
+  (600 slots) and FLANK to 2400–2600 (200, matching FC/ENTRY/STOP), out of LVL's
+  tail — LVL uses 180 of 1600. `_pl_eramp_base` replaces the two hardcoded
+  `3200` literals. **Motion identical on all 46, twice.**
+  - Careful with the wording: those projects did **not** cut without ramps.
+    `testing_13_arc_first` has 339 shallow ramps before and after. What was
+    missing was the ramp-*direction* table, so they used the fallback direction.
+    The fix is real (`eramp_n` 0 → 59) but latent at today's settings.
+  - ERAMP scales with the **entry** contour, ~2× the finish contour
+    (`fc_n 31 → entry_n 60`). My earlier "+320 slots" estimate was against the
+    wrong contour and was about half what is really needed.
+- [x] **Three fallbacks that did not fall back** — `analysis/118`.
+  `floor_contour_data` returned a WARNING *string* where both callers test
+  `is None` then unpack three names → `ValueError: too many values to unpack`,
+  killing generation; `build_sect_floor_gcode` raised outright;
+  `build_level_split_gcode` returned a bare `''`. All now emit a
+  `(WARNING - ...)`, with a `FLOORC_OVERFLOW` sentinel so the emitter and the
+  planner can tell overflow from nothing-to-say.
+- [x] **Four more places naming a neighbour's bound** — `analysis/118`.
+  `SECT_FLOOR` capped itself with `SECT_BASE` (now `SECT_FLOOR_TOP`), and
+  `test_through_cut.py` / `test_rough_overlay.py` retyped window bounds instead
+  of importing them. Same class as `ce50241`; it had survived in four places.
+  Guardrails: `cam_map`'s `LITERAL_WINDOWS` gained `LVL_BASE` (the one literal
+  no check could see), `test_sections`' layout regions now list every window,
+  and `test_project_sweep` fails when a count global sits at 0 beside a
+  non-empty table — the signature that found this. `test_motion_fingerprint.py`
+  committed as a tool.
 - [x] **`section_windows` capped itself with the NEXT window's base** —
   2026-09-08, `analysis/117`. `if SECT_BASE + 4 * len(out) > FLANK_BASE:` is
   correct only while the windows are contiguous; moving FLANK made every profile

@@ -569,8 +569,12 @@ def test_table_layout():
     # - fell back to a single full-span window on every profile. Sorted rather
     # than assumed in order, so the next move is checked rather than encoded.
     regions = [('level ladder', L.LVL_BASE, L.LVL_TOP),
+               ('ramp directions', L.ERAMP_BASE, L.ERAMP_TOP),
                ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
                ('per-window deepest cut', L.WDEEP_BASE, L.WDEEP_TOP),
+               ('resume envelope', L.RESUME_BASE, L.RESUME_TOP),
+               ('level split peaks', L.LVLSPLIT_BASE, L.LVLSPLIT_TOP),
+               ('floor stages', L.SECT_FLOOR_BASE, L.SECT_FLOOR_TOP),
                ('sections', L.SECT_BASE, L.SECT_TOP),
                ('floor contour', L.FLOORC_BASE, L.FLOORC_TOP),
                ('finish contour', L.FC_BASE, L.FC_TOP),

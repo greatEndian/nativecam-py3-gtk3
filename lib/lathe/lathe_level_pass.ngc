@@ -523,7 +523,7 @@ o<lathe_level_pass> sub
 			(short shallow scrap of fillet at the boss foot, a 2.9656 ramp)
 			(where every neighbour runs 2.2004. Read the table, move.)
 			o<e_ws> if [[#<_pl_eramp_n> GT 0] AND [[[#<e_pz> - #<w_from>] * [#<e_cz> - #<w_from>]] LE 0]]
-				#<e_rb> = [3200 + [#<e_i> - 1] * 4]
+				#<e_rb> = [#<_pl_eramp_base> + [#<e_i> - 1] * 4]
 				o<e_ws2> if [ABS[#[#<e_rb>]] GT 0.000001]
 					#<e_wdz> = #[#<e_rb>]
 					#<e_wdx> = #[#<e_rb> + 1]
@@ -544,7 +544,7 @@ o<lathe_level_pass> sub
 			(while the segment spanning w_to -20.0000 has e_wdx 0.8235 and)
 			(gives the -21.3269 the next window actually starts at.)
 			o<e_ts> if [[#<_pl_eramp_n> GT 0] AND [[[#<e_pz> - #<w_to>] * [#<e_cz> - #<w_to>]] LE 0]]
-				#<e_tb> = [3200 + [#<e_i> - 1] * 4]
+				#<e_tb> = [#<_pl_eramp_base> + [#<e_i> - 1] * 4]
 				o<e_ts2> if [ABS[#[#<e_tb>]] GT 0.000001]
 					#<e_tdz> = #[#<e_tb>]
 					#<e_tdx> = #[#<e_tb> + 1]

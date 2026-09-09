@@ -39,7 +39,13 @@ sys.path.insert(0, HERE)
 INI = os.path.join(HERE, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECT = 'testing_15_2.xml'
-FC_BASE, FC_TOP = 4000, 4200
+# TAKEN FROM THE MODULE, NEVER RETYPED - a window moved in Python with
+# its readers naming it separately is the bug cam_map.py exists to catch,
+# and cam_map scans lib/ and cfg/ only, never a test. Retyped here these
+# would read a wrong slice of the generated program after any move and
+# pass quietly on stale data.
+import lathe_sections as _L                                    # noqa: E402
+FC_BASE, FC_TOP = _L.FC_BASE, _L.FC_TOP
 FAILED = []
 
 

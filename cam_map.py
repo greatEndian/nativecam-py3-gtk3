@@ -41,9 +41,13 @@ CFG = os.path.join(HERE, 'cfg')
 # 3300 - so they are named here and checked against lathe_sections' own
 # constants.
 LITERAL_WINDOWS = {
+    # poly_lathe_mill reads the level DIRECTORY as a bare `#[1000 + ...]` while
+    # the radii beside it go through #<_pl_lvl_base>. Listed here because C1b
+    # cannot see it either - ngc_literals' regex starts at 3160 - so without
+    # this entry a move of LVL_BASE is caught by nothing at all.
+    'LVL_BASE': 1000,
     'WDEEP_BASE': 2800,
     'LVLSPLIT_BASE': 3160,
-    'ERAMP_BASE': 3200,
     'SECT_FLOOR_BASE': 3380,
     'SECT_BASE': 3400,
 }
