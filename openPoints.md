@@ -1534,7 +1534,83 @@ the two cuts only touch.
     — the latter being `profile_bound`'s known multi-valued weakness from
     `analysis/116`, not a discovery. After scoping, every gouge figure is
     identical to its historical baseline and only coverage moves.
-- [ ] **An 18 µm gouge wherever a chorded arc meets another surface.**
+- [x] **~~An 18 µm gouge wherever a chorded arc meets another surface~~ —
+  FORCED, NOT FIXABLE BY CHORDING**, 2026-09-09, `analysis/121`. It is **native
+  comp only**: In-CAM on the same profile is gouge 0.0000, 0 uncovered, PASS.
+  The corner deficit is 87.19°, so comp needs the segment leaving it to be
+  ≥ `0.4·tan(43.6°) = 0.381 mm` and the first chord is **0.3926** — within 3% of
+  the floor. Every term is pinned: chord length → 5.6° span → 2.8° direction
+  error → `0.4·sin(2.87°) = 0.0200` displacement, against 0.0183 measured.
+  - **The obvious fix was built and measured failing.** Splitting the first and
+    last chord in two did not improve the gouge (0.0183 → 0.0187) *and* made
+    three projects abort with the concave-corner error. Reverted. Same wall
+    commit B hit from the other side.
+  - **It never reaches the finished surface as things ship**: all 40 projects
+    carrying the parameter have `n_comp = 0`, where the finish pass has `D = 0`
+    and no compensation at all. It applies to the pre-finish pass, ~0.025 out of
+    stock the finish pass removes anyway.
+  - Real remedies: use **In-CAM** on arc-into-corner profiles (already exact —
+    worth a `PARAM_N_COMP` tooltip, not done here because a `.cfg` edit needs a
+    `version` bump that migrates every saved project), or carry arcs as real
+    `G2`/`G3` records, the route declined on 2026-09-09.
+- [x] **NATIVE-COMP COVERAGE GAP — CLOSED**, 2026-09-09, `analysis/119`.
+  `testing_13_arc_first` mode 1: **21 uncovered segments → 0, PASS**, gouge
+  0.0000, wrong-side control still failing correctly. `testing_13_arcs` 23 → 2
+  with gouge 0.0358 → **0.0183**; its residual 2 are the front-face reach bug
+  below, not chording. `_min_segment`'s blanket `2.4 × nose_r` was ~60× what an
+  arc chord needs — the shrink is `R·tan(deficit/2)` per end and a densified
+  chord turns 4.5° — so it is now computed per corner, with a 2× margin, a
+  0.02 mm floor and the deficit clamped at 160°. Sharp corners now ask for
+  *more* than the blanket did and are still dropped.
+  - **The better-looking route had to be abandoned.** Protecting every
+    on-profile point gave 0 uncovered and gouge 0.0000 on `testing_13_arcs` —
+    and **aborted the real project** at runtime with the concave-corner gouge.
+    `prove_cam_comp` passed it, because it overrides the project
+    (`n_comp 2, op 2, pf_on 0`) and tests a program the operator never runs.
+    A green prover is not a green project; the sweep is what caught it.
+  - **Three attempts read this as geometry and it was a window all along.**
+    `analysis/117` rejected the per-corner rule because ramps went 9 → 0; that
+    was ERAMP overflowing silently. With commit A's 600 slots the same rule
+    keeps every ramp — `test_ramps` reports **68 ramps checked**.
+  - The fix pushed **ENTRY to exactly 100%** of its window (`entry_n = 100`,
+    fitting by one slot; 61% before), so 3600–4600 was repacked — FLOORC 250,
+    FC 200, ENTRY 280, STOP 270, CAM untouched. No window now above 80%, no
+    project emits a WARNING.
+- [x] **~~Front-face reach on `testing_13_arcs`~~ — THE PREMISE WAS WRONG**,
+  2026-09-09, `analysis/120`. The pass does **not** stop at Z −2.6788; it
+  machines the whole face with one 3 mm straight at nose-centre R8.4000, exactly
+  tangent to the R8.0 flat. Z −2.6788 was just the first point the prover
+  happened to *sample*. Two instrument faults: `sample_moves` samples arc
+  interiors but only straight *endpoints*, so a 3 mm feed contributed no
+  coverage; and an internal corner tighter than the nose would have been
+  reported as a failure. Both fixed in `prove_cam_comp` — densified straights
+  for the coverage pass, and "unreachable by this nose" separated from
+  "uncovered", judged by construction.
+  - **Scoped to coverage only.** Densifying everything also moved gouge figures
+    (`testing_15_3` 0.0110 → 0.0176, `testing_14_inside_nat` 0.3621 → **4.0952**)
+    — the latter being `profile_bound`'s known multi-valued weakness from
+    `analysis/116`, not a discovery. After scoping, every gouge figure is
+    identical to its historical baseline and only coverage moves.
+- [x] **~~An 18 µm gouge wherever a chorded arc meets another surface~~ —
+  FORCED, NOT FIXABLE BY CHORDING**, 2026-09-09, `analysis/121`. It is **native
+  comp only**: In-CAM on the same profile is gouge 0.0000, 0 uncovered, PASS.
+  The corner deficit is 87.19°, so comp needs the segment leaving it to be
+  ≥ `0.4·tan(43.6°) = 0.381 mm` and the first chord is **0.3926** — within 3% of
+  the floor. Every term is pinned: chord length → 5.6° span → 2.8° direction
+  error → `0.4·sin(2.87°) = 0.0200` displacement, against 0.0183 measured.
+  - **The obvious fix was built and measured failing.** Splitting the first and
+    last chord in two did not improve the gouge (0.0183 → 0.0187) *and* made
+    three projects abort with the concave-corner error. Reverted. Same wall
+    commit B hit from the other side.
+  - **It never reaches the finished surface as things ship**: all 40 projects
+    carrying the parameter have `n_comp = 0`, where the finish pass has `D = 0`
+    and no compensation at all. It applies to the pre-finish pass, ~0.025 out of
+    stock the finish pass removes anyway.
+  - Real remedies: use **In-CAM** on arc-into-corner profiles (already exact —
+    worth a `PARAM_N_COMP` tooltip, not done here because a `.cfg` edit needs a
+    `version` bump that migrates every saved project), or carry arcs as real
+    `G2`/`G3` records, the route declined on 2026-09-09.
+- [ ] ~~An 18 µm gouge wherever a chorded arc meets another surface.~~
   `analysis/120`. On `testing_13_arcs` the tool stops at Z −2.6375 where the
   true corner is −2.6182, gouging the R4 fillet by **0.0183**. Exact cause: the
   true arc leaves the corner vertically but the first *chord* leaves it 2.87°
