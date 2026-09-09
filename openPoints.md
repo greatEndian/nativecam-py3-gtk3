@@ -1519,9 +1519,32 @@ the two cuts only touch.
     fitting by one slot; 61% before), so 3600–4600 was repacked — FLOORC 250,
     FC 200, ENTRY 280, STOP 270, CAM untouched. No window now above 80%, no
     project emits a WARNING.
-- [ ] **Front-face reach on `testing_13_arcs`.** Its finish pass stops at
-  Z −2.6788, leaving profile segments 0 and 1 uncovered. Measured, not
-  diagnosed; the only thing between that project and a native-comp PASS.
+- [x] **~~Front-face reach on `testing_13_arcs`~~ — THE PREMISE WAS WRONG**,
+  2026-09-09, `analysis/120`. The pass does **not** stop at Z −2.6788; it
+  machines the whole face with one 3 mm straight at nose-centre R8.4000, exactly
+  tangent to the R8.0 flat. Z −2.6788 was just the first point the prover
+  happened to *sample*. Two instrument faults: `sample_moves` samples arc
+  interiors but only straight *endpoints*, so a 3 mm feed contributed no
+  coverage; and an internal corner tighter than the nose would have been
+  reported as a failure. Both fixed in `prove_cam_comp` — densified straights
+  for the coverage pass, and "unreachable by this nose" separated from
+  "uncovered", judged by construction.
+  - **Scoped to coverage only.** Densifying everything also moved gouge figures
+    (`testing_15_3` 0.0110 → 0.0176, `testing_14_inside_nat` 0.3621 → **4.0952**)
+    — the latter being `profile_bound`'s known multi-valued weakness from
+    `analysis/116`, not a discovery. After scoping, every gouge figure is
+    identical to its historical baseline and only coverage moves.
+- [ ] **An 18 µm gouge wherever a chorded arc meets another surface.**
+  `analysis/120`. On `testing_13_arcs` the tool stops at Z −2.6375 where the
+  true corner is −2.6182, gouging the R4 fillet by **0.0183**. Exact cause: the
+  true arc leaves the corner vertically but the first *chord* leaves it 2.87°
+  off — half its angular span at `MESH_MAX_SAG` — so the offset intersection
+  shifts by `R_nose · sin(θ/2) = 0.4 · sin(2.87°) = 0.0200`. Not the sagitta
+  (0.0048); finer densification helps only linearly. Candidate fix: subdivide
+  the **first and last** chord of each arc more finely, since only those meet
+  neighbouring geometry — costs points in ENTRY, at 200 of 280.
+  - This is also the last thing between `testing_13_arcs` and a native-comp
+    PASS: its one remaining uncovered segment is the corner the gouge sits in.
 - [x] **THE RAMP TABLE WAS OVERFLOWING TODAY — FIXED**, 2026-09-09,
   `analysis/118`. Not a future risk: `testing_13_arc_first` generated
   `entry_n 60` and `eramp_n 0`, needing `59×4+3 = 239` slots against ERAMP's

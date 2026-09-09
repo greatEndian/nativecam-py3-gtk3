@@ -90,10 +90,17 @@ def profile_bound(z, segments, side):
     return best
 
 
-def prove_region(points, segments, R, tol, side=1):
-    """(max gouge, tangent point count, worst tangency error, uncovered segments)
+def prove_region(points, segments, R, tol, side=1, cover=None):
+    """(max gouge, tangent points, worst tangency error, uncovered, unreachable)
 
     points is [(centre, kind)] with the nose centre already resolved.
+
+    `cover` is an optional denser sampling of the SAME path, used only to decide
+    which segments the tool touched. Coverage is a question about the path's
+    whole length, while the gouge figure is a question about where it actually
+    was - so densifying for coverage is right and densifying for the gouge would
+    quietly restate every number this proof has ever reported. Kept separate for
+    that reason.
     """
     max_gouge = 0.0
     worst_tangent = 0.0
@@ -113,14 +120,73 @@ def prove_region(points, segments, R, tol, side=1):
             tangent_pts.append((cz, cx))
             worst_tangent = max(worst_tangent, abs(dist - R))
 
-    uncovered = []
+    if cover is not None:
+        tangent_pts = []
+        for (cz, cx), kind in cover:
+            dist = min(_seg_dist_clamped((cz, cx), a, b) for a, b in segments)
+            if abs(dist - R) <= tol and kind != 'rapid':
+                tangent_pts.append((cz, cx))
+
+    uncovered, unreachable = [], []
     for i, (a, b) in enumerate(segments):
         seglen = math.hypot(b[0] - a[0], b[1] - a[1])
         near = any(_seg_dist_clamped(tp, a, b) <= R + 5 * tol
                    for tp in tangent_pts)
         if not near and seglen > 5 * tol:
-            uncovered.append(i)
-    return max_gouge, len(tangent_pts), worst_tangent, uncovered
+            if _unreachable(i, segments, R, tol, side):
+                unreachable.append(i)
+            else:
+                uncovered.append(i)
+    return max_gouge, len(tangent_pts), worst_tangent, uncovered, unreachable
+
+
+def _unreachable(i, segments, R, tol, side):
+    """True when no placement of the nose tangent to segment i is gouge-free.
+
+    A round nose cannot enter an internal corner tighter than its own radius,
+    so the surface just inside such a corner is not machinable by this tool and
+    the pass is right not to touch it. Reporting that as a coverage failure
+    makes the proof permanently red on a part that is being cut correctly - on
+    testing_13_arcs the R4 arc leaves the front flat PERPENDICULAR, an 87 degree
+    internal corner, and its first 0.39 mm chord can never be reached by an R0.4
+    nose.
+
+    Judged by construction rather than by the path: walk the segment, place the
+    nose centre a radius out along the segment's own normal, and ask whether any
+    of those placements clears every other segment. If none does, no toolpath
+    could have covered it and no toolpath should be marked down for that.
+    """
+    a, b = segments[i]
+    dz, dx = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(dz, dx)
+    if n < 1e-12:
+        return True
+    # outward normal, the same 90-degree rotation used for offsetting elsewhere
+    nz, nx = (dx / n) * side, (-dz / n) * side
+    for k in range(11):
+        t = k / 10.0
+        pz, px = a[0] + t * dz, a[1] + t * dx
+        cz, cx = pz + R * nz, px + R * nx
+        worst = min(_seg_dist_clamped((cz, cx), c, d)
+                    for j, (c, d) in enumerate(segments) if j != i)
+        if worst >= R - 5 * tol:
+            return False        # this placement is clear, so the segment IS reachable
+    return True
+
+
+def _densify(pts, step=0.2):
+    """The sampled path with straight runs subdivided to `step`."""
+    out, prev = [], None
+    for (z, x), kind in pts:
+        if prev is not None and kind == 'feed':
+            n = int(math.hypot(z - prev[0], x - prev[1]) / step)
+            for j in range(1, n):
+                t = j / float(n)
+                out.append(((prev[0] + t * (z - prev[0]),
+                             prev[1] + t * (x - prev[1])), 'feed'))
+        out.append(((z, x), kind))
+        prev = (z, x)
+    return out
 
 
 def generate(ini, project, out, overrides):
@@ -258,7 +324,20 @@ def main():
     def centres(pts):
         return [((z + offset[0], x + offset[1]), kind) for (z, x), kind in pts]
 
+    # STRAIGHT FEEDS GET INTERIORS TOO. sample_moves densely samples arcs and
+    # takes only the endpoints of a straight, so a long straight contributes no
+    # coverage along its length: on testing_13_arcs the 3 mm feed that machines
+    # the whole front face left segment 0 reading as never touched, and the
+    # pass looked like it started 2.68 mm into the part when it starts at the
+    # face. Coverage is a question about the path's whole length.
     all_pts = centres(sample_moves(moves))
+    # STRAIGHT FEEDS NEED INTERIORS FOR COVERAGE. sample_moves densely samples
+    # arcs and takes only the endpoints of a straight, so a long straight
+    # contributes no coverage along its length: on testing_13_arcs the 3 mm feed
+    # that machines the whole front face left segment 0 reading as never
+    # touched, and the pass looked like it started 2.68 mm into the part when it
+    # starts at the face. Used for coverage only - see prove_region.
+    cover_pts = centres(_densify(sample_moves(moves)))
     # The lead-in and lead-out are separated out because they are a different
     # question. Their geometry is chosen by the lead parameters, not by the
     # compensation, and on ID work it is measurably worse under NATIVE
@@ -274,16 +353,19 @@ def main():
     # ever touched each part of the profile, and clipping the ends off the point
     # set would drop the contacts on the first and last segments and report them
     # as never cut - a failure invented by the window rather than found by it.
-    wgouge, ntan, terr, uncovered = prove_region(all_pts, segments, R,
-                                                 args.tol, side)
+    wgouge, ntan, terr, uncovered, unreach = prove_region(
+        all_pts, segments, R, args.tol, side, cover=cover_pts)
     gouge = prove_region(mid_pts, segments, R, args.tol, side)[0]
     ok = gouge <= args.tol and ntan > 0 and not uncovered
     if args.lead_margin > 0:
         print('  whole path     : gouge %.4f  (includes the lead-in/out, '
               'reported not judged)' % wgouge)
     print('  contour        : gouge %.4f, %d tangent points, worst tangency '
-          'err %.5f, %d segment(s) uncovered -> %s'
-          % (gouge, ntan, terr, len(uncovered), 'PASS' if ok else 'FAIL'))
+          'err %.5f, %d segment(s) uncovered%s -> %s'
+          % (gouge, ntan, terr, len(uncovered),
+             (', %d unreachable by this nose (reported, not judged)'
+              % len(unreach)) if unreach else '',
+             'PASS' if ok else 'FAIL'))
 
     # NEGATIVE CONTROL: the same proof against the same profile offset to the
     # WRONG side. A proof that cannot fail is not a proof, and this is the
@@ -295,8 +377,8 @@ def main():
     prof_dia += [(b[0], b[1] * 2.0) for a, b in segments]
     wrong = lathe_sections.offset_contour(prof_dia, R, Q, side=-side)
     w_pts = [((z, x / 2.0), 'feed') for z, x in wrong]
-    wg, wn, wterr, wunc = prove_region(centres(w_pts), segments, R, args.tol,
-                                       side)
+    wg, wn, wterr, wunc, _wun = prove_region(centres(w_pts), segments, R,
+                                             args.tol, side)
     wrong_ok = wg <= args.tol and wn > 0 and not wunc
     print('  wrong-side ctrl: gouge %.4f, %d tangent points, worst tangency '
           'err %.5f, %d segment(s) uncovered -> %s'
