@@ -39,6 +39,10 @@ sys.path.insert(0, HERE)
 INI = os.path.join(HERE, 'configs/sim/axis/ncam_demo/lathe-mm.ini')
 GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.py')
 PROJECTS = ('testing_15_2.xml', 'testing_13_arcs.xml')
+# Modes a project is KNOWN to refuse, with the text that proves it is the known
+# refusal and not some new one. See the note at the check that reads this.
+NATIVE_REFUSES = {'testing_13_arcs.xml':
+                  {'Native': 'concave corner cannot be reached'}}
 NOSE, ORIENT = 0.4, 2
 WP_Z, WP_R = 0.0, 30.0          # stock face at Z0, 60 mm bar
 MODES = ((0, 'Off'), (1, 'Native'), (2, 'In CAM'))
@@ -144,7 +148,7 @@ def main():
     try:
         for project in PROJECTS:
             print('--- %s' % project)
-            runs = {}
+            runs, errs = {}, {}
             for mode, label in MODES:
                 out = os.path.join(d, '%s_%d.ngc' % (project[:-4], mode))
                 subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
@@ -152,13 +156,35 @@ def main():
                                 'polyline:param_n_comp=%d' % mode],
                                capture_output=True, text=True)
                 tp = P.parse_program(out, INI) if os.path.isfile(out) else None
+                errs[label] = str(tp.error) if (tp is not None and tp.error) else ''
                 runs[label] = (lead_report(tp, P)
                                if tp is not None and not tp.error else None)
-            check('all three modes generate and run',
-                  all(runs.values()),
-                  str({k: v is None for k, v in runs.items()}))
-            if not all(runs.values()):
+
+            # NATIVE CANNOT RUN AN ARC-INTO-CORNER PROFILE, and that is not a
+            # fault of the leads. testing_13_arcs' R4 arc leaves the front flat
+            # PERPENDICULAR - an 87 degree internal corner - and the arc
+            # reaches the interpreter as chords, so the first chord out of that
+            # corner cannot point along the true tangent. Compensation refuses
+            # the program outright: Off gives 3076 moves, In CAM 3111, Native
+            # aborts. analysis/121 shows the chord length is pinned from below
+            # by the interpreter's own minimum and from above by the accuracy
+            # it costs, so this is forced, not fixable by chording.
+            #
+            # Pinned rather than skipped: the ERROR TEXT is asserted, so a
+            # different failure here still fails, and if Native ever runs this
+            # profile the expectation stops matching and says so.
+            expect_refusal = NATIVE_REFUSES.get(project, {})
+            for label, why in expect_refusal.items():
+                check('%-7s refuses this profile, as it must' % label,
+                      runs.get(label) is None and why in errs.get(label, ''),
+                      'error was %r' % (errs.get(label, '(it ran)')[:90]))
+            need = [lab for _m, lab in MODES if lab not in expect_refusal]
+            check('every supported mode generates and runs',
+                  all(runs[lab] for lab in need),
+                  str({lab: runs[lab] is None for lab in need}))
+            if not all(runs[lab] for lab in need):
                 continue
+            runs = {k: v for k, v in runs.items() if v is not None}
 
             # 1. the criterion itself
             for label, rep in runs.items():
@@ -202,7 +228,9 @@ def main():
             # 2. the length that was asked for. Off is the reference: it is the
             # mode with no compensation to get wrong, and greatEndian's words
             # are "be like when comp off".
-            for label in ('Native', 'In CAM'):
+            # only the modes this profile actually supports - a mode the
+            # interpreter refuses has no leads to measure
+            for label in [x for x in ('Native', 'In CAM') if x in runs]:
                 worst, where = 0.0, ''
                 for k, v in runs[label].items():
                     if not isinstance(v, dict):
@@ -244,7 +272,13 @@ def main():
                       ' '.join('%s r%.4f' % (k, v) for k, v in r0.items()))
 
             # 4. and the two compensated modes must agree, since they are two
-            # routes to one geometry
+            # routes to one geometry - when the profile supports both. On one
+            # the interpreter refuses Native outright, and there is then no
+            # second route to compare against.
+            if 'Native' not in runs or 'In CAM' not in runs:
+                print('   only one compensated mode runs here - nothing to '
+                      'cross-check')
+                continue
             worst, where = 0.0, ''
             for k in runs['Native']:
                 if not isinstance(runs['Native'][k], dict):

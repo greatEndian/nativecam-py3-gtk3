@@ -150,3 +150,26 @@ immune to the direction's own feed drifting.
 
 **The +1 lead is still unexplained** - it predates `4a3fb1d` and was never
 traced. Recorded in `openPoints` rather than buried under a passing test.
+
+## Addendum 3 — test_leads pins a refusal instead of demanding the impossible
+
+`test_leads` required all three compensation modes to generate and run on every
+project. On `testing_13_arcs` Native cannot: the R4 arc leaves the front flat
+PERPENDICULAR, an 87 degree internal corner, and `analysis/121` established the
+refusal is forced - the chord length is pinned from below by the interpreter's
+own minimum and from above by the accuracy it costs.
+
+So the mode is now declared, per project, in `NATIVE_REFUSES`, and the test
+asserts the refusal **with its error text** rather than skipping it. A different
+failure there still fails, and if Native ever runs the profile the expectation
+stops matching and says so. Verified both ways: it passes as written, and
+changing the expected text to something else makes it FAIL.
+
+Three downstream consumers assumed every label was present and had to be
+guarded - the length comparison, the Native/In-CAM cross-check, and the loop
+that reads `runs['Native']`. The cross-check now prints that only one
+compensated mode runs there, rather than comparing a mode against nothing.
+
+**71 drivers, 70 passing.** The one left, `test_rough_ends`, is a question for
+greatEndian - whether roughing's start should be bounded on the tip or the cut -
+not a defect.
