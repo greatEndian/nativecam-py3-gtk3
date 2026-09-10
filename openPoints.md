@@ -1613,17 +1613,6 @@ the two cuts only touch.
     worth a `PARAM_N_COMP` tooltip, not done here because a `.cfg` edit needs a
     `version` bump that migrates every saved project), or carry arcs as real
     `G2`/`G3` records, the route declined on 2026-09-09.
-- [ ] ~~An 18 µm gouge wherever a chorded arc meets another surface.~~
-  `analysis/120`. On `testing_13_arcs` the tool stops at Z −2.6375 where the
-  true corner is −2.6182, gouging the R4 fillet by **0.0183**. Exact cause: the
-  true arc leaves the corner vertically but the first *chord* leaves it 2.87°
-  off — half its angular span at `MESH_MAX_SAG` — so the offset intersection
-  shifts by `R_nose · sin(θ/2) = 0.4 · sin(2.87°) = 0.0200`. Not the sagitta
-  (0.0048); finer densification helps only linearly. Candidate fix: subdivide
-  the **first and last** chord of each arc more finely, since only those meet
-  neighbouring geometry — costs points in ENTRY, at 200 of 280.
-  - This is also the last thing between `testing_13_arcs` and a native-comp
-    PASS: its one remaining uncovered segment is the corner the gouge sits in.
 - [x] **THE RAMP TABLE WAS OVERFLOWING TODAY — FIXED**, 2026-09-09,
   `analysis/118`. Not a future risk: `testing_13_arc_first` generated
   `entry_n 60` and `eramp_n 0`, needing `59×4+3 = 239` slots against ERAMP's
@@ -1663,24 +1652,6 @@ the two cuts only touch.
   today. Also fixed the same shape in `test_sections`' layout check and in
   `test_surface_equality.py`, which hardcoded 3600/4000 and would have passed on
   nothing after a move.
-- [ ] ~~Native-comp coverage gap — DIAGNOSED, blocked on a parameter window.~~
-  `prove_cam_comp --mode 1` reports 21–23 uncovered segments across the
-  `testing_13_*` family. Cause: the finish pass walks **30 records, all
-  `dir = 1`** — no arc survives — because `_min_segment(env, 2.4 × nose_r)`
-  thins the densified arcs, keeping every 3rd chord. Across an R6 fillet: In-CAM
-  20 points all at 0.4000, native 6 chords whose midpoints leave **0.0416 mm of
-  stock**. `poly_mesh_lathe` is not involved (0 calls — the `_pl_env_count > 0`
-  branch replaces it).
-  - The blanket `2.4 × nose_r` is ~60× the per-corner requirement for an arc
-    chord (`R·tan(deficit/2)` = 0.0157 at 4.5°), so a per-corner rule would keep
-    the resolution — **but the surface is emitted to both FLANK (3600–3700,
-    50 points) and FC (4000–4200, 100 points), and the two must stay identical.
-    Un-thinned it is 66 points: fits FC, overflows FLANK.** Enlarging FLANK
-    means moving FLOORC at 3700 and its O-code readers.
-  - Better route: the table is points-only, so arcs must be chorded at all.
-    Carrying `dir` + centre per record would let `g123_lathe` — which already
-    emits `G2`/`G3` for `dir` 2/3 — trace the true arc exactly, in **one**
-    record instead of 20.
 - [ ] **No arc-first project has cut metal.** The fix is proved in rs274 only.
 
 - [x] **THE "KLINGY" ARC — FIXED**, 2026-08-10, `ac61573`, `analysis/024`
