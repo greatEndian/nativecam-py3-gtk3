@@ -908,11 +908,9 @@ the two cuts only touch.
   is contact frame.
   - Rebuilding the sweep on that is separate work; cut-to-cut measurements stay
     frame-independent in the meantime.
-- [ ] ~~THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT~~ — the frame
-  question above is answered; what remains is rebuilding the sweep on it.
-  **Original note kept below.**
-- [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
-  the honest state.** Sampling Z and asking whether any cut covers each level
+- [ ] **THE COVERAGE SWEEP STILL NEEDS REBUILDING ON THE SETTLED FRAME.** The
+  frame question above is answered (`analysis/123`); what remains is putting the
+  sweep on it. Original note, still accurate about the sweep itself: Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed
   to be in, and I can only verify the assumption at ONE end. Contact = control
   + oz was confirmed at a cut's START, where it matched a floor crossing to
