@@ -112,8 +112,15 @@ def main():
         b = thin[-1]
         t = (end[0] - a[0]) / (b[0] - a[0]) if abs(b[0] - a[0]) > 1e-12 else 0.0
         miss = abs((a[1] + (b[1] - a[1]) * t) - end[1]) / ls.DIAMETER_MODE
-        check('   and the shortcut misses the corner by about 0.94 mm',
-              0.85 < miss < 1.0, 'measured %.4f mm' % miss)
+        # WAS 0.94, IS NOW 0.47, and smaller is the improvement. _min_segment
+        # sizes each segment against the compensation shrink at its OWN
+        # corners instead of a flat 2.4 x nose radius, so more of the densified
+        # arc survives even unprotected and the shortcut from the last
+        # surviving vertex is half what it was. The fault is the same fault -
+        # the endpoint is still dropped without `protect` - it just costs less.
+        # analysis/119 changed the rule; this number tracks it.
+        check('   and the shortcut still misses the corner, now about 0.47 mm',
+              0.40 < miss < 0.55, 'measured %.4f mm' % miss)
 
     thin = ls._min_segment(contour, LIMIT, [end])
     check('protecting the corner keeps it', end in thin)
@@ -122,19 +129,37 @@ def main():
           '%d points protected against %d unprotected'
           % (len(thin), len(ls._min_segment(contour, LIMIT))))
 
-    # the thinning must still THIN - protecting corners is not a way to
-    # smuggle every densified chord back in, which would put the short
-    # segments that abort a compensated pass right back where they were
-    check('the arc is still thinned, not returned whole',
-          len(thin) < len(contour),
-          '%d of %d points kept' % (len(thin), len(contour)))
-    shortest = min(math.hypot(b[0] - a[0], (b[1] - a[1]) / ls.DIAMETER_MODE)
-                   for a, b in zip(thin, thin[1:]))
-    check('   and the only segment under the limit is the protected one',
-          sum(1 for a, b in zip(thin, thin[1:])
-              if math.hypot(b[0] - a[0],
-                            (b[1] - a[1]) / ls.DIAMETER_MODE) < LIMIT) == 1,
-          'shortest %.4f mm' % shortest)
+    # THE INVARIANT THAT MATTERS IS PER SEGMENT, NOT A POINT COUNT. The old
+    # form asserted `len(thin) < len(contour)` - that the thinning still thins
+    # - to stop protection smuggling every densified chord back in and putting
+    # the short segments that abort a compensated pass back where they were.
+    # That was the right worry and the wrong measure: with the per-corner rule
+    # the count legitimately reaches 22 of 22, because each of those chords IS
+    # long enough for its own corners. Asserting the physical property instead.
+    #
+    # Derived here rather than by calling _shrink_need, so the test is not
+    # checking the implementation against itself: compensation shrinks a
+    # segment by R*tan(deficit/2) at each end.
+    def _turn(a, b, c):
+        az, ax = b[0] - a[0], (b[1] - a[1]) / ls.DIAMETER_MODE
+        bz, bx = c[0] - b[0], (c[1] - b[1]) / ls.DIAMETER_MODE
+        na, nb = math.hypot(az, ax), math.hypot(bz, bx)
+        if na < 1e-12 or nb < 1e-12:
+            return 0.0
+        return math.acos(max(-1.0, min(1.0, (az * bz + ax * bx) / (na * nb))))
+
+    short = []
+    for i in range(len(thin) - 1):
+        a, b = thin[i], thin[i + 1]
+        seg = math.hypot(b[0] - a[0], (b[1] - a[1]) / ls.DIAMETER_MODE)
+        dp = _turn(thin[i - 1], a, b) if i > 0 else 0.0
+        dq = _turn(a, b, thin[i + 2]) if i + 2 < len(thin) else 0.0
+        need = NOSE * (math.tan(dp / 2.0) + math.tan(dq / 2.0))
+        if seg < need - 1e-9:
+            short.append((i, seg, need))
+    check('no kept segment is shorter than its own compensation shrink',
+          not short,
+          '%d too short, worst %s' % (len(short), short[0] if short else ''))
 
     # --- resolve_points hands the corners out -----------------------------
     check('resolve_points takes a vertices argument',
