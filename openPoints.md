@@ -1445,11 +1445,17 @@ the two cuts only touch.
   file stops the interpreter at `T<n> M6` with no message.
   `test_program_completes.py` proves both directions.
 
-- [ ] **`cam_map` does not catch a scan reading the wrong profile.** It checks
-  windows, globals, `order` names and subroutine definitions — not *which scan
-  walks which table*. It passed clean through the whole of `analysis/029`.
-  A check that every `_pl_*_base` table has all of its walkers, or none, would
-  have named this in a second.
+- [x] **`cam_map` now catches a scan reading the wrong profile** — 2026-09-10,
+  check **C7**: every file that reads a table's `_pl_*_base` must read its
+  count too. Walking a table needs the address AND the length; a file holding
+  only the base is taking its length from somewhere else, which is exactly how
+  a scan comes to walk the wrong profile — the class cam_map went clean through
+  for all of `analysis/029`.
+  - Deliberately **directional**: count-without-base is legitimate and real
+    (`poly_lathe_mill` reads `_pl_res_n` alone as a presence gate without
+    walking the table), so only base-without-count fails. Verified against the
+    tree first — the invariant already holds for all 9 table pairs — and
+    `test_cam_map` gained its own failing case, per that file's convention.
 
 ## Next — before anything else
 

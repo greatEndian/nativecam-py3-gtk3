@@ -330,7 +330,51 @@ def check_all():
     unknown = sorted(n for n in calls if n not in subs)
     res.append((not unknown, 'every subroutine called is defined in lib/',
                 ', '.join(unknown[:6])))
+
+    # C7 - a scan that walks a table must read BOTH of its globals. Every
+    # point table here is a (base, count) pair, and walking one needs the
+    # address to start at and the number of entries; a file holding only the
+    # base is walking a table whose length it is taking from somewhere else,
+    # which is how a scan comes to read the wrong profile. That is the class
+    # cam_map went clean through for the whole of analysis/029.
+    #
+    # DIRECTIONAL, deliberately: count-without-base is fine and real -
+    # poly_lathe_mill reads _pl_res_n on its own as a "is there one at all"
+    # gate without walking the table. Base-without-count is the bug.
+    reads = _table_reads()
+    orphan = []
+    for base, count in sorted(_table_pairs(reads).items()):
+        for rel in sorted(reads[base] - reads[count]):
+            orphan.append('%s reads %s but not %s' % (rel, base, count))
+    res.append((not orphan,
+                'every file that walks a table reads its count as well as '
+                'its base', '; '.join(orphan[:4])))
     return res
+
+
+def _table_reads():
+    """{global name: set of lib/ files that READ it}, comments stripped."""
+    out = {}
+    for path in _walk(LIB, '.ngc'):
+        rel = os.path.relpath(path, LIB)
+        body = re.sub(r'\([^)\n]*\)', '', _read(path))
+        for m in re.finditer(r'#<(_pl_[a-z0-9_]+)>', body):
+            out.setdefault(m.group(1), set()).add(rel)
+    return out
+
+
+def _table_pairs(reads):
+    """{base global: its count global}, for the tables that have both."""
+    pairs = {}
+    for name in reads:
+        if not name.endswith('_base'):
+            continue
+        stem = name[:-5]
+        for suffix in ('_n', '_count'):
+            if stem + suffix in reads:
+                pairs[name] = stem + suffix
+                break
+    return pairs
 
 
 def dead_weight():

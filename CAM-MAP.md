@@ -7,19 +7,29 @@ parameter, a table window or a subroutine.
 
 | constant | value |
 |---|---|
-| `ERAMP_BASE` | 3200 |
-| `ERAMP_TOP` | 3380 |
+| `LVL_BASE` | 1000 |
+| `ERAMP_BASE` | 1800 |
+| `LVL_TOP` | 1800 |
+| `ERAMP_TOP` | 2400 |
+| `FLANK_BASE` | 2400 |
+| `FLANK_TOP` | 2600 |
+| `WDEEP_BASE` | 2800 |
+| `RESUME_BASE` | 3000 |
+| `WDEEP_TOP` | 3000 |
+| `RESUME_TOP` | 3140 |
+| `LVLSPLIT_BASE` | 3160 |
+| `LVLSPLIT_TOP` | 3200 |
 | `SECT_FLOOR_BASE` | 3380 |
 | `SECT_BASE` | 3400 |
-| `FLANK_BASE` | 3600 |
-| `FLANK_TOP` | 3700 |
-| `FLOORC_BASE` | 3700 |
-| `FC_BASE` | 4000 |
-| `FLOORC_TOP` | 4000 |
-| `ENTRY_BASE` | 4200 |
-| `FC_TOP` | 4200 |
-| `ENTRY_TOP` | 4400 |
-| `STOP_BASE` | 4400 |
+| `SECT_FLOOR_TOP` | 3400 |
+| `FLOORC_BASE` | 3600 |
+| `SECT_TOP` | 3600 |
+| `FC_BASE` | 3850 |
+| `FLOORC_TOP` | 3850 |
+| `ENTRY_BASE` | 4050 |
+| `FC_TOP` | 4050 |
+| `ENTRY_TOP` | 4330 |
+| `STOP_BASE` | 4330 |
 | `CAM_BASE` | 4600 |
 | `STOP_TOP` | 4600 |
 | `CAM_TOP` | 4984 |
@@ -47,6 +57,8 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `lib/plasma/poly_create.ngc:18` → #4993
 - `lib/plasma/poly_create.ngc:19` → #4994
 - `lib/plasma/poly_mirror_p.ngc:6` → #4981
+- `lib/lathe/lathe_level_pass.ngc:1233` → #3400
+- `lib/lathe/lathe_level_pass.ngc:1234` → #3400
 - `lib/lathe/poly_add_item.ngc:23` → #4999
 - `lib/lathe/poly_add_item.ngc:24` → #4998
 - `lib/lathe/poly_add_item.ngc:25` → #4997
@@ -70,9 +82,9 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `lib/lathe/poly_create.ngc:17` → #4993
 - `lib/lathe/poly_create.ngc:18` → #4994
 - `lib/lathe/poly_lathe_mill.ngc:172` → #3380
-- `lib/lathe/poly_lathe_mill.ngc:612` → #3380
-- `lib/lathe/poly_lathe_mill.ngc:614` → #3380
-- `lib/lathe/poly_lathe_mill.ngc:807` → #3380
+- `lib/lathe/poly_lathe_mill.ngc:870` → #3380
+- `lib/lathe/poly_lathe_mill.ngc:872` → #3380
+- `lib/lathe/poly_lathe_mill.ngc:1367` → #3380
 - `lib/mill/poly_add_item.ngc:22` → #4999
 - `lib/mill/poly_add_item.ngc:23` → #4998
 - `lib/mill/poly_add_item.ngc:24` → #4997
@@ -97,45 +109,84 @@ Literals the O-code hard-codes, which Python must keep in step:
 
 ## Globals
 
-118 defined in `create_defaults`, 227 read in `lib/`.
+169 defined in `create_defaults`, 269 read in `lib/`.
 
 - `#<_pl_begin_z>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/lathe_poly_pass.ngc
 - `#<_pl_cam_dir>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_cam_max>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_cam_n>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_cam_own>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_cut_alt>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_cut_rev>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_entry_base>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_entry_n>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_env_base>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_env_count>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_env_found>` — read by lib/lathe/lathe_level_next_start.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_env_z>` — read by lib/lathe/lathe_level_next_start.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_eramp_base>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_eramp_n>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_ext_bk_dz>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_fc_base>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_fc_n>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_flat_sub>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_flc_base>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_flc_n>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_floor_n>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_hf_feed>` — read by lib/lathe/hf_move.ngc
 - `#<_pl_id_ret>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/lathe_poly_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_cstep>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_dsgn>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_fstep>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_ltgt>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_np>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_ok>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_p1f>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_p1s>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_p2f>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_p2s>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_rtgt>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_stgt>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lad_top>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_level_z_end>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lim_hi>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lim_lo>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lim_on>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lo_air>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_lvl_base>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lvl_n>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lvlf_base>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_lvlz_base>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_min_pass>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_multi_cross>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_nose_ox>` — read by lib/lathe/lathe_poly_pass.ngc
 - `#<_pl_nose_oz>` — read by lib/lathe/lathe_poly_pass.ngc
+- `#<_pl_p1s_n>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_park_on>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_park_x>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_park_z>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_pass_from>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_pause_on>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_peck_dwell>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_peck_len>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_peck_ret>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_pf_base>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_pf_n>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_pf_on>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_ph1_front_cut>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_ph1_z_end>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_prev_lvl>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_prev_thin>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_ramp_face>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_res_base>` — read by lib/lathe/lathe_level_next_start.ngc
+- `#<_pl_res_n>` — read by lib/lathe/lathe_level_next_start.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_resume_found>` — read by lib/lathe/lathe_level_next_start.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_resume_z>` — read by lib/lathe/lathe_level_next_start.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_ret_dist>` — read by lib/lathe/lathe_level_pass.ngc
-- `#<_pl_ret_mode>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_ret_mode>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_rgh_ox>` — read by lib/lathe/lathe_poly_pass.ngc
 - `#<_pl_rgh_oz>` — read by lib/lathe/lathe_level_pass.ngc
-- `#<_pl_sect_count>` — read by lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_sect_count>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_sect_mode>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_sect_top_dia>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_sectioning>` — read by lib/lathe/poly_lathe_mill.ngc
@@ -143,6 +194,8 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `#<_pl_skip_thin>` — read by lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_stop_base>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_stop_n>` — read by lib/lathe/lathe_level_pass.ngc
+- `#<_pl_w_idx>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/poly_lathe_mill.ngc
+- `#<_pl_wdeep_ok>` — read by lib/lathe/lathe_level_pass.ngc
 - `#<_pl_x_sgn>` — read by lib/lathe/lathe_level_pass.ngc, lib/lathe/lathe_poly_pass.ngc
 - `#<_pl_z_clear>` — read by lib/lathe/g123_lathe.ngc, lib/lathe/lathe_level_pass.ngc, lib/lathe/lathe_poly_pass.ngc, lib/lathe/poly_lathe_mill.ngc
 - `#<_pl_zc_ovr>` — read by lib/lathe/poly_lathe_mill.ngc
@@ -169,12 +222,13 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_atype` — cfg/lathe/polyline-arc-to.cfg, cfg/mill/polyline-arc-polar.cfg, cfg/mill/polyline-arc-to.cfg, cfg/mill/polyline-arc-top.cfg, cfg/mill/polyline.cfg, cfg/plasma/polyline-arc-polar.cfg, cfg/plasma/polyline-arc-to.cfg, cfg/plasma/polyline-arc-top.cfg, cfg/plasma/polyline.cfg, lathe_sections.py
 - `param_ax` — cfg/mill/polyline-mirror-p.cfg, cfg/plasma/polyline-mirror-p.cfg
 - `param_axis` — cfg/mill/probe-edge.cfg
-- `param_b_x` — cfg/lathe/boring.cfg, cfg/lathe/facing.cfg, cfg/lathe/parting.cfg, cfg/lathe/polyline.cfg, cfg/lathe/taper_ida.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_oda.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg, lathe_sections.py
+- `param_b_x` — cfg/lathe/boring.cfg, cfg/lathe/facing.cfg, cfg/lathe/parting.cfg, cfg/lathe/taper_ida.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_oda.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg, lathe_sections.py
 - `param_b_x_ref` — cfg/lathe/facing.cfg
 - `param_b_z` — cfg/lathe/boring.cfg, cfg/lathe/parting.cfg, cfg/lathe/polyline.cfg, cfg/lathe/taper_ida.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_oda.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg, lathe_sections.py
 - `param_b_zg` — cfg/lathe/parting.cfg
 - `param_b_zu` — cfg/lathe/parting.cfg
 - `param_back_clear` — ncam_project_io.py
+- `param_below_ir` — cfg/lathe/facing.cfg
 - `param_bore_d` — cfg/mill/SHCS.cfg, cfg/mill/SHCS_slot-arc.cfg, cfg/mill/SHCS_slot.cfg, cfg/mill/SHCS_slot2.cfg
 - `param_c` — cfg/lathe/parting.cfg
 - `param_c_dpt` — cfg/lathe/tool-change.cfg, ncam_project_io.py
@@ -224,7 +278,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_dy` — cfg/group-off.cfg, cfg/mill/drill-array.cfg, cfg/mill/polyline-mirror-p.cfg, cfg/mill/polyline.cfg, cfg/mill/probe-array.cfg, cfg/plasma/polyline-mirror-p.cfg, cfg/plasma/polyline.cfg, cfg/rectangular-array.cfg
 - `param_dydef` — cfg/mill/drill-array.cfg
 - `param_e` — cfg/mill/ttt.cfg
-- `param_e_x` — cfg/lathe/boring.cfg, cfg/lathe/facing.cfg, cfg/lathe/parting.cfg, cfg/lathe/polyline.cfg, cfg/lathe/taper_ida.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_oda.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg, lathe_sections.py
+- `param_e_x` — cfg/lathe/boring.cfg, cfg/lathe/facing.cfg, cfg/lathe/parting.cfg, cfg/lathe/taper_ida.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_oda.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg
 - `param_e_x_ref` — cfg/lathe/facing.cfg
 - `param_e_z` — cfg/lathe/boring.cfg, cfg/lathe/polyline.cfg, cfg/lathe/taper_idl.cfg, cfg/lathe/taper_odl.cfg, cfg/lathe/turning.cfg
 - `param_e_z_on` — cfg/lathe/polyline.cfg
@@ -235,6 +289,8 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_es` — cfg/mill/slot-arc.cfg, cfg/plasma/slot-arc.cfg
 - `param_etype` — cfg/lathe/polyline-arc-ij.cfg, cfg/mill/polyline-arc-ij.cfg, cfg/mill/polyline-arc-polar.cfg, cfg/plasma/polyline-arc-ij.cfg, cfg/plasma/polyline-arc-polar.cfg, lathe_sections.py
 - `param_ext` — cfg/mill/SHCS_slot-arc.cfg, cfg/mill/drill-circle.cfg, cfg/mill/slot-arc.cfg, cfg/plasma/slot-arc.cfg
+- `param_ext_bk` — lathe_sections.py
+- `param_ext_fr` — lathe_sections.py
 - `param_ez` — cfg/lathe/threading.cfg
 - `param_f` — cfg/mill/circle-2.cfg, cfg/mill/circle.cfg, cfg/plasma/circle-2.cfg, cfg/plasma/circle.cfg, cfg/plasma/cutting-params2d.cfg, cfg/plasma/cutting-params3d.cfg
 - `param_f_dir` — cfg/lathe/polyline.cfg, lathe_sections.py
@@ -260,6 +316,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_fp` — cfg/mill/circle-2.cfg, cfg/mill/circle-k.cfg, cfg/mill/circle.cfg, cfg/mill/diamond.cfg, cfg/mill/ellipse.cfg, cfg/mill/polygon.cfg, cfg/mill/rectangle.cfg, cfg/mill/slot-2.cfg, cfg/mill/slot-arc.cfg, cfg/mill/slot.cfg
 - `param_fr_z` — cfg/lathe/polyline.cfg
 - `param_fr_z_on` — cfg/lathe/polyline.cfg
+- `param_front_flank` — lathe_sections.py
 - `param_fz` — cfg/lathe/facing.cfg
 - `param_fz_ref` — cfg/lathe/facing.cfg
 - `param_gc` — cfg/gcode.cfg
@@ -274,8 +331,9 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_ha` — cfg/mill/ttt.cfg
 - `param_hc` — cfg/lathe/threading.cfg
 - `param_height` — cfg/lathe/cross_rect.cfg, cfg/lathe/face_rect.cfg, cfg/lathe/polyline-arc-to.cfg, cfg/mill/polyline-arc-to.cfg, cfg/mill/polyline-arc-top.cfg, cfg/mill/polyline.cfg, cfg/plasma/polyline-arc-to.cfg, cfg/plasma/polyline-arc-top.cfg, cfg/plasma/polyline.cfg, lathe_sections.py
+- `param_hf_feed` — cfg/lathe/polyline.cfg
 - `param_i` — cfg/lathe/polyline-arc-ij.cfg, cfg/mill/polyline-arc-ij.cfg, cfg/mill/polyline-arc-m.cfg, cfg/plasma/polyline-arc-ij.cfg, cfg/plasma/polyline-arc-m.cfg, lathe_sections.py
-- `param_id` — cfg/lathe/material.cfg, cfg/lathe/threading.cfg
+- `param_id` — cfg/lathe/material.cfg, cfg/lathe/threading.cfg, ncam_project_io.py
 - `param_info` — cfg/mill/probe-stock.cfg
 - `param_j` — cfg/mill/polyline-arc-ij.cfg, cfg/mill/polyline-arc-m.cfg, cfg/plasma/polyline-arc-ij.cfg, cfg/plasma/polyline-arc-m.cfg
 - `param_k` — cfg/lathe/polyline-arc-ij.cfg, lathe_sections.py
@@ -285,10 +343,11 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_lead_clearance` — cfg/mill/sel-thread-mill.cfg
 - `param_len` — cfg/mill/SHCS_slot.cfg
 - `param_length` — cfg/lathe/face_slot.cfg
-- `param_li_ang` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg
+- `param_li_ang` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg, lathe_sections.py
 - `param_li_feed` — cfg/lathe/polyline.cfg
-- `param_li_len` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg
+- `param_li_len` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg, lathe_sections.py
 - `param_li_rad` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg
+- `param_lo_air` — cfg/lathe/polyline.cfg
 - `param_lo_ang` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg
 - `param_lo_feed` — cfg/lathe/polyline.cfg
 - `param_lo_len` — cfg/lathe/facing.cfg, cfg/lathe/polyline.cfg
@@ -302,6 +361,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_m_style` — cfg/lathe/polyline-to.cfg, lathe_sections.py
 - `param_maj_d` — cfg/mill/thread-milling.cfg
 - `param_min_d` — cfg/mill/thread-milling.cfg
+- `param_min_pass` — cfg/lathe/polyline.cfg
 - `param_mode` — cfg/lathe/polyline.cfg, cfg/lathe/tool-change.cfg, cfg/mill/surf_finish.cfg, cfg/mill/ttt.cfg
 - `param_multi_x` — cfg/lathe/polyline.cfg
 - `param_n` — cfg/comment.cfg, cfg/mill/polygon.cfg, cfg/plasma/polygon.cfg, cfg/proj_desc.cfg
@@ -310,7 +370,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_num` — cfg/circular-array.cfg, cfg/lathe/c_array.cfg, cfg/lathe/z_array.cfg, cfg/mill/drill-circle-irr.cfg, cfg/mill/drill-circle.cfg, cfg/mill/index-axisA.cfg, cfg/mill/polyline-repeat.cfg, cfg/plasma/polyline-repeat.cfg
 - `param_numx` — cfg/rectangular-array.cfg
 - `param_numy` — cfg/rectangular-array.cfg
-- `param_od` — cfg/lathe/material.cfg
+- `param_od` — cfg/lathe/material.cfg, ncam_project_io.py
 - `param_op` — cfg/lathe/polyline.cfg
 - `param_opt` — cfg/circular-array.cfg, cfg/mill/circle-2.cfg, cfg/mill/circle-k.cfg, cfg/mill/circle.cfg, cfg/mill/diamond.cfg, cfg/mill/drill-circle.cfg, cfg/mill/ellipse.cfg, cfg/mill/polygon.cfg, cfg/mill/rectangle.cfg, cfg/mill/slot-2.cfg, cfg/mill/slot-arc.cfg, cfg/mill/slot.cfg, cfg/mill/taper-hole.cfg, cfg/mill/thread-milling.cfg, cfg/plasma/circle-2.cfg, cfg/plasma/circle.cfg, cfg/plasma/ellipse.cfg, cfg/plasma/polygon.cfg, cfg/plasma/rectangle.cfg, cfg/plasma/slot-2.cfg, cfg/plasma/slot-arc.cfg, cfg/plasma/slot.cfg
 - `param_orcr` — cfg/mill/polyline.cfg, cfg/plasma/polyline.cfg
@@ -326,9 +386,12 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_path_q` — cfg/lathe/tool-change.cfg
 - `param_path_tol` — cfg/lathe/tool-change.cfg
 - `param_pause_on` — cfg/lathe/polyline.cfg
+- `param_peck_dwell` — cfg/lathe/polyline.cfg
+- `param_peck_len` — cfg/lathe/polyline.cfg
+- `param_peck_ret` — cfg/lathe/polyline.cfg
 - `param_pen` — cfg/mill/sel-end-mill.cfg
-- `param_pf_off` — cfg/lathe/polyline.cfg, lathe_sections.py
-- `param_pf_on` — cfg/lathe/polyline.cfg, lathe_sections.py
+- `param_pf_off` — cfg/lathe/polyline.cfg, lathe_sections.py, ncam_preview_ui.py
+- `param_pf_on` — cfg/lathe/polyline.cfg, lathe_sections.py, ncam_preview_ui.py
 - `param_pitch` — cfg/mill/thread-milling.cfg
 - `param_pk` — cfg/lathe/threading.cfg
 - `param_pos` — cfg/mill/drill-side.cfg
@@ -364,9 +427,11 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_seg` — cfg/mill/ellipse.cfg, cfg/plasma/ellipse.cfg
 - `param_sh` — cfg/lathe/material.cfg, cfg/mill/material.cfg, cfg/plasma/material2d.cfg, cfg/plasma/material3d.cfg
 - `param_shank_h` — ncam_project_io.py
+- `param_shank_ox` — ncam_project_io.py
+- `param_shank_oz` — ncam_project_io.py
 - `param_show` — cfg/mill/polyline-mirror-i.cfg, cfg/plasma/polyline-mirror-i.cfg
 - `param_side` — cfg/lathe/polyline.cfg, cfg/mill/drill-side.cfg, lathe_sections.py, ncam_preview_ui.py
-- `param_skip_thin` — cfg/lathe/polyline.cfg
+- `param_skip_thin` — cfg/lathe/polyline.cfg, lathe_sections.py
 - `param_sl` — cfg/lathe/facing.cfg, cfg/mill/polyline-arc-m.cfg, cfg/plasma/polyline-arc-m.cfg
 - `param_so` — cfg/mill/surf_finish.cfg
 - `param_so_m` — cfg/mill/sel-end-mill.cfg
@@ -416,12 +481,16 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_x` — cfg/lathe/init-turning.cfg, cfg/lathe/polyline-arc-to.cfg, cfg/lathe/polyline-to.cfg, cfg/lathe/radius_od.cfg, cfg/mill/SHCS_slot.cfg, cfg/mill/diamond.cfg, cfg/mill/drill-array.cfg, cfg/mill/drill-single.cfg, cfg/mill/material.cfg, cfg/mill/polyline-arc-m.cfg, cfg/mill/polyline-arc-to.cfg, cfg/mill/polyline-to.cfg, cfg/mill/polyline.cfg, cfg/mill/rectangle.cfg, cfg/mill/slot.cfg, cfg/mill/ttt.cfg, cfg/plasma/material2d.cfg, cfg/plasma/material3d.cfg, cfg/plasma/polyline-arc-m.cfg, cfg/plasma/polyline-arc-to.cfg, cfg/plasma/polyline-to.cfg, cfg/plasma/polyline.cfg, cfg/plasma/rectangle.cfg, cfg/plasma/slot.cfg, cfg/rectangular-array.cfg, lathe_sections.py
 - `param_x1` — cfg/mill/SHCS_slot2.cfg, cfg/mill/circle-2.cfg, cfg/mill/polyline-mirror-i.cfg, cfg/mill/slot-2.cfg, cfg/plasma/circle-2.cfg, cfg/plasma/polyline-mirror-i.cfg, cfg/plasma/slot-2.cfg
 - `param_x2` — cfg/mill/SHCS_slot2.cfg, cfg/mill/circle-2.cfg, cfg/mill/polyline-mirror-i.cfg, cfg/mill/slot-2.cfg, cfg/plasma/circle-2.cfg, cfg/plasma/polyline-mirror-i.cfg, cfg/plasma/slot-2.cfg
+- `param_x_limit` — lathe_sections.py
 - `param_x_rap` — cfg/lathe/material.cfg
 - `param_xa` — cfg/mill/circle-2.cfg, cfg/mill/circle-k.cfg, cfg/mill/circle.cfg, cfg/mill/diamond.cfg, cfg/mill/ellipse.cfg, cfg/mill/polygon.cfg, cfg/mill/rectangle.cfg, cfg/mill/slot-2.cfg, cfg/mill/slot-arc.cfg, cfg/mill/slot.cfg
 - `param_xc` — cfg/mill/drill-array.cfg
 - `param_xopt` — cfg/mill/probe-stock.cfg
 - `param_xr` — cfg/mill/ellipse.cfg, cfg/plasma/ellipse.cfg, cfg/rectangular-array.cfg
+- `param_xw_back` — cfg/lathe/polyline.cfg
 - `param_xw_dir` — cfg/lathe/polyline.cfg
+- `param_xw_front` — cfg/lathe/polyline.cfg
+- `param_xw_tol` — cfg/lathe/polyline.cfg
 - `param_xz` — cfg/mill/probe-stock.cfg
 - `param_y` — cfg/lathe/cross_mill.cfg, cfg/lathe/cross_polygon.cfg, cfg/lathe/cross_rect.cfg, cfg/lathe/face_mill.cfg, cfg/lathe/face_polygon.cfg, cfg/lathe/face_rect.cfg, cfg/lathe/face_slot.cfg, cfg/mill/SHCS_slot.cfg, cfg/mill/diamond.cfg, cfg/mill/drill-array.cfg, cfg/mill/drill-single.cfg, cfg/mill/material.cfg, cfg/mill/polyline-arc-m.cfg, cfg/mill/polyline-arc-to.cfg, cfg/mill/polyline-to.cfg, cfg/mill/polyline.cfg, cfg/mill/rectangle.cfg, cfg/mill/slot.cfg, cfg/mill/ttt.cfg, cfg/plasma/material2d.cfg, cfg/plasma/material3d.cfg, cfg/plasma/polyline-arc-m.cfg, cfg/plasma/polyline-arc-to.cfg, cfg/plasma/polyline-to.cfg, cfg/plasma/polyline.cfg, cfg/plasma/rectangle.cfg, cfg/plasma/slot.cfg, cfg/rectangular-array.cfg
 - `param_y1` — cfg/mill/SHCS_slot2.cfg, cfg/mill/circle-2.cfg, cfg/mill/polyline-mirror-i.cfg, cfg/mill/slot-2.cfg, cfg/plasma/circle-2.cfg, cfg/plasma/polyline-mirror-i.cfg, cfg/plasma/slot-2.cfg
@@ -430,7 +499,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `param_yopt` — cfg/mill/probe-stock.cfg
 - `param_yr` — cfg/mill/ellipse.cfg, cfg/plasma/ellipse.cfg, cfg/rectangular-array.cfg
 - `param_yz` — cfg/mill/probe-stock.cfg
-- `param_z` — cfg/lathe/cross_mill.cfg, cfg/lathe/cross_polygon.cfg, cfg/lathe/cross_rect.cfg, cfg/lathe/face_mill.cfg, cfg/lathe/face_polygon.cfg, cfg/lathe/face_rect.cfg, cfg/lathe/face_slot.cfg, cfg/lathe/init-turning.cfg, cfg/lathe/material.cfg, cfg/lathe/polyline-arc-to.cfg, cfg/lathe/polyline-to.cfg, cfg/lathe/radius_od.cfg, cfg/mill/material.cfg, cfg/plasma/material2d.cfg, cfg/plasma/material3d.cfg, lathe_sections.py
+- `param_z` — cfg/lathe/cross_mill.cfg, cfg/lathe/cross_polygon.cfg, cfg/lathe/cross_rect.cfg, cfg/lathe/face_mill.cfg, cfg/lathe/face_polygon.cfg, cfg/lathe/face_rect.cfg, cfg/lathe/face_slot.cfg, cfg/lathe/init-turning.cfg, cfg/lathe/material.cfg, cfg/lathe/polyline-arc-to.cfg, cfg/lathe/polyline-to.cfg, cfg/lathe/radius_od.cfg, cfg/mill/material.cfg, cfg/plasma/material2d.cfg, cfg/plasma/material3d.cfg, lathe_sections.py, ncam_project_io.py
 - `param_z_cust` — cfg/mill/drill-side.cfg
 - `param_z_rap` — cfg/lathe/material.cfg
 - `param_z_start` — cfg/lathe/z_array.cfg
@@ -468,6 +537,7 @@ Literals the O-code hard-codes, which Python must keep in step:
 - `get_max` (lib/utilities/get_max.ngc) — called by lib/mill/circle-k.ngc, lib/mill/circle.ngc, lib/mill/diamond.ngc, lib/mill/ellipse.ngc, lib/mill/polygon.ngc, lib/mill/rectangle.ngc, lib/mill/slot_arc.ngc, lib/plasma/slot_arc.ngc
 - `get_min` (lib/utilities/get_min.ngc) — called by lib/lathe/poly_link.ngc, lib/mill/circle-k.ngc, lib/mill/optimize.ngc, lib/mill/poly_link.ngc, lib/plasma/poly_link.ngc
 - `get_offsets` (lib/utilities/get_offsets.ngc) — called by lib/lathe/poly_lathe_mill.ngc, lib/mill/circle-k.ngc, lib/mill/circle.ngc, lib/mill/diamond.ngc, lib/mill/ellipse.ngc, lib/mill/poly_mill.ngc, lib/mill/polygon.ngc, lib/mill/rectangle.ngc, lib/mill/slot_arc.ngc, lib/mill/thread-milling.ngc, lib/plasma/circle.ngc, lib/plasma/ellipse.ngc, lib/plasma/poly_cut.ngc, lib/plasma/polygon.ngc, lib/plasma/rectangle.ngc, lib/plasma/slot_arc.ngc
+- `hf_move` (lib/lathe/hf_move.ngc) — called by lib/lathe/lathe_level_pass.ngc, lib/lathe/lathe_poly_pass.ngc, lib/lathe/poly_lathe_mill.ngc
 - `in_list` (lib/utilities/in_list.ngc) — called by nobody
 - `init_turning` (lib/lathe/init_turning.ngc) — called by nobody
 - `isect_arcs` (lib/utilities/isect_arcs.ngc) — called by lib/lathe/poly_link.ngc, lib/mill/lead_in.ngc, lib/mill/lead_out.ngc, lib/mill/poly_link.ngc, lib/plasma/poly_link.ngc
@@ -565,6 +635,10 @@ Literals the O-code hard-codes, which Python must keep in step:
 - cfg/lathe/parting.cfg: param_hz
 - cfg/lathe/polyline-to.cfg: param_x_ref
 - cfg/lathe/polyline-to.cfg: param_z_ref
+- cfg/lathe/polyline.cfg: param_b_x_dat
+- cfg/lathe/polyline.cfg: param_e_x_dat
+- cfg/lathe/polyline.cfg: param_e_z_dat
+- cfg/lathe/polyline.cfg: param_fr_z_dat
 - cfg/lathe/polyline.cfg: param_h_fin
 - cfg/lathe/polyline.cfg: param_h_lead
 - cfg/lathe/polyline.cfg: param_h_opt
@@ -572,7 +646,6 @@ Literals the O-code hard-codes, which Python must keep in step:
 - cfg/lathe/polyline.cfg: param_hx
 - cfg/lathe/polyline.cfg: param_hz
 - cfg/lathe/polyline.cfg: param_items
-- cfg/lathe/polyline.cfg: param_skip_short
 - cfg/lathe/radius_od.cfg: param_hf
 - cfg/lathe/radius_od.cfg: param_hp
 - cfg/lathe/taper_ida.cfg: param_hf
@@ -617,5 +690,8 @@ Literals the O-code hard-codes, which Python must keep in step:
 - cfg/mill/rectangle.cfg: param_h10
 - cfg/mill/rectangle.cfg: param_h11
 - cfg/mill/sel-thread-mill.cfg: param_h7
+- `#<_pl_e_x>`
 - `#<_pl_entry_z>`
+- `#<_pl_lad_ez>`
+- `#<_pl_lad_lz>`
 - `#<_pl_nose_r>`

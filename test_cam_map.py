@@ -85,6 +85,7 @@ def main():
     # that word and picking the first selected the wrong one, which passed and
     # made this case look like a checker fault
     win = next(n for n in names if 'match lathe_sections' in n)
+    walk = next(n for n in names if 'walks a table' in n)
     glob = next(n for n in names if 'create_defaults' in n)
     order = next(n for n in names if 'order line' in n)
     subs = next(n for n in names if 'subroutine' in n)
@@ -114,6 +115,21 @@ def main():
         r = run_against(root)
         check('C2 catches a global the O-code reads with no default', not r[glob],
               'a #<_pl_*> with no create_defaults entry passed')
+
+        # C7 - a scan that reads a table's base but takes its length from
+        # somewhere else. This is the shape of a scan walking the WRONG
+        # profile, which cam_map went clean through for all of analysis/029.
+        # Written as base-without-count because that is the direction that is
+        # a bug: count-without-base is a legitimate presence gate, and
+        # poly_lathe_mill really does read _pl_res_n on its own.
+        root = copy_tree(os.path.join(tmp, 'c7'))
+        with open(os.path.join(root, 'lib', 'lathe', 'poly_lathe_mill.ngc'),
+                  'a') as fh:
+            fh.write('\n(a table walked with somebody else\'s length)\n'
+                     '#<zzz_walk_test> = #[#<_pl_stop_base> + 2]\n')
+        r = run_against(root)
+        check('C7 catches a table walked without its own count', not r[walk],
+              'a file reading _pl_stop_base with no _pl_stop_n passed')
 
         # C1d - a window grown over the O-code's scratch. Found for real: the
         # In-CAM table was capped at 5000 while poly_add_item uses 4984-4999,
