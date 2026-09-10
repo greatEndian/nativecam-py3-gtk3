@@ -83,9 +83,15 @@ def main():
                 if type(c).__name__ == 'MenuToolButton'), None)
     if btn is not None:
         items = [i for i in btn.get_menu().get_children()]
+        # TWO RADIOS, not two ITEMS. The menu legitimately carries more than
+        # the radio group: "Send flat G-code" was added beside it as a
+        # separate action - the radios choose what happens to ncam.ngc, that
+        # one sends a different file - with a separator in between. Counting
+        # children made this fail on a deliberate addition, so count the
+        # radios, which is what the test is actually about.
+        radios = [i for i in items if type(i).__name__ == 'RadioMenuItem']
         check('the Send dropdown offers exactly two radio choices',
-              len(items) == 2 and all(type(i).__name__ == 'RadioMenuItem'
-                                      for i in items),
+              len(radios) == 2,
               str([type(i).__name__ for i in items]))
 
     # both radio copies - toolbar and Utilities menu - must be tracked, or

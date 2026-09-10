@@ -143,8 +143,17 @@ def main():
                 if not os.path.isfile(out):
                     return None
                 txt = open(out).read()
-                return [float(x) for x in
-                        re.findall(r'#4[45]\d\d = (-?[\d.]+)', txt)]
+                # THE STOP WINDOW'S OWN BOUNDS, never a hardcoded slot range.
+                # This scraped #4400-#4599, which was the stop table's home
+                # until it moved to 4330-4600: the regex then found 62 of its
+                # 132 slots, and with the separate-Z switch on - where the
+                # table is shorter and sits entirely below 4400 - it found
+                # NONE, so `on` came back [] and "generates all three ways"
+                # failed on a program that had generated perfectly well.
+                import lathe_sections as _L
+                return [float(m.group(2)) for m in
+                        re.finditer(r'^#(\d+) = (-?[\d.]+)', txt, re.M)
+                        if _L.STOP_BASE <= int(m.group(1)) < _L.STOP_TOP]
 
             # AND ROUGHING HONOURS IT, which is the assertion this file did
             # not have. It measured a 45 degree chamfer, 0.3008 against 0.3,

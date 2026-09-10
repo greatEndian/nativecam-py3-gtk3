@@ -51,12 +51,21 @@ GEN = os.path.join(HERE, '.claude/skills/lathe-gcode-verify/scripts/gen_project.
 FAILED = []
 
 # from analysis/071 and 072 - the motion of these projects with no limit set
-BASELINE = {'testing_15_9.xml': ('6cf361a8b8f5', 1575),
-            'testing_15_2.xml': ('e2744cbb6ff0', 327),
+# RE-RECORDED 2026-09-10. Every MOVE COUNT is unchanged - 1575, 327, 464 - and
+# only the coordinates moved, which is the signature of analysis/119: the arc
+# chords are finer now that _min_segment sizes each segment against the
+# compensation shrink at its own corners instead of a flat 2.4 x nose radius.
+# That change had its own gate (native comp on testing_13_arc_first went from
+# 21 uncovered segments to 0, PASS, with testing_9_1 still passing to identical
+# numbers), so this tripwire is being re-stamped because the change it caught
+# was intended - not to make it quiet. Re-recording without that evidence would
+# turn this file into a gate that cannot fail.
+BASELINE = {'testing_15_9.xml': ('2fcd792173ab', 1575),
+            'testing_15_2.xml': ('79710a0979fa', 327),
             # 15_5 gained a level on 2026-09-03 - it carries skip_thin at
             # 0.3 mm and the skip was dropping one while opening a gap past
             # the depth of cut; the refusal gives it back. 458 -> 464.
-            'testing_15_5.xml': ('d5ba90092f17', 464)}
+            'testing_15_5.xml': ('8807a22c3400', 464)}
 
 
 def check(name, cond, detail=''):
