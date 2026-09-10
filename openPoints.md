@@ -881,6 +881,20 @@ the two cuts only touch.
   rapids. Closing it needs the same clearance measurement run on an ID project
   before the gate is widened - not a widened gate followed by a check.
 
+- [x] **The facing roughing offset is computed in PYTHON** — 2026-09-10,
+  `analysis/124`. `analysis/122` had shipped it as new O-code, growing
+  `facing.ngc` by 55 lines against the standing rule that the `.ngc` shrinks.
+  `lathe_sections.facing_rough_offset` now resolves the tool table, the side and
+  the cut direction at generation time and the subroutine reads two globals;
+  **+7 / −46**, so the file is 39 lines smaller than the version it replaces. No
+  new geometry — it reuses `lathe_comp.offset_vector`, the primitive
+  `tip_comp_vec` implements. A global rather than a CALL argument, following
+  `_fc_below_ir`'s own reason. `facing.cfg` 1.26 → 1.27.
+  - Gate was **byte-identity** across all 24 projects with a facing feature:
+    IDENTICAL. A refactor has to produce the same motion.
+  - **`test_comp_side.py` was dead too** — same stale-header cause as
+    `test_facing.py`, failing identically before and after. Repaired; it now
+    runs four checks it had never been running.
 - [x] **THE FRAME IS SETTLED**, 2026-09-10, `analysis/123`. It depends on
   `n_comp`: `build_stop_contour_gcode` feeds `entry_contour` the nose radius
   and orientation from `_comp_nose`, which returns `(0, 0)` unless

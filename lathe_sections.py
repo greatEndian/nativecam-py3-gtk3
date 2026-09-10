@@ -4888,6 +4888,61 @@ def _comp_nose(polyline_feature, nose_r, orient):
         return 0.0, 0
     return float(nose_r), int(orient)
 
+def facing_rough_gcode(feature, nose_r, orient):
+    """The two globals facing.ngc reads for its roughing offset."""
+    ofz, ofx = facing_rough_offset(feature, nose_r, orient)
+    return ('\t\t#<_fc_rough_ofz> = %s\n\t\t#<_fc_rough_ofx> = %s'
+            % (_fmt(ofz), _fmt(ofx)))
+
+
+def facing_rough_offset(feature, nose_r, orient):
+    """(off_z, off_x) the FACING roughing passes carry, in machine X units.
+
+    Roughing has no interpreter compensation in any mode, so with nose comp on
+    the nose geometry has to reach the coordinates - and this is the generation
+    time answer to a generation time question. It used to be worked out in
+    facing.ngc at runtime, by resolving the tool table, picking a side and
+    calling tip_comp_vec; all three inputs are known here, so the subroutine
+    now reads two numbers instead of computing them. See analysis/124.
+
+    Reuses lathe_comp.offset_vector, the same primitive tip_comp_vec
+    implements, so the two cannot drift apart into different geometry.
+
+    The cut runs radially at constant Z, so only the SIGN of the radial travel
+    matters and the diameters are resolved exactly as the cfg's own chain
+    does - absolute, or an offset from the published stock OD or ID. The side
+    follows facing.ngc: 42, or 41 when the pass steps from a Z above the face.
+
+    Returns (0.0, 0.0) whenever there is nothing to apply, so the caller can
+    emit it unconditionally.
+    """
+    def _p(name, default=0.0):
+        q = feature.get_param(name)
+        return _to_float(q.get_ngc_value()) if q is not None else default
+
+    if nose_r is None or nose_r <= EPS or not 0 < int(orient or 0) < 10:
+        return 0.0, 0.0
+    if int(_p('param_n_comp')) not in (1, 2):
+        return 0.0, 0.0
+
+    def _end(val, ref):
+        if int(ref) == 1 and WORKPIECE_OD is not None:
+            return WORKPIECE_OD + val
+        if int(ref) == 2 and WORKPIECE_ID is not None:
+            return WORKPIECE_ID + val
+        return val
+
+    bx = _end(_p('param_b_x'), _p('param_b_x_ref'))
+    ex = _end(_p('param_e_x'), _p('param_e_x_ref'))
+    if int(_p('param_dir')) == 1:                 # a swap, as the cfg does it
+        bx, ex = ex, bx
+    # begin_z is the face plus the Z depth of cut, so z_factor is that sign
+    side = 41 if _p('param_zd') > 0 else 42
+    ofz, ofx = lathe_comp.offset_vector(side, 0.0, (ex - bx) / DIAMETER_MODE,
+                                        float(nose_r), int(orient))
+    return ofz, ofx * DIAMETER_MODE
+
+
 def build_rough_nose_gcode(polyline_feature, nose_r=0.0, orient=0):
     """The orientation term roughing carries, ALREADY GATED. Always emitted.
 

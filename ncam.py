@@ -2800,6 +2800,8 @@ class Preferences(object):
             self.default += ("#<_tip_orient>              = " + self.tip_orient + "\n")
             # how far a face runs on past its End diameter - see facing.ngc
             self.default += ("#<_fc_below_ir>             = 0.0\n")
+            self.default += ("#<_fc_rough_ofz>            = 0.0\n")
+            self.default += ("#<_fc_rough_ofx>            = 0.0\n")
             self.default += ("#<_tip_cam_r>               = 0.0\n")
             self.default += ("#<_tip_cam_l>               = 0.0\n")
             self.default += ("#<_tip_off_z>               = 0.0\n")

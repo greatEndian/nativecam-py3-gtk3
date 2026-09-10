@@ -51,6 +51,12 @@ G7
 (which is exactly how this driver came to emit no motion at all while still)
 (reporting its own assertion failures. Values are ncam.py's create_defaults.)
 #<_fc_below_ir>     = 0.0
+(the roughing nose offset, a global the cfg fills from Python - see)
+(lathe_sections.facing_rough_offset. The driver supplies it directly, so what)
+(is proved here is that the subroutine APPLIES it; that Python computes the)
+(same numbers the old runtime block did is proved by the A/B on real projects.)
+#<_fc_rough_ofz>    = %(ofz).6f
+#<_fc_rough_ofx>    = %(ofx).6f
 #<_tbl_scale>       = 1.0
 #<_tip_cam>         = 0.0
 #<_tip_cam_r>       = 0.0
@@ -104,10 +110,11 @@ def check(name, cond, detail=''):
 
 
 def run(bxr=0, bx=62.0, exr=0, ex=0.0, direction=0, zd=2.0, fin=1, np_=1, sl=0.0,
-        fzr=0, fz=0.0, nc=0):
+        fzr=0, fz=0.0, nc=0, ofz=0.0, ofx=0.0):
     """Emit a harness, trace it, return the list of cutting moves as (z, radius)."""
     from parse_rs274 import run_rs274, parse_canon
-    body = PREAMBLE % {'od': STOCK_OD, 'id': STOCK_ID} + RESOLVE % {
+    body = PREAMBLE % {'od': STOCK_OD, 'id': STOCK_ID,
+                       'ofz': ofz, 'ofx': ofx} + RESOLVE % {
         'bxr': bxr, 'bx': bx, 'exr': exr, 'ex': ex, 'dir': direction,
         'zd': zd, 'fin': fin, 'np': np_, 'sl': sl, 'fzr': fzr, 'fz': fz,
         'nc': nc}
@@ -218,14 +225,19 @@ def main():
     # masquerade as the roughing one. What is left is roughing and nothing else.
     rough_off = [z for k, z, _r in run(zd=2.0, fin=0, np_=2, nc=0)
                  if k in ('feed', 'arc')]
-    rough_on = [z for k, z, _r in run(zd=2.0, fin=0, np_=2, nc=1)
+    # the offset the cfg would hand it, from the same primitive Python uses
+    import lathe_comp
+    _ofz, _ofx = lathe_comp.offset_vector(41, 0.0, -31.0, NOSE_R, 3)
+    rough_on = [z for k, z, _r in run(zd=2.0, fin=0, np_=2, nc=1,
+                                      ofz=_ofz, ofx=_ofx * 2.0)
                 if k in ('feed', 'arc')]
     check('comp off and comp on both produce roughing cuts',
           len(rough_off) > 0 and len(rough_on) > 0,
           'off=%d moves, on=%d moves' % (len(rough_off), len(rough_on)))
     rad_off = [r for k, _z, r in run(zd=2.0, fin=0, np_=2, nc=0)
                if k in ('feed', 'arc')]
-    rad_on = [r for k, _z, r in run(zd=2.0, fin=0, np_=2, nc=1)
+    rad_on = [r for k, _z, r in run(zd=2.0, fin=0, np_=2, nc=1,
+                                    ofz=_ofz, ofx=_ofx * 2.0)
               if k in ('feed', 'arc')]
     if rough_off and rough_on and rad_off and rad_on:
         dz = min(rough_on) - min(rough_off)

@@ -96,52 +96,13 @@ o<facing> sub
 	G0 Z[#<begin_z> + #<_z_clear> * #<z_factor>]
 	M#<_cooling_mode>
 
-	(COMPENSATION IS ALL OR NOTHING - if it is on for this operation it is on)
-	(for the roughing passes too, not just the finish. A roughed face that)
-	(ignores the nose is left a full nose radius out in Z, and the finish pass)
-	(then takes a cut of a different depth from the one it was given.)
-	(Resolved above the loop because the loop needs the vector.)
-	(Roughing has NO interpreter compensation in any mode - lathe_level_pass)
-	(has none either - so when compensation is on at all the nose geometry goes)
-	(into the COORDINATES here, the way In CAM does it for the finish face and)
-	(the way taper.ngc already does it for its own roughing. Cleared first:)
-	(these are globals, and a CAM-mode feature earlier in the program would)
-	(otherwise shift this one.)
-	#<r_side> = 42
-	o<r_sd> if [#<z_factor> GT 0]
-		#<r_side> = 41
-	o<r_sd> endif
-	(r_ofz and r_ofx are LOCALS, assigned outside the branch because a local)
-	(first assigned inside one fails load-time pre-parse)
-	#<r_ofz> = 0
-	#<r_ofx> = 0
-	(everything that writes a GLOBAL goes inside the guard, not above it -)
-	(_tip_lead_w, _tip_comp_d, _tip_cam_* - and with comp off this operation)
-	(never called it before, so calling it unconditionally leaked state into)
-	(whatever ran next: it moved testing_6, testing_8 and testing_9, none of)
-	(which even switch nose comp on.)
-	o<rv_rgh> if [#<n_comp> GT 0]
-		#<_tip_off_z> = 0
-		#<_tip_off_x> = 0
-		o<tip_comp_dia> CALL [0] [#<n_comp>]
-		(BOTH COMPONENTS, and which one carries the correction depends on the)
-		(insert. The cut runs radially at constant Z, so the offset normal is)
-		(axial - but the orientation term subtracts the control point's own)
-		(displacement from the nose centre, and for an insert whose tip already)
-		(sits on the face side that cancels the axial part exactly. Measured on)
-		(T3, D2.54 Q3, side 41: the normal is 1,0 and gives 1.2700 in Z, while)
-		(orientation 3 gives 1,-1 - the axial parts cancel and the result is)
-		(Z 0.0000 with X +1.2700, the whole)
-		(correction radial. An insert with the opposite Z orientation gets)
-		(2.5400 in Z instead. Taking only one component would silently apply)
-		(nothing to half the tool table.)
-		o<tip_comp_vec> CALL [#<r_side>] [0] [[#<end_x> - #<begin_x>] / #<_diameter_mode>] [0]
-		#<r_ofz> = #<_tip_off_z>
-		#<r_ofx> = [#<_tip_off_x> * #<_diameter_mode>]
-		(handed back to the finish block below, which sets them itself)
-		#<_tip_off_z> = 0
-		#<_tip_off_x> = 0
-	o<rv_rgh> endif
+	(COMPENSATION IS ALL OR NOTHING: roughing has no interpreter compensation)
+	(in any mode, so with nose comp on the geometry reaches the COORDINATES.)
+	(Worked out in Python - the tool table, the side and the cut direction are)
+	(all known at generation time - so this reads two numbers instead of)
+	(resolving them. Both 0 unless the operation compensates. analysis/124.)
+	#<r_ofz> = #<_fc_rough_ofz>
+	#<r_ofx> = #<_fc_rough_ofx>
 
 	o121 if [[#<_tool_usage> LE 1] AND [#<rough_passes> GT 0]]
 		F#<_rough_feed>

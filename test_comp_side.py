@@ -67,6 +67,11 @@ G18 G7 G90 G94 G54
 #<_tip_cam_l>     = 0
 #<_tip_off_z>     = 0
 #<_tip_off_x>     = 0
+(facing's own globals. Missing, they fail the file at LOAD - which is why the)
+(facing case here reported "the harness did not run" rather than a wrong side.)
+#<_fc_below_ir>   = 0.0
+#<_fc_rough_ofz>  = 0.0
+#<_fc_rough_ofx>  = 0.0
 """
 
 # label, tool, R, Q, CALL line with %s for n_comp, wall a->b in (z, radius),
