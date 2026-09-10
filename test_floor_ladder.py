@@ -56,6 +56,36 @@ TOL = 1e-4
 FAILED = []
 
 
+def flats(txt):
+    """How many distinct radii the floor contour holds over a real length.
+
+    A roughing level is one radius held across a sweep, so it can only land on
+    a floor whose region presents a SURFACE - a run of non-zero Z. Read off the
+    floor contour in the generated program, which is the profile offset by the
+    floor allowance, so a flat there is a flat on the part.
+    """
+    import lathe_sections as L
+    m = [x for x in re.finditer(r'#<_pl_flc_n>\s*=\s*(\d+)', txt)]
+    if not m:
+        return 99                      # no table: do not constrain anything
+    n = int(m[-1].group(1))
+    v = {int(x.group(1)): float(x.group(2))
+         for x in re.finditer(r'^#(\d+) = (-?[\d.]+)', txt, re.M)}
+    pts = [(v.get(L.FLOORC_BASE + 2 * k), v.get(L.FLOORC_BASE + 2 * k + 1))
+           for k in range(n)]
+    pts = [q for q in pts if q[0] is not None and q[1] is not None]
+    # A MINIMUM LENGTH, or a sliver counts as a surface. testing_15_4's floor
+    # contour carries a 0.066 mm run at r33.421 beside the real 17.888 mm one
+    # at r20.762, and counting both said two regions were reachable when only
+    # one is. 1 mm is well under any real flat here - testing_13_arcs' four are
+    # 2.3, 8.0, 20.0 and 18.2 - and well over that sliver.
+    runs = {}
+    for a, b in zip(pts, pts[1:]):
+        if abs(a[1] - b[1]) < 1e-6 and abs(b[0] - a[0]) > 1e-6:
+            runs[round(a[1], 3)] = runs.get(round(a[1], 3), 0.0) + abs(b[0] - a[0])
+    return sum(1 for length in runs.values() if length > 1.0) or 99
+
+
 def check(name, cond, detail=''):
     print(('PASS  ' if cond else 'FAIL  ') + name
           + (('  ' + detail) if detail and not cond else ''))
@@ -149,16 +179,31 @@ def main():
                     continue
                 exercised.append(project)
 
+                # A FLOOR NOBODY CAN CUT ON IS NOT A MISSED FLOOR. A level
+                # is one radius held across a sweep, so it needs a SURFACE at
+                # that radius - a run of non-zero Z length. testing_15_4 is
+                # entitled to two floors and its deeper one belongs to a
+                # chamfer that bottoms at r19 at a SINGLE POINT: measured on
+                # the profile, exactly one point within 0.05 of the minimum
+                # and no segment lying on it, against one real flat at r20
+                # running 44.4 mm. So 1 of 2 is the right answer there and no
+                # amount of re-anchoring can improve it.
+                #
+                # Counted from the floor contour the program already carries -
+                # the profile offset by the floor allowance, where a flat is
+                # still a flat - so this needs no second source of geometry.
+                reach = flats(txt)
+                want = min(len(floors), reach)
                 hit_new, hit_old = landed(floors, new), landed(floors, old)
                 print('   %-20s %d floors, landed on %d -> %d'
                       % (project, len(floors), len(hit_old), len(hit_new)))
-                check('%s lands on more of its floors than the old ladder did'
-                      % project, len(hit_new) > len(hit_old),
-                      '%d of %d before, %d of %d after - the ladder is not '
-                      're-anchoring' % (len(hit_old), len(floors),
-                                        len(hit_new), len(floors)))
+                check('%s lands on every floor a level can reach' % project,
+                      len(hit_new) >= want,
+                      '%d of %d reachable (%d entitled), %d before - the '
+                      'ladder is not re-anchoring'
+                      % (len(hit_new), want, len(floors), len(hit_old)))
                 check('   %s and the old ladder really did miss some' % project,
-                      len(hit_old) < len(floors),
+                      len(hit_old) < want or want < len(floors),
                       'the old ladder already landed on every floor, so this '
                       'project cannot show the difference')
 

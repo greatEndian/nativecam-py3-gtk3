@@ -1487,6 +1487,15 @@ the two cuts only touch.
 
 ## Next — before anything else
 
+- [ ] **One extra cutting lead on `testing_15_9` back-to-front, unexplained.**
+  `test_air_leads` measured 310 cutting leads and 1319.7 mm of roughing feed
+  against a recorded 309 / 1319.0 — one lead of 0.7 mm, in the direction of
+  cutting MORE. It predates `4a3fb1d`, so it is not from the 2026-09-08..10
+  work, and it was never traced to a commit. The gate now asserts the property
+  (never FEWER cutting leads, never LESS distance) instead of the exact number,
+  so it no longer fires on drift in the harmless direction — but the drift
+  itself is still unexplained and is written down here rather than lost.
+
 - [x] **THE ARC-FIRST ABORT — FIXED**, 2026-09-08, `analysis/115`. The three
   `testing_13_arc_first*` projects died at load with *"Straight feed in concave
   corner cannot be reached by the tool without gouging"*, 2832 moves in. Not a

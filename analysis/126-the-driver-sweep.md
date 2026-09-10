@@ -107,3 +107,46 @@ Also noted, not chased: `test_menu_layout` emits **22 tracebacks** to its
 output while passing - GTK signal-callback noise on no-selection clicks. It
 does not affect the verdict, but a passing test printing tracebacks is where a
 real one would hide.
+
+## Addendum 2 — two of the four failures resolved, and they were tests
+
+`test_floor_ladder` and `test_air_leads`, the two I judged measurable. Both
+turned out to be gates asserting the wrong thing, not defects.
+
+### testing_15_4 cannot land on its second floor, and never could
+
+Measured on the profile: the minimum radius **19.0000 is touched at exactly
+ONE point**, Z0.0000, with **no segment lying on it**. The only real flat is
+r20.000 running 44.4 mm. A roughing level is one radius held across a sweep, so
+it needs a surface; a floor belonging to a chamfer that bottoms at a point has
+nothing to cut and is correctly blocked. **1 of 2 is the right answer**, and
+`openPoints` already said so.
+
+The check now counts REACHABLE floors from the floor contour the program
+already carries - the profile offset by the floor allowance, where a flat is
+still a flat - and asserts the ladder lands on all of them.
+
+**A length threshold was needed and the first version did not have it.**
+Counting any constant-radius run made `testing_15_4` report two reachable
+floors, because its floor contour carries a **0.066 mm** sliver at r33.421
+beside the real 17.888 mm run at r20.762. 1 mm separates them cleanly:
+testing_13_arcs' four flats are 2.3, 8.0, 20.0 and 18.2 mm.
+
+The check keeps its teeth - `testing_13_arcs` wants 2 and lands 2, so a
+re-anchoring failure taking it to 1 still fails.
+
+### test_air_leads pinned three numbers where it meant three properties
+
+Its own comment says these counts "drift with the geometry", and it had already
+been re-baselined once - yet `cut_n` was compared with `==`. On art1 it read
+310 against 309, one extra cutting lead and 0.7 mm more feed.
+
+The check is named *keeps every lead that cuts metal*: fewer is the failure,
+more is not. Both it and the distance check now assert a floor. And the third,
+*back to front keeps every retreat, setting or not*, compared against a
+recorded 1319.0 when what it means is that `lo_air` changes nothing - now a
+difference between the same project with and against the setting, which is
+immune to the direction's own feed drifting.
+
+**The +1 lead is still unexplained** - it predates `4a3fb1d` and was never
+traced. Recorded in `openPoints` rather than buried under a passing test.
