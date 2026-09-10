@@ -881,6 +881,22 @@ the two cuts only touch.
   rapids. Closing it needs the same clearance measurement run on an ID project
   before the gate is widened - not a widened gate followed by a check.
 
+- [x] **THE FRAME IS SETTLED**, 2026-09-10, `analysis/123`. It depends on
+  `n_comp`: `build_stop_contour_gcode` feeds `entry_contour` the nose radius
+  and orientation from `_comp_nose`, which returns `(0, 0)` unless
+  `param_n_comp` is 1 or 2 — so the table is **control-point frame when the
+  polyline compensates and contact frame when it does not**. There was never
+  one answer, which is why one assumption applied at both ends contradicted
+  itself. Measured on `testing_15_2` with `n_comp` 0 against 1: all 66 points
+  move, but the RADIUS is unchanged to the digit on axis-parallel stretches
+  (20.7620 both) and only Z moves — exactly what `entry_contour`'s docstring
+  claims. All 40 shipped projects have `n_comp = 0`, so every stop table today
+  is contact frame.
+  - Rebuilding the sweep on that is separate work; cut-to-cut measurements stay
+    frame-independent in the meantime.
+- [ ] ~~THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT~~ — the frame
+  question above is answered; what remains is rebuilding the sweep on it.
+  **Original note kept below.**
 - [ ] **THE COVERAGE SWEEP IS STILL AN UNTRUSTWORTHY INSTRUMENT, and that is
   the honest state.** Sampling Z and asking whether any cut covers each level
   gives a different answer depending on which frame the floor table is assumed
