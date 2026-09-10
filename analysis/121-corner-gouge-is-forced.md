@@ -93,3 +93,31 @@ interpreter and from above by the accuracy it costs.
 Its last uncovered segment and its 0.0183 gouge are the same corner, so under
 native compensation it cannot reach a full PASS by this route. Under In CAM it
 already passes. That is the honest end state, not a defect left unfixed.
+
+## Addendum, 2026-09-10 — with the project's own settings it does not gouge, it ABORTS
+
+Found by the dead-driver sweep, via `test_leads`. Generating `testing_13_arcs`
+with nothing overridden but `param_n_comp = 1`:
+
+```
+n_comp 0, Off      ok, 3076 moves
+n_comp 1, Native   ERROR: Straight feed in concave corner cannot be reached
+                          by the tool without gouging
+n_comp 2, In CAM   ok, 3111 moves
+```
+
+Pre-existing - identical at `4a3fb1d`, before this session - so it is not from
+any of today's work.
+
+This is the same 87 degree internal corner, and it revises the severity stated
+above. Under `prove_cam_comp` the profile merely gouges 0.0183, because that
+prover overrides the project to a single finishing pass with no pre-finish.
+With the settings the project actually carries, **native compensation cannot
+run this profile at all**.
+
+So the recommendation the `PARAM_N_COMP` tooltip now carries is stronger than
+it says: on an arc-into-corner profile Native is not merely less accurate than
+In CAM, it can refuse the program outright. In CAM runs it - 3111 moves - and
+so does Off.
+
+Worth noting the default for a new polyline is `value = 1`, Native.
