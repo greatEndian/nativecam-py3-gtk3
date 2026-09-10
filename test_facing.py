@@ -46,6 +46,17 @@ G7
 #<_tip_orient>      = 0.0
 #<_tip_comp_d>      = 0.0
 #<_tip_comp_l>      = 0.0
+(added when the driver went stale: facing and its callees read these, and a)
+(global read in lib/ but never defined fails the whole file at LOAD time -)
+(which is exactly how this driver came to emit no motion at all while still)
+(reporting its own assertion failures. Values are ncam.py's create_defaults.)
+#<_fc_below_ir>     = 0.0
+#<_tbl_scale>       = 1.0
+#<_tip_cam>         = 0.0
+#<_tip_cam_r>       = 0.0
+#<_tip_cam_l>       = 0.0
+#<_tip_off_z>       = 0.0
+#<_tip_off_x>       = 0.0
 #<_flt_ok>          = 0.0
 #<_flt_t1z>         = 0.0
 #<_flt_t1x>         = 0.0
@@ -81,7 +92,7 @@ o<fzr> if [%(fzr)d EQ 1]
 o<fzr> else
 \t#<f_fz> = [#<_wp_z> + %(fz).4f]
 o<fzr> endif
-o<facing> CALL [#<f_bx>] [#<f_ex>] [#<f_fz> + %(zd).4f] [#<f_fz>] [%(fin)d] [0] [0] [45] [0] [0] [45] [0] [%(np)d] [0] [%(sl).4f]
+o<facing> CALL [#<f_bx>] [#<f_ex>] [#<f_fz> + %(zd).4f] [#<f_fz>] [%(fin)d] [0] [0] [45] [0] [0] [45] [0] [%(np)d] [%(nc)d] [%(sl).4f]
 M2
 """
 
@@ -93,12 +104,13 @@ def check(name, cond, detail=''):
 
 
 def run(bxr=0, bx=62.0, exr=0, ex=0.0, direction=0, zd=2.0, fin=1, np_=1, sl=0.0,
-        fzr=0, fz=0.0):
+        fzr=0, fz=0.0, nc=0):
     """Emit a harness, trace it, return the list of cutting moves as (z, radius)."""
     from parse_rs274 import run_rs274, parse_canon
     body = PREAMBLE % {'od': STOCK_OD, 'id': STOCK_ID} + RESOLVE % {
         'bxr': bxr, 'bx': bx, 'exr': exr, 'ex': ex, 'dir': direction,
-        'zd': zd, 'fin': fin, 'np': np_, 'sl': sl, 'fzr': fzr, 'fz': fz}
+        'zd': zd, 'fin': fin, 'np': np_, 'sl': sl, 'fzr': fzr, 'fz': fz,
+        'nc': nc}
     d = tempfile.mkdtemp(prefix='test_facing_')
     path = os.path.join(d, 'case.ngc')
     with open(path, 'w') as f:
@@ -183,6 +195,45 @@ def main():
         z = face_reached(sl)
         check('axial stock to leave %.1f leaves the face that far proud' % sl,
               abs(z - sl) < 1e-3, 'face left at Z%.4f, wanted Z%.4f' % (z, sl))
+
+    # COMPENSATION IS ALL OR NOTHING. Roughing has no interpreter compensation
+    # in any mode, so with the nose comp on the geometry has to go into the
+    # ROUGHING coordinates or the roughed face sits a full nose radius out in
+    # Z and the finish pass takes a cut of a different depth from the one it
+    # was given. T3 in lathe_mm.tbl is D2.54, so the nose radius is 1.2700.
+    #
+    # Compared against the SAME case with comp off rather than an absolute
+    # number: what is being asserted is that turning comp on moves the roughing
+    # face by the nose radius, which is the whole claim.
+    # WHICH COMPONENT CARRIES THE CORRECTION DEPENDS ON THE INSERT, and the
+    # first version of this check assumed it was always axial. T3 is D2.54 Q3,
+    # so the nose radius is 1.2700; at side 41 the offset normal is (1,0),
+    # worth 1.2700 in Z, and orientation 3 contributes (1,-1), which cancels
+    # the axial part exactly and leaves the whole correction RADIAL:
+    # Z 0.0000, X +1.2700. Asserting a Z shift here passed nothing and would
+    # have hidden the fact that the X component was being discarded.
+    NOSE_R = 1.27
+    # fin=0 so there is no finishing pass in the program at all: the finish
+    # pass IS interpreter-compensated, so leaving it in would let its own shift
+    # masquerade as the roughing one. What is left is roughing and nothing else.
+    rough_off = [z for k, z, _r in run(zd=2.0, fin=0, np_=2, nc=0)
+                 if k in ('feed', 'arc')]
+    rough_on = [z for k, z, _r in run(zd=2.0, fin=0, np_=2, nc=1)
+                if k in ('feed', 'arc')]
+    check('comp off and comp on both produce roughing cuts',
+          len(rough_off) > 0 and len(rough_on) > 0,
+          'off=%d moves, on=%d moves' % (len(rough_off), len(rough_on)))
+    rad_off = [r for k, _z, r in run(zd=2.0, fin=0, np_=2, nc=0)
+               if k in ('feed', 'arc')]
+    rad_on = [r for k, _z, r in run(zd=2.0, fin=0, np_=2, nc=1)
+              if k in ('feed', 'arc')]
+    if rough_off and rough_on and rad_off and rad_on:
+        dz = min(rough_on) - min(rough_off)
+        dx = min(rad_on) - min(rad_off)
+        check('nose comp shifts the roughing pass by the insert offset',
+              abs(dz) < 1e-3 and abs(dx - NOSE_R) < 1e-3,
+              'moved Z%+.4f X%+.4f, wanted Z+0.0000 X+%.4f for T3 Q3'
+              % (dz, dx, NOSE_R))
 
     # the case actually reported: no roughing passes at all. The allowance used
     # to be applied only to the roughing span, so with none it did nothing.

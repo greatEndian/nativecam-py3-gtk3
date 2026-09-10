@@ -96,11 +96,66 @@ o<facing> sub
 	G0 Z[#<begin_z> + #<_z_clear> * #<z_factor>]
 	M#<_cooling_mode>
 
+	(COMPENSATION IS ALL OR NOTHING - if it is on for this operation it is on)
+	(for the roughing passes too, not just the finish. A roughed face that)
+	(ignores the nose is left a full nose radius out in Z, and the finish pass)
+	(then takes a cut of a different depth from the one it was given.)
+	(Resolved above the loop because the loop needs the vector.)
+	(Roughing has NO interpreter compensation in any mode - lathe_level_pass)
+	(has none either - so when compensation is on at all the nose geometry goes)
+	(into the COORDINATES here, the way In CAM does it for the finish face and)
+	(the way taper.ngc already does it for its own roughing. Cleared first:)
+	(these are globals, and a CAM-mode feature earlier in the program would)
+	(otherwise shift this one.)
+	#<r_side> = 42
+	o<r_sd> if [#<z_factor> GT 0]
+		#<r_side> = 41
+	o<r_sd> endif
+	(r_ofz and r_ofx are LOCALS, assigned outside the branch because a local)
+	(first assigned inside one fails load-time pre-parse)
+	#<r_ofz> = 0
+	#<r_ofx> = 0
+	(everything that writes a GLOBAL goes inside the guard, not above it -)
+	(_tip_lead_w, _tip_comp_d, _tip_cam_* - and with comp off this operation)
+	(never called it before, so calling it unconditionally leaked state into)
+	(whatever ran next: it moved testing_6, testing_8 and testing_9, none of)
+	(which even switch nose comp on.)
+	o<rv_rgh> if [#<n_comp> GT 0]
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+		o<tip_comp_dia> CALL [0] [#<n_comp>]
+		(BOTH COMPONENTS, and which one carries the correction depends on the)
+		(insert. The cut runs radially at constant Z, so the offset normal is)
+		(axial - but the orientation term subtracts the control point's own)
+		(displacement from the nose centre, and for an insert whose tip already)
+		(sits on the face side that cancels the axial part exactly. Measured on)
+		(T3, D2.54 Q3, side 41: the normal is 1,0 and gives 1.2700 in Z, while)
+		(orientation 3 gives 1,-1 - the axial parts cancel and the result is)
+		(Z 0.0000 with X +1.2700, the whole)
+		(correction radial. An insert with the opposite Z orientation gets)
+		(2.5400 in Z instead. Taking only one component would silently apply)
+		(nothing to half the tool table.)
+		o<tip_comp_vec> CALL [#<r_side>] [0] [[#<end_x> - #<begin_x>] / #<_diameter_mode>] [0]
+		#<r_ofz> = #<_tip_off_z>
+		#<r_ofx> = [#<_tip_off_x> * #<_diameter_mode>]
+		(handed back to the finish block below, which sets them itself)
+		#<_tip_off_z> = 0
+		#<_tip_off_x> = 0
+	o<rv_rgh> endif
+
 	o121 if [[#<_tool_usage> LE 1] AND [#<rough_passes> GT 0]]
 		F#<_rough_feed>
-		#<z> = #<begin_z>
+		(z_nom is where the pass would go uncompensated; z is where the tool)
+		(is told to go. Kept apart so the step still steps by each_cut instead)
+		(of accumulating the offset once per pass)
+		(compensated copies of the radial ends, loop-local so the finish block)
+		(below still sees the commanded values)
+		#<bxc> = [#<begin_x> + #<r_ofx>]
+		#<exc> = [#<end_x> + #<r_ofx>]
+		#<z_nom> = #<begin_z>
 		o12 repeat [#<rough_passes>]
-			#<z> = [#<z> - #<each_cut> * #<z_factor>]
+			#<z_nom> = [#<z_nom> - #<each_cut> * #<z_factor>]
+			#<z> = [#<z_nom> + #<r_ofz>]
 			o<f_li1> if [#<has_li>]
 				(round the corner between the lead line and the face with a true)
 				(tangent blend - the same construction every other radius in this)
@@ -109,12 +164,12 @@ o<facing> sub
 				(there, and moves only the lead line's own tangent point. The fixed)
 				(quarter-arc this replaces was tangent only at 90 degrees and left a)
 				(kink at every other lead angle)
-				o<fillet_lead> CALL [#<z>] [#<begin_x> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
+				o<fillet_lead> CALL [#<z>] [#<bxc> / #<_diameter_mode>] [0] [#<f_dirx>] [#<f_liz>] [#<f_lix>] [#<li_rad>] [#<f_zdir>]
 				o<f_li1t> if [#<_flt_ok>]
 					#<asx> = [#<_flt_t1x> * #<_diameter_mode>]
 					#<asz> = #<_flt_t1z>
 				o<f_li1t> else
-					#<asx> = #<begin_x>
+					#<asx> = #<bxc>
 					#<asz> = #<z>
 				o<f_li1t> endif
 				G0 X[#<asx> + #<li_len> * COS[#<li_ang>] * #<_diameter_mode>]
@@ -124,16 +179,16 @@ o<facing> sub
 				o<f_li1s> endif
 				o<f_li1a> if [#<_flt_ok>]
 					o<f_li1d> if [#<_flt_cw>]
-						G2 X#<begin_x> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
+						G2 X#<bxc> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li1d> else
-						G3 X#<begin_x> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
+						G3 X#<bxc> Z#<z> I[#<_flt_cx> - [#<asx> / #<_diameter_mode>]] K[#<_flt_cz> - #<asz>]
 					o<f_li1d> endif
 				o<f_li1a> endif
 			o<f_li1> else
-				G0 X#<begin_x>
+				G0 X#<bxc>
 				G0 Z#<z>
 			o<f_li1> endif
-			G1 X#<end_x>
+			G1 X#<exc>
 			o<f_lo1> if [#<has_lo>]
 				(the arc carries the tool on in the direction it was already cutting)
 				(and curves it away, rather than reversing it at the face end. Both)
@@ -141,14 +196,14 @@ o<facing> sub
 				(to Z through the face end point, tangent to the face there - but only)
 				(this one continues the cut; the other doubles the tool straight back)
 				(on itself. Sweep is flipped because it is traversed V-to-T1)
-				o<fillet_lead> CALL [#<z>] [#<end_x> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
-				#<lex> = #<end_x>
+				o<fillet_lead> CALL [#<z>] [#<exc> / #<_diameter_mode>] [0] [-#<f_dirx>] [#<f_loz>] [#<f_lox>] [#<lo_rad>] [-#<f_zdir>]
+				#<lex> = #<exc>
 				#<lez> = #<z>
 				o<f_lo1a> if [#<_flt_ok>]
 					o<f_lo1d> if [#<_flt_cw>]
-						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
+						G3 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<exc> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
 					o<f_lo1d> else
-						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<end_x> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
+						G2 X[#<_flt_t1x> * #<_diameter_mode>] Z#<_flt_t1z> I[#<_flt_cx> - [#<exc> / #<_diameter_mode>]] K[#<_flt_cz> - #<z>]
 					o<f_lo1d> endif
 					#<lex> = [#<_flt_t1x> * #<_diameter_mode>]
 					#<lez> = #<_flt_t1z>
