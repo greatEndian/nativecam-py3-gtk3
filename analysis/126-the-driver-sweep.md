@@ -74,3 +74,36 @@ now appeared four times: `test_sections`, `test_surface_equality`,
 
 `test_project_sweep` and `test_motion_fingerprint` cover the catalogue. Nothing
 covered the drivers themselves until this.
+
+## Addendum — a second, independent run, and one genuine false green
+
+The worker that was stopped mid-task delivered its own classification after
+all. It agrees with the clean sweep exactly: 72 drivers, the same 68 passing,
+the same four failures, with the four repairs above showing as PASS. Two
+independent runs concurring is worth more than either alone, and it settles the
+concern it raised on the way out - there were no false passes hiding in the
+contaminated data.
+
+It also classified four drivers VACUOUS. Checked rather than relayed, and only
+**one** of the four is real:
+
+- `test_paned.py` - 20 lines, **0 asserts, 0 checks**, `# Gtk.main()` commented
+  out. A scratch reproduction of the GTK3 Paned size-allocate recursion, named
+  `test_*`, swept every time, always green, proving nothing.
+- `test_coord_mapping.py` - has **2 real asserts**. False positive of a
+  PASS-token rule.
+- `test_project_sweep.py` - does real work, prints its own format.
+- `test_motion_fingerprint.py` - a tool, not a gate, by its own docstring and
+  by design.
+
+**The genuine one was NOT converted into a test.** It was rewritten as one -
+the guard asserted, with a negative control - and the control PASSED: without
+the guard the handler still settles, because a headless run never drives the
+allocation loop hard enough to re-enter. A check whose negative control passes
+is the same false green in a better disguise, so the file is renamed
+`demo_paned_recursion.py` and left as an explicit hand-run demo. 71 drivers now.
+
+Also noted, not chased: `test_menu_layout` emits **22 tracebacks** to its
+output while passing - GTK signal-callback noise on no-selection clicks. It
+does not affect the verdict, but a passing test printing tracebacks is where a
+real one would hide.
