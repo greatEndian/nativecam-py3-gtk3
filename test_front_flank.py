@@ -93,6 +93,35 @@ def main():
           L.flank_sides(L.mirror_dir(0)) != L.flank_sides(0)
           and L.flank_sides(L.mirror_dir(1)) != L.flank_sides(1))
 
+    # --- AND THE TWO FLANKS SHADOW OPPOSITE SIDES, geometrically ---------
+    # The check above is algebra on flank_sides; this is the outcome on a real
+    # profile, which is what "right size, wrong side?" in openPoints asked.
+    # One profile with a rising wall AND a falling one: each flank must take a
+    # different wall, and the pair must swap when the roughing direction does.
+    # Measured 2026-09-11 - trailing Z-40.0..-25.1 / leading Z-10.1..0.0 at
+    # direction 0, exactly reversed at direction 1.
+    both = [(0.0, 20.0), (-10.0, 20.0), (-10.2, 60.0),
+            (-25.0, 60.0), (-25.2, 20.0), (-40.0, 20.0)]
+    sides = {}
+    for _d in (0, 1):
+        bk = L.spans_between(both, L.flank_envelope(both, 75.0, _d))
+        fr = L.spans_between(both, L.front_flank_envelope(both, 15.0, _d))
+        sides[_d] = (bk, fr)
+        check('direction %d: each flank shadows a wall' % _d,
+              len(bk) > 0 and len(fr) > 0,
+              'trailing %d span(s), leading %d' % (len(bk), len(fr)))
+        if bk and fr:
+            check('   and they are OPPOSITE sides, not the same one' % (),
+                  not (min(a for a, _b, _g in bk) < -30) == (min(a for a, _b, _g in fr) < -30),
+                  'trailing at Z%.1f, leading at Z%.1f - same side'
+                  % (bk[0][0], fr[0][0]))
+    if all(sides[d][0] and sides[d][1] for d in (0, 1)):
+        check('   and reversing the direction swaps them',
+              abs(sides[0][0][0][0] - sides[1][1][0][0]) < 1e-6
+              and abs(sides[0][1][0][0] - sides[1][0][0][0]) < 1e-6,
+              'dir0 trailing Z%.2f vs dir1 leading Z%.2f'
+              % (sides[0][0][0][0], sides[1][1][0][0]))
+
     # --- it fires where a leading flank genuinely cannot go --------------
     steep = [(0.0, 20.0), (-10.0, 20.0), (-10.2, 60.0), (-30.0, 60.0)]
     sp = L.spans_between(steep, L.front_flank_envelope(steep, 15.0, 0))

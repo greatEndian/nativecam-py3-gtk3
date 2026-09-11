@@ -1063,10 +1063,18 @@ the two cuts only touch.
   `test_front_flank_path` all pass with off-by-default intact - testing_15_2
   341 moves `3f98389e76f7` and testing_15_5 484 moves `f1e3e5026d7a`
   unchanged, each still moving when asked, 341 -> 320 and 484 -> 461.
-  - [ ] **Still open**: if the region is now the right SIZE but the wrong
-    SIDE, the side comes from `mirror_dir` and is next. And the 2 degree
-    `back_clear` default is applied to the leading flank too, under a name
-    that means the trailing one - nobody has said they want the same number.
+  - [x] **THE SIDE IS RIGHT** — measured 2026-09-11. One profile carrying both
+    a rising wall (Z−10.0..−10.2) and a falling one (Z−25.0..−25.2):
+    direction 0 shadows trailing Z−40.0..−25.1 and leading Z−10.1..0.0;
+    direction 1 is exactly reversed. Opposite sides, swapping with the
+    roughing direction — the physics the docstring describes, and `mirror_dir`
+    is doing its job. `test_front_flank` only checked this algebraically
+    (`flank_sides(mirror_dir(0)) != flank_sides(0)`); it now asserts the
+    geometric outcome too.
+  - [ ] **NEEDS A CALL, and it is the only part left here**: the 2 degree
+    `back_clear` default is applied to the LEADING flank as well, under a name
+    that means the trailing one. Nobody has said they want the same number for
+    both.
 
 - [ ] **2. BACK TO FRONT: THE PRE-FINISH PASS AT THE PART BACK HAS A MIRRORED
   LEAD-IN AND A WRONG X, CUTTING AN UNDERCUT.** greatEndian: *"again I
