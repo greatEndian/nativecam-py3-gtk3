@@ -683,14 +683,16 @@ def test_level_split():
     check('back to front emits one entry per peak', '#<_pl_p1s_n> = 1' in got,
           got.replace('\n', ' | ')[:200])
     slots = dict(re.findall(r'^#(3\d\d\d) = (\S+)$', got, re.M))
+    peak_slot = str(L.LVLSPLIT_BASE)
+    thr_slot = str(L.LVLSPLIT_BASE + 1)
     check('the split point is the peak, not the step at Z-5',
-          abs(float(slots.get('3160', '0')) + 30.0) < 1e-6,
-          'z %s' % slots.get('3160'))
+          abs(float(slots.get(peak_slot, '0')) + 30.0) < 1e-6,
+          'z %s' % slots.get(peak_slot))
     check('the threshold is the peak height plus the floor allowance',
-          abs(float(slots.get('3161', '0')) - 63.0) < 1e-6,
-          'thr %s (want 60.0 + 3.0)' % slots.get('3161'))
+          abs(float(slots.get(thr_slot, '0')) - 63.0) < 1e-6,
+          'thr %s (want 60.0 + 3.0)' % slots.get(thr_slot))
     check('the table sits clear of the cfg CALL scratch at #3141-#3159',
-          min(int(k) for k in slots) >= 3160, 'lowest slot %s' % min(slots))
+          min(int(k) for k in slots) >= L.LVLSPLIT_BASE, 'lowest slot %s' % min(slots))
 
     check('front to back never gets the table',
           L.build_level_split_gcode(poly(0)) == '')

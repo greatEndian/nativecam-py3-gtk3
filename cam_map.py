@@ -27,6 +27,7 @@ THE MAP IS USEFUL; THE CHECKS ARE THE POINT. Each one is here because it would
 have caught a bug this project actually had, and each is proved by a known-bad
 case in `test_cam_map.py` - a check that cannot fail proves nothing.
 """
+import glob
 import os
 import re
 import sys
@@ -66,6 +67,15 @@ ORDER_KNOWN = (
        ('cfg/mill/sel-thread-mill.cfg', 'teeth')})
 
 
+# A quoted 3-4 digit literal in a test_*.py file that happens to equal a
+# window's current value but is provably not the window bound itself - listed
+# so a real collision does not have to be argued out of C8 by hand. Empty
+# today: every current hit (grep confirmed) is either the LVLSPLIT_BASE
+# retyping this check exists for, or below 1000 and outside every window's
+# range entirely.
+TEST_LITERAL_KNOWN = set()
+
+
 def _code(line):
     """The executable part of an .ngc line.
 
@@ -98,6 +108,61 @@ def windows():
     out = {}
     for m in re.finditer(r'^([A-Z][A-Z_]*(?:BASE|TOP)) = (\d+)$', src, re.M):
         out[m.group(1)] = int(m.group(2))
+    return out
+
+
+def test_window_literals():
+    """Where a test_*.py retypes a window bound instead of importing it.
+
+    -> [(file, line, detail)]
+
+    Two shapes, both real: `test_sections`, `test_surface_equality`,
+    `test_through_cut` and `test_rough_overlay` each once carried
+    `NAME_BASE, NAME_TOP = 4200, 4400` - a bare re-declaration that stayed
+    behind when lathe_sections' own value moved. `test_stock_to_leave`
+    carried the other shape, a slot-range regex - `#4[45]\\d\\d` - standing in
+    for STOP_BASE/STOP_TOP entirely. Both go stale the same way: the window
+    moves in Python, the test's own copy does not, and a perfectly good
+    program is reported as broken (`analysis/126`).
+
+    DELIBERATELY TEXT-ONLY, matching every other check here - no import of
+    the test files, which would run their module-level code.
+    """
+    win = windows()
+    out = []
+    retype = re.compile(
+        r'(?m)^\s*([A-Z][A-Z0-9_]*_(?:BASE|TOP))'
+        r'(?:\s*,\s*([A-Z][A-Z0-9_]*_(?:BASE|TOP)))?\s*=\s*(\d+)(?:\s*,\s*(\d+))?\s*$')
+    literal = re.compile(r'''(['"])(\d{3,4})\1''')
+    for path in sorted(glob.glob(os.path.join(HERE, 'test_*.py'))):
+        rel = os.path.relpath(path, HERE)
+        # test_cam_map.py is this checker's own meta-test: it deliberately
+        # carries both bad shapes as string fixtures to write into scratch
+        # copies for C8's own negative control, and scanning it here would
+        # have this check fail on its own test data every time.
+        if rel == 'test_cam_map.py':
+            continue
+        src = _read(path)
+
+        for m in retype.finditer(src):
+            names = [n for n in (m.group(1), m.group(2)) if n]
+            hit = [n for n in names if n in win]
+            if hit:
+                line = src[:m.start()].count('\n') + 1
+                out.append((rel, line,
+                             'retypes %s instead of importing %s from '
+                             'lathe_sections'
+                             % (m.group(0).strip(), '/'.join(hit))))
+
+        for m in literal.finditer(src):
+            val = int(m.group(2))
+            if val in TEST_LITERAL_KNOWN or val not in win.values():
+                continue
+            names = sorted(n for n, v in win.items() if v == val)
+            line = src[:m.start()].count('\n') + 1
+            out.append((rel, line,
+                         "quotes '%d' where %s belongs"
+                         % (val, '/'.join(names))))
     return out
 
 
@@ -349,6 +414,18 @@ def check_all():
     res.append((not orphan,
                 'every file that walks a table reads its count as well as '
                 'its base', '; '.join(orphan[:4])))
+
+    # C8 - a test_*.py must not carry its own copy of a window bound. This
+    # class has bitten four times - test_sections, test_surface_equality,
+    # test_through_cut/test_rough_overlay, and test_stock_to_leave, the last
+    # via a slot-range regex rather than a retyped constant - each stale in a
+    # different way once lathe_sections' own value moved, each reporting a
+    # perfectly good program as broken. cam_map's other checks all guard the
+    # O-code side of this; nothing looked at the tests themselves until now.
+    stale = test_window_literals()
+    res.append((not stale,
+                'no test_*.py retypes a window bound instead of importing it',
+                '; '.join('%s:%d %s' % s for s in stale[:4])))
     return res
 
 

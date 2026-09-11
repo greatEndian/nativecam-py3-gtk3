@@ -23,6 +23,9 @@ actually had.
       never appears in the tree - found by accident on `e_z`, and the checker
       then found five more the same day.
   C6  a subroutine called but not defined on the lib path.
+  C8  a test_*.py retyping a window bound instead of importing it - the class
+      that hit test_sections, test_surface_equality, test_through_cut /
+      test_rough_overlay and test_stock_to_leave, each once (analysis/126).
 """
 import os
 import shutil
@@ -90,6 +93,7 @@ def main():
     order = next(n for n in names if 'order line' in n)
     subs = next(n for n in names if 'subroutine' in n)
     scratch = next(n for n in names if 'O-code writes' in n)
+    retyped = next(n for n in names if 'retypes a window bound' in n)
 
     tmp = tempfile.mkdtemp(prefix='cam_map_')
     try:
@@ -158,6 +162,31 @@ def main():
         r = run_against(root)
         check('C6 catches a subroutine called but not defined', not r[subs],
               'a call to a non-existent subroutine passed')
+
+        # C8a - a test_*.py retyping a window bound as a bare assignment -
+        # the shape test_sections, test_surface_equality, test_through_cut
+        # and test_rough_overlay each carried once (analysis/126)
+        root = copy_tree(os.path.join(tmp, 'c8a'))
+        with open(os.path.join(root, 'test_zzz_retype.py'), 'w') as fh:
+            fh.write('# a deliberately reintroduced literal\n'
+                     'ENTRY_BASE, ENTRY_TOP = 4200, 4400\n')
+        r = run_against(root)
+        check('C8a catches a test retyping a window bound as a bare literal',
+              not r[retyped], 'ENTRY_BASE, ENTRY_TOP = 4200, 4400 passed')
+
+        # C8b - the other shape: a slot-range literal standing in for the
+        # bound instead of the name, the one test_stock_to_leave actually
+        # carried (`#4[45]\\d\\d`, scraping STOP_BASE/STOP_TOP by regex).
+        # Reproduced here as the quoted-slot-key form this checker looks
+        # for, which is the same failure - the value outlives the window.
+        root = copy_tree(os.path.join(tmp, 'c8b'))
+        with open(os.path.join(root, 'test_zzz_literal.py'), 'w') as fh:
+            fh.write('# a deliberately reintroduced literal\n'
+                     "slots = {'4330': '-1.0'}\n"
+                     "worst = slots.get('4330')\n")
+        r = run_against(root)
+        check('C8b catches a test quoting a slot number instead of the name',
+              not r[retyped], "slots.get('4330') passed")
 
         # and the cases must be SPECIFIC - a broken window must not also trip
         # the global check, or a failure says nothing about where to look
