@@ -10,6 +10,8 @@ pointing at an action that does not exist leaves a gap in the toolbar with no
 error, and a menuitem whose src no longer resolves gives a button that does
 nothing when clicked. Both are checked here against the real catalog file.
 """
+import contextlib
+import io
 import os
 import sys
 
@@ -87,14 +89,69 @@ def _check_popups():
             if not fired:
                 dead.append((name, 'clicked, nothing happened'))
 
-    for menu in (app.pop_up, app.pop_up2):
-        walk(menu)
-
+    # This forces every item enabled before clicking it (above), which is the
+    # point - a dead button must be caught whether or not it happens to be
+    # sensitive right now. The cost is that several callbacks then run with
+    # selection state this harness never set up, and raise. Two separate
+    # causes, both unreachable by a real user, recorded in analysis/130 rather
+    # than silently swallowed:
+    #   - action_digits/action_hideField/action_chng_group/action_gcode/
+    #     action_revert_type/action_removeItem all read selected_param via
+    #     self.treestore.get(self.selected_param, 0), which is None here
+    #     because nothing this harness did ever selects a PARAMETER row (the
+    #     one real auto-selection on load lands on a top-level feature) - and
+    #     in real use these six are only ever *sensitive* once a parameter row
+    #     genuinely is selected, which is exactly what sets selected_param.
+    #   - action_renameF calls get_toplevel() for a dialog's transient_for,
+    #     which is only ever a bare NCam (not a Gtk.Window) because THIS
+    #     harness never packs NCam into one - unlike both real entry points,
+    #     which pack it into a window before any click is possible (ncam.py's
+    #     own __main__ before window.run(), AXIS before the tab is shown).
+    # A real regression here is a SEVENTH cause appearing, not a count wiggle
+    # among these six - so the gate is "does not grow", not "stays at 22".
+    KNOWN_TRACEBACK_CAUSES = 7
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        for menu in (app.pop_up, app.pop_up2):
+            walk(menu)
+    tb_out = buf.getvalue()
+    # every one of these is wrapped by the same ca()-installed <lambda> in
+    # ncam_app_actions.py - excluded here, or the seven real causes would
+    # always read as eight
+    sites = set(re.findall(r'in (action_\w+)\n', tb_out))
     check('every right-click item fires its action', not dead,
           '%d of %d dead: %s' % (len(dead), total[0], dead[:5]))
     check('the popups were actually walked', total[0] > 20,
           'only %d items checked' % total[0])
+    check('no-selection click noise does not grow past the known causes',
+          len(sites) <= KNOWN_TRACEBACK_CAUSES,
+          'saw %d call sites, want <= %d: %s'
+          % (len(sites), KNOWN_TRACEBACK_CAUSES, sorted(sites)))
     shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _check_traceback_capture_control():
+    """Negative control for the check above: it must be able to fail.
+
+    Not a rerun of the popup walk - that only proves today's six causes are
+    still six, which is the thing already pinned. This proves the CAPTURE
+    itself catches a real signal-callback exception, the same mechanism the
+    real check depends on, with a throwaway action nothing else touches.
+    """
+    from gi.repository import Gio
+
+    act = Gio.SimpleAction.new('zzz_menu_layout_control', None)
+
+    def _boom(*_a):
+        raise RuntimeError('deliberate test traceback')
+
+    act.connect('activate', _boom)
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        act.activate(None)
+    n = buf.getvalue().count('Traceback')
+    check('the traceback capture catches a real signal-callback exception',
+          n == 1, 'got %d' % n)
 
 
 def main():
@@ -208,6 +265,7 @@ def main():
     # hid the problem because it IS packed into main_box. This builds a real
     # NCam and activates every popup item.
     _check_popups()
+    _check_traceback_capture_control()
 
     print()
     if FAILED:
