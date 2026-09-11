@@ -126,8 +126,13 @@ class NCamMenuCatalogMixin:
         self.pop_up2.append(mi)
         mi = self._create_menu_item(self.actionShowF)
         self.pop_up2.append(mi)
-        mi = self._create_menu_item(self.actionShowCode)
-        self.pop_up2.append(mi)
+        # Deliberately NOT offered here (pop_up2, the details/parameter pane):
+        # tv2_selected never touches self.selected_feature, so this would
+        # always show the OWNING feature's template regardless of which
+        # bool/combo/float row was actually right-clicked - indistinguishable
+        # from a genuinely empty feature and read as broken rather than
+        # empty. "Raw code" is a feature-level concept; pop_up (the feature
+        # tree) and the View menu are where it is unambiguous (analysis/130).
         mi = self._create_menu_item(self.actionChngGrp)
         self.mi_chnggrp_list.append(mi)
         self.pop_up2.append(mi)

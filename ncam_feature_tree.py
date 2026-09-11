@@ -432,6 +432,20 @@ class NCamFeatureTreeMixin:
         feature = self.selected_feature
         if feature is None :
             return
+        # get_selected_feature always walks up to a real Feature - never a
+        # Parameter - before setting self.selected_feature (SUPPORTED_DATA_TYPES
+        # covers every row a param can be, so the walk never stops on one).
+        # This holds today by construction, not by luck, but a Parameter also
+        # answers get_attr() and would silently render as "no template" -
+        # indistinguishable from a genuinely empty Feature and read as broken
+        # rather than empty. Cheap insurance against that invariant breaking
+        # under a future change: say so plainly instead of guessing.
+        if not isinstance(feature, Feature) :
+            mess_dlg(_('Cannot show raw code: %(name)s is not a feature '
+                       '(got %(kind)s).') %
+                     {'name' : getattr(feature, 'get_name', lambda: '?')(),
+                      'kind' : type(feature).__name__})
+            return
 
         win = getattr(self, 'code_view_window', None)
         if win is None :

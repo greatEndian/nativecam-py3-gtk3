@@ -1540,10 +1540,10 @@ the two cuts only touch.
   firing the action produced the real 592-character `CALL` body and a
   `Validation` tab; moving selection to `tool_change.cfg` and firing again
   reused the same window object and swapped in that feature's own 2335-character
-  `CALL` text. `test_menu_layout.py`'s real click-through (43 popup items, was
-  41) still reports **0 dead**. `test_motion_fingerprint.py` — **0 changed of
-  46** (see analysis/128), since nothing in `cfg/`, `lib/`, or generation was
-  touched.
+  `CALL` text. `test_menu_layout.py`'s real click-through (41 → 43 → 42 popup
+  items across this and the guard below) still reports **0 dead**.
+  `test_motion_fingerprint.py` — **0 changed of 46** (see analysis/128), since
+  nothing in `cfg/`, `lib/`, or generation was touched.
 
   **Not started, and still needs greatEndian's call before it is**: the write
   half. A `cfg/` edit only reaches a saved project when `version` is bumped,
@@ -1554,6 +1554,47 @@ the two cuts only touch.
   serves two different audiences on two different files with different
   lifetimes — a user's per-project customisation (the stored copy) versus an
   integrator's DEFAULT for every future feature (`cfg/` itself).
+
+  - [x] **GUARDED AGAINST THE DETAILS PANE**, 2026-09-11, `analysis/132`.
+    `pop_up2` (the parameter/details pane's popup) also offered "Show Raw
+    Code" — its selection handler `tv2_selected` never touches
+    `self.selected_feature`, so firing it there always showed the OWNING
+    feature's template regardless of which bool/combo/float row was actually
+    right-clicked, indistinguishable from a genuinely empty feature and read
+    as broken rather than empty. Removed from `pop_up2` only; `pop_up` and
+    the View menu are unaffected and are provably always feature-scoped
+    (`get_selected_feature` walks past every `SUPPORTED_DATA_TYPES` row to a
+    real `Feature`, checked against every row type the demo project has).
+    Also hardened `action_showCode` itself with an `isinstance(feature,
+    Feature)` check, insurance against that walk-up invariant breaking later
+    rather than a fix for anything reachable today. `test_menu_layout.py`:
+    0 dead of 42 (was 43).
+
+- [x] **CAM_MAP GUARDS test_*.py AGAINST RETYPING A WINDOW BOUND**, 2026-09-11,
+  `analysis/130`. New check (C8) in `cam_map.py`: no `test_*.py` may retype a
+  `lathe_sections` window constant as a bare literal (`ENTRY_BASE, ENTRY_TOP =
+  4200, 4400`) or quote its value as a slot-key string (`slots.get('3160')`)
+  instead of importing the name — the two shapes behind all four hardcoded-
+  window failures this project has had (`test_sections`,
+  `test_surface_equality`, `test_through_cut`/`test_rough_overlay`,
+  `test_stock_to_leave`; analysis/126). Found a live fifth instance while
+  building it: `test_sections.py` hardcoded `'3160'`/`'3161'` for
+  `LVLSPLIT_BASE` two lines below where it already imports and uses that same
+  constant for something else — currently correct, not currently a failure,
+  but exactly the fragility the other four had. Fixed to `str(L.LVLSPLIT_BASE)`.
+  `test_cam_map.py` gained C8a/C8b, both proven to fail on a reintroduced
+  literal; `cam_map.py` passes 9/9 on the tree as it stands.
+
+- [x] **test_menu_layout's 22 TRACEBACKS: HARNESS NOISE, PINNED BY CAUSE**,
+  2026-09-11, `analysis/131`. Traced to 7 distinct call sites, all unreachable
+  by a real user: six read `selected_param` after the test forces a menu item
+  enabled to test for dead buttons, bypassing the real sensitivity guard that
+  is the only thing that ever sets it; the seventh (`action_renameF`) crashes
+  on `get_toplevel()` only because this harness never packs `NCam` into a
+  real window, unlike both real entry points. Category (ii): the gate now
+  asserts the traceback CAUSE count does not grow past 7, not that the raw
+  count stays at 22, with a real negative control proving the stderr-capture
+  mechanism itself can catch and count a genuine signal-callback exception.
 
 - [ ] **One extra cutting lead on `testing_15_9` back-to-front, unexplained.**
   `test_air_leads` measured 310 cutting leads and 1319.7 mm of roughing feed
