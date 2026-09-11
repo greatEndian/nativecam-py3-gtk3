@@ -19,6 +19,25 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
 
 ---
 
+## Found 2026-09-11 — unit-test worker, geometry coverage sweep
+
+- [ ] **`detect_sections`' `min_x` is wrong for every non-first RISING
+  section** — `analysis/130`. It reports the section's far end (its
+  shallowest point) instead of its own start (its true minimum, mathematically
+  guaranteed for a monotonic rise). `floor_regions` reads this value directly
+  and its own docstring promises `min_x` IS the region's deepest material, so
+  any OD profile with a rising region that is not the profile's own first
+  section gets that region's roughing floor computed from the wrong (looser)
+  diameter. Not a new class of bug - `analysis/057` hit the same flaw in
+  `detect_sections` for the peak test and worked around it with `_side_min`
+  rather than fixing `detect_sections` itself; `floor_regions` was never given
+  that treatment. NOT FIXED - found by a worker forbidden from touching
+  geometry; needs the fingerprint gate and greatEndian's call on whether the
+  fix belongs in `detect_sections` (reseed `sec_min_x` with the pivot's own x
+  on reset) or in a `floor_regions`-local re-derivation. Unknown whether any
+  shipped project's profile actually has a rising non-first region deep enough
+  for it to matter in practice.
+
 ## Building 2026-08-26 — the perpendicular X wall detour
 
 greatEndian specified the shape and confirmed every assumption: degrees for the
