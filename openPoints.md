@@ -1571,7 +1571,7 @@ the two cuts only touch.
     0 dead of 42 (was 43).
 
 - [x] **CAM_MAP GUARDS test_*.py AGAINST RETYPING A WINDOW BOUND**, 2026-09-11,
-  `analysis/130`. New check (C8) in `cam_map.py`: no `test_*.py` may retype a
+  `analysis/133`. New check (C8) in `cam_map.py`: no `test_*.py` may retype a
   `lathe_sections` window constant as a bare literal (`ENTRY_BASE, ENTRY_TOP =
   4200, 4400`) or quote its value as a slot-key string (`slots.get('3160')`)
   instead of importing the name — the two shapes behind all four hardcoded-

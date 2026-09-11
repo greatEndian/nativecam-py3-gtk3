@@ -68,6 +68,6 @@ today.
 
 `test_menu_layout.py`: 0 dead of 42 (was 43). `flake8` on the touched files:
 clean. `test_motion_fingerprint.py`: 46 identical, 0 changed, of 46 — this
-session's shared gate, covering tasks A, B and C together (`analysis/130`,
+session's shared gate, covering tasks A, B and C together (`analysis/133`,
 `analysis/131`), since none of the three touch `cfg/`, `lib/`, or generation
 code at all.

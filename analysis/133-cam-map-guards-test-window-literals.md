@@ -1,4 +1,4 @@
-# 130 — cam_map gains a check on the tests themselves, and catches a live fifth case
+# 133 — cam_map gains a check on the tests themselves, and catches a live fifth case
 
 **Asked**: stop a `test_*.py` from ever retyping a parameter-window bound again.
 This class has now bitten four times — `test_sections`, `test_surface_equality`,
