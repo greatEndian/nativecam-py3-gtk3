@@ -80,3 +80,92 @@ of 3600-4600 because ENTRY hit **exactly 100%** of its window.
 ## The thing that outranks all of it
 
 **Nothing in this session has cut metal.** Every result is `rs274`.
+
+---
+
+# Session 5, day 3 — 2026-09-11
+
+Written before compaction. Day 1-2 above; this is what the third day added.
+
+## The driver sweep, and what it really found
+
+greatEndian asked for a sweep after two facing harnesses were found dead
+(`analysis/122`, `124`). **The premise was wrong: no driver was dead.**
+
+```
+72 drivers ->  64 pass, 1 live regression of mine, 7 pre-existing, 0 dead
+71 drivers ->  70 pass, 1 open            (after the repairs, test_paned removed)
+```
+
+Seven of eight failures were **gates asserting the wrong thing**:
+
+| driver | what it really was |
+|---|---|
+| `test_arc_endpoint` | a live regression from commit `2967a71` - it guards the exact function that commit rewrote and was not in the gates I ran |
+| `test_stock_to_leave` | scraped `#4[45]\d\d`, the stop table's home before the re-layout - found 0 of its slots and reported a clean program as failing to generate |
+| `test_z_limits` | pinned toolpath hashes; every move count unchanged, only coordinates moved |
+| `test_send_split` | counted menu CHILDREN where "Send flat G-code" had legitimately been added |
+| `test_floor_ladder` | demanded a floor belonging to a chamfer that bottoms at ONE point |
+| `test_air_leads` | pinned three numbers where it meant three properties |
+| `test_leads` | demanded Native run a profile it structurally cannot |
+| `test_paned` | never a test at all - 20 lines, 0 asserts; renamed to a demo |
+
+## The verifier could not fail
+
+Paying the process debt - invoking `/lathe-gcode-verify` and `/verifier` as
+SKILLS instead of running their scripts by hand - found two faults in the
+verifier itself (`analysis/127`, `84af1ec`):
+
+- **`run_rs274` never read the exit code.** An abort truncates the canon and
+  leaves it well-formed, so `check_tangent` read **2383665 events** of
+  `testing_13_arcs` under native comp - a program that REFUSES TO RUN - and
+  printed `[VERDICT: PASS]`.
+- The exit code only carries the abort when `-t` is passed. Measured: `rc=0`
+  without the tool table, `rc=1` with it.
+- `check_nose_tangent` and `prove_tip_comp` matched `'error'` as a substring
+  over the whole canon, so any program with that word in a COMMENT failed.
+
+## Measured and closed, no decision needed
+
+- **The front-flank SIDE is right.** One profile with a rising and a falling
+  wall: dir 0 gives trailing Z-40.0..-25.1 / leading Z-10.1..0.0, dir 1 exactly
+  reversed. `test_front_flank` now asserts the geometry, not just the algebra.
+- **`testing_11` has the same cause as `testing_15_4`** - min R 17.5000 touched
+  at one point, one real flat at R20.00 over 15.0 mm. 1 of 2 floors is correct
+  on both.
+- **`/security-audit`**: no `shell=True`, no `exec`/`eval` added, every
+  subprocess call argument-list form, every variable path component from
+  `os.listdir` of a repo-owned directory. No findings.
+- `md_files/LEARNINGS-LOG.md` gained ten entries (gitignored, local only).
+
+## Tried and REVERTED
+
+**In-CAM as the nose-comp default.** greatEndian ruled for it; I built it and
+it breaks five saved projects outright - `testing_0..4`, which use **T0** and
+so have no nose radius. In CAM computes the offset in Python and needs one, and
+its abort is deliberate: *"poly_lathe_mill aborts rather than cut an
+uncompensated path"*. Reverted. The options are now recorded with the evidence:
+leave Native, default to Off, or require a tool with D.
+
+That was my error - I offered the option without checking it was safe for a
+project with no tool.
+
+## Waiting on greatEndian
+
+`test_rough_ends` (tip versus cut) · the nose-comp default · `back_clear` 2 deg
+on the leading flank · the standing `openPoints` decisions · the ID pause.
+
+## The handoff
+
+`SONNET-HANDOFF-PROMPT.md` at the repo root - a prompt for a fresh Sonnet 5
+session, scoped to the two items that CANNOT change generated motion (the
+read-only tree-item code viewer, and the coverage sweep), with
+`test_motion_fingerprint --baseline` as the hard gate and this week's traps
+written out so a cold session does not rediscover them.
+
+## Still true, and it outranks everything above
+
+**Nothing in ~24 commits has cut metal.** And the `ncam.ngc` currently on disk
+predates the new `_fc_rough_of*` globals, so it will refuse to load with
+"Named parameter not defined" until the GUI regenerates it - staleness, not
+breakage, but it will look like breakage.
