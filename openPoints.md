@@ -1495,33 +1495,37 @@ the two cuts only touch.
 
 ## Next — before anything else
 
-- [ ] **EVERY TREE ELEMENT SHOULD OPEN ITS OWN RAW CODE, for a user or an
-  integrator to customise.** greatEndian, 2026-09-11: *"each element of tree in
-  the NCam should be able to open raw default present code to customize it from
-  point of user or integrator"*.
+- [x] **THE READ-ONLY HALF IS DONE**, 2026-09-11, `analysis/128`.
+  `action_showCode` (`ncam_feature_tree.py`), wired as "Show Raw Code" in both
+  right-click popups and the View menu (`ncam_menu_catalog.py`), with a GAction
+  and sensitivity line in `ncam_app_actions.py` — same pattern as the existing
+  "Show All Fields". Selecting any tree node (feature, header, or param — all
+  three resolve to `self.selected_feature`, the owning `Feature`) and firing
+  the action opens a **non-modal singleton** `Gtk.Window` with one read-only
+  monospace tab per non-empty section (`call`, `definitions`, `before`,
+  `after`, `validation`, `init`) plus `src=`/`type`/`id` in a header. Nothing
+  new to store: `Feature.attr` already carries every one of those keys on both
+  a fresh `cfg` load and a reopened project (`from_xml` copies `xml.keys()`
+  straight across), so this reads existing state only.
+  Verified against a real `NCam()` instance built from the demo lathe config
+  (not just code review): selecting `material.cfg`'s workpiece feature and
+  firing the action produced the real 592-character `CALL` body and a
+  `Validation` tab; moving selection to `tool_change.cfg` and firing again
+  reused the same window object and swapped in that feature's own 2335-character
+  `CALL` text. `test_menu_layout.py`'s real click-through (43 popup items, was
+  41) still reports **0 dead**. `test_motion_fingerprint.py` — **0 changed of
+  46** (see analysis/128), since nothing in `cfg/`, `lib/`, or generation was
+  touched.
 
-  Not started. Written down with what is already true, so it does not begin
-  from nothing:
-
-  - **The backing store already exists, per feature, per project.** A saved
-    project embeds the whole template on the feature element - `call=`,
-    `definitions=`, `before=`, `after=`, `validation=`, `init=` - and `src=`
-    names the `cfg/` file it came from. So "open the raw code for this tree
-    item" has something concrete to show and to write back, without inventing
-    storage.
-  - **The conflict to design around is migration.** A `cfg/` edit only reaches
-    a saved project when `version` is bumped, and migration then REPLACES the
-    stored template - which is exactly how a user's customisation would be
-    silently lost. Any edit surface needs an answer to "this feature has been
-    customised, the cfg has moved on": keep, merge, or show both. That answer
-    is the feature, more than the editor is.
-  - **Two audiences, possibly two surfaces.** A user customising one feature in
-    one project edits the stored copy; an integrator customising the DEFAULT
-    for every future feature edits `cfg/`. The request names both, and they are
-    different files with different lifetimes.
-  - Read-only "show me the code behind this item" is a much smaller first step
-    and would be useful on its own - the generated `.ngc` is already viewable
-    in the Flat tab, but nothing shows the TEMPLATE a tree item carries.
+  **Not started, and still needs greatEndian's call before it is**: the write
+  half. A `cfg/` edit only reaches a saved project when `version` is bumped,
+  and migration then REPLACES the stored template — exactly how a user's
+  customisation would be silently lost. Any edit surface needs an answer to
+  "this feature has been customised, the cfg has moved on": keep, merge, or
+  show both. That answer is the feature, more than the editor is. It also
+  serves two different audiences on two different files with different
+  lifetimes — a user's per-project customisation (the stored copy) versus an
+  integrator's DEFAULT for every future feature (`cfg/` itself).
 
 - [ ] **One extra cutting lead on `testing_15_9` back-to-front, unexplained.**
   `test_air_leads` measured 310 cutting leads and 1319.7 mm of roughing feed

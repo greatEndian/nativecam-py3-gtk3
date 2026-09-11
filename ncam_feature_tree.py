@@ -404,6 +404,108 @@ class NCamFeatureTreeMixin:
             self.action(xml = xml_, refresh = False)
 
 
+    # The sections a Feature carries as its template, in the order the .cfg
+    # itself declares them (see Feature.from_src, ncam.py). Every one of them
+    # is already an attribute on the Feature object for BOTH a fresh cfg load
+    # and a saved project reopened from XML - from_xml just copies xml.keys()
+    # straight into self.attr, and to_xml dumps self.attr back out the same
+    # way - so there is nothing here to compute, only to display.
+    SHOW_CODE_SECTIONS = (
+        ('call', _('Call')),
+        ('definitions', _('Definitions')),
+        ('before', _('Before')),
+        ('after', _('After')),
+        ('validation', _('Validation')),
+        ('init', _('Init')),
+    )
+
+    def action_showCode(self, *args):
+        """Read-only viewer for the template a tree item carries.
+
+        openPoints: "EVERY TREE ELEMENT SHOULD OPEN ITS OWN RAW CODE". This is
+        deliberately the read-only half only - no edit, no write-back. Editing
+        needs an answer to what happens when a cfg `version` bump would
+        otherwise silently replace a customised copy, and that decision has
+        not been made (see openPoints.md). Showing what is already stored on
+        the Feature needs none of that.
+        """
+        feature = self.selected_feature
+        if feature is None :
+            return
+
+        win = getattr(self, 'code_view_window', None)
+        if win is None :
+            win = gtk.Window(title = _('Raw Code'))
+            top = self.get_toplevel()
+            if isinstance(top, gtk.Window) and top is not self :
+                win.set_transient_for(top)
+                win.set_destroy_with_parent(True)
+            win.set_default_size(700, 500)
+            # Non-modal: hide, don't destroy, so the singleton can be
+            # reopened/refreshed instead of piling up one window per click.
+            win.connect('delete-event', lambda w, e : w.hide() or True)
+
+            outer = gtk.Box(orientation = gtk.Orientation.VERTICAL, spacing = 6)
+            outer.set_border_width(8)
+            win.add(outer)
+
+            header = gtk.Label()
+            header.set_halign(gtk.Align.START)
+            header.set_selectable(True)
+            header.set_line_wrap(True)
+            outer.pack_start(header, False, False, 0)
+
+            notebook = gtk.Notebook()
+            outer.pack_start(notebook, True, True, 0)
+
+            btn_row = gtk.Box(orientation = gtk.Orientation.HORIZONTAL)
+            close_btn = gtk.Button(label = _('Close'))
+            close_btn.connect('clicked', lambda b : win.hide())
+            btn_row.pack_end(close_btn, False, False, 0)
+            outer.pack_start(btn_row, False, False, 0)
+
+            win.showcode_header = header
+            win.showcode_notebook = notebook
+            self.code_view_window = win
+
+        win.set_title(_('Raw Code - %(name)s') % {'name' : feature.get_name()})
+
+        src = feature.get_attr('src')
+        header_text = '<b>%(type)s</b>   id = %(id)s\n%(src_label)s %(src)s' % {
+            'type' : GLib.markup_escape_text(feature.get_type()),
+            'id' : GLib.markup_escape_text(feature.get_attr('id') or ''),
+            'src_label' : _('src ='),
+            'src' : GLib.markup_escape_text(src if src else _('(not loaded from a cfg file)')),
+        }
+        win.showcode_header.set_markup(header_text)
+
+        notebook = win.showcode_notebook
+        for child in notebook.get_children() :
+            notebook.remove(child)
+
+        for key, label in self.SHOW_CODE_SECTIONS :
+            text = feature.get_attr(key)
+            if not text :
+                continue
+            scrolled = gtk.ScrolledWindow()
+            scrolled.set_policy(gtk.PolicyType.AUTOMATIC, gtk.PolicyType.AUTOMATIC)
+            tv = gtk.TextView()
+            tv.set_editable(False)
+            tv.set_cursor_visible(False)
+            tv.set_monospace(True)
+            tv.set_wrap_mode(gtk.WrapMode.NONE)
+            tv.get_buffer().set_text(text)
+            scrolled.add(tv)
+            notebook.append_page(scrolled, gtk.Label(label = label))
+
+        if notebook.get_n_pages() == 0 :
+            notebook.append_page(gtk.Label(label = _('(this feature carries no template)')),
+                                  gtk.Label(label = _('Call')))
+
+        win.show_all()
+        win.present()
+
+
     def action_chng_group(self, *arg):
         if self.treestore.get(self.selected_param, 0)[0].change_group() :
             path = self.master_filter.get_path(self.selected_feature_itr)

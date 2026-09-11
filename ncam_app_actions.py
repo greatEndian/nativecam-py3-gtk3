@@ -813,6 +813,9 @@ class NCamAppActionsMixin:
         # actions related to toolbars and popup
         self.actionHideField = ca("HideField", None, _("Hide Selected Field"), None, _("Hide Selected Field"), self.action_hideField)
         self.actionShowF = ca("ShowFields", None, _("Show All Fields"), None, _("Show All Fields"), self.action_showFields)
+        self.actionShowCode = ca("ShowCode", None, _("Show Raw Code"), None,
+                     _("Show the read-only template (call/before/after/validation/init) this feature carries"),
+                     self.action_showCode)
         self.actionCurrent = ca("Current", 'gtk-save', _("Save Project as Current Work"), '', _('Save Project as Current Work'), self.action_saveCurrent)
         # One gear used to generate AND load in a single press, so there was no
         # way to rebuild the G-code without also taking over the machine's
@@ -1412,3 +1415,4 @@ class NCamAppActionsMixin:
                                       (self.selected_type != 'items'))
         self.actionShowF.set_enabled(self.selected_feature is not None and \
                                        self.selected_feature.has_hidden_fields())
+        self.actionShowCode.set_enabled(self.selected_feature is not None)
