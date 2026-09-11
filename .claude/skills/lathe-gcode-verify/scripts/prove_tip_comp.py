@@ -196,8 +196,18 @@ def main():
     except Exception as e:
         print(f'[VERDICT: FAIL - rs274 failed: {e}]')
         sys.exit(1)
-    if 'error' in canon.lower() and 'error_code' not in canon.lower():
+    # PER LINE, AND NOT INSIDE A COMMENT. This was a substring search over the
+    # whole canon, so any COMMENT carrying the word "error" failed the run -
+    # and this codebase comments heavily, including lines like "COMPILE error
+    # and exec_callback discards the whole block in silence". testing_8 runs
+    # clean at 156 moves and was reported as "interpreter errors". test_facing
+    # already filtered COMMENT lines; these two did not.
+    bad = [ln for ln in canon.splitlines()
+           if 'error' in ln.lower() and 'COMMENT(' not in ln
+           and 'error_code' not in ln.lower()]
+    if bad:
         print(f'[VERDICT: FAIL - interpreter errors, see {raw}]')
+        print('  first: %s' % bad[0].strip()[:120])
         sys.exit(1)
 
     moves = parse_canon(canon)

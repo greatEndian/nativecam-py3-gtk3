@@ -80,6 +80,24 @@ def run_rs274(ini_path, ngc_path, tbl_path=None, scratch_dir=None, var_path=None
         raise RuntimeError(
             f'rs274 produced no output file. stdout:\n{result.stdout}\nstderr:\n{result.stderr}'
         )
+    # A RUN THAT ABORTED IS NOT A RUN. An interpreter error part way through
+    # truncates the canon and leaves it looking perfectly well-formed - the
+    # toolpath simply stops - so every check above it then measures a partial
+    # path and reports a confident PASS. Measured: testing_13_arcs under native
+    # compensation aborts at "concave corner cannot be reached", and
+    # check_tangent called it PASS on 2383665 events of partial motion.
+    #
+    # The exit code only carries this when -t is passed, which is why
+    # ncam_preview calls the tool table "NOT optional": without it the same
+    # program returns 0 and the abort is invisible. This function already
+    # resolves -t from the ini, so the code is trustworthy here.
+    if result.returncode:
+        tail = [ln.strip() for ln in
+                ((result.stderr or '') + '\n' + (result.stdout or '')).splitlines()
+                if ln.strip() and ln.strip() != 'executing']
+        raise RuntimeError('rs274 aborted (exit %d): %s'
+                           % (result.returncode,
+                              ' | '.join(tail[-2:]) or 'no message'))
     with open(out_path) as f:
         canon_text = f.read()
     return canon_text, out_path
