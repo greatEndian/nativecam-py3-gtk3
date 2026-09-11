@@ -1487,6 +1487,34 @@ the two cuts only touch.
 
 ## Next — before anything else
 
+- [ ] **EVERY TREE ELEMENT SHOULD OPEN ITS OWN RAW CODE, for a user or an
+  integrator to customise.** greatEndian, 2026-09-11: *"each element of tree in
+  the NCam should be able to open raw default present code to customize it from
+  point of user or integrator"*.
+
+  Not started. Written down with what is already true, so it does not begin
+  from nothing:
+
+  - **The backing store already exists, per feature, per project.** A saved
+    project embeds the whole template on the feature element - `call=`,
+    `definitions=`, `before=`, `after=`, `validation=`, `init=` - and `src=`
+    names the `cfg/` file it came from. So "open the raw code for this tree
+    item" has something concrete to show and to write back, without inventing
+    storage.
+  - **The conflict to design around is migration.** A `cfg/` edit only reaches
+    a saved project when `version` is bumped, and migration then REPLACES the
+    stored template - which is exactly how a user's customisation would be
+    silently lost. Any edit surface needs an answer to "this feature has been
+    customised, the cfg has moved on": keep, merge, or show both. That answer
+    is the feature, more than the editor is.
+  - **Two audiences, possibly two surfaces.** A user customising one feature in
+    one project edits the stored copy; an integrator customising the DEFAULT
+    for every future feature edits `cfg/`. The request names both, and they are
+    different files with different lifetimes.
+  - Read-only "show me the code behind this item" is a much smaller first step
+    and would be useful on its own - the generated `.ngc` is already viewable
+    in the Flat tab, but nothing shows the TEMPLATE a tree item carries.
+
 - [ ] **One extra cutting lead on `testing_15_9` back-to-front, unexplained.**
   `test_air_leads` measured 310 cutting leads and 1319.7 mm of roughing feed
   against a recorded 309 / 1319.0 — one lead of 0.7 mm, in the direction of
