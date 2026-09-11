@@ -908,17 +908,26 @@ the two cuts only touch.
   is contact frame.
   - Rebuilding the sweep on that is separate work; cut-to-cut measurements stay
     frame-independent in the meantime.
-- [ ] **THE COVERAGE SWEEP STILL NEEDS REBUILDING ON THE SETTLED FRAME.** The
-  frame question above is answered (`analysis/123`); what remains is putting the
-  sweep on it. Original note, still accurate about the sweep itself: Sampling Z and asking whether any cut covers each level
-  gives a different answer depending on which frame the floor table is assumed
-  to be in, and I can only verify the assumption at ONE end. Contact = control
-  + oz was confirmed at a cut's START, where it matched a floor crossing to
-  0.0002; applied to the far end as well it reports 0.40 uncut at the back face
-  on every level, which no one has seen on the machine. **Settle which frame
-  `build_stop_contour_gcode` emits before trusting either answer.** Until then
-  use cut-to-cut measurements, which are frame-independent because both sides
-  shift equally.
+- [x] **DECLINED, REASONED, NOT REBUILT — 2026-09-11, `analysis/129`.** The
+  frame question is answered (`analysis/123`); read `test_leftover.py` and
+  `test_x_continuity.py` in full before rebuilding, as instructed, and could
+  not state a failure a stop-contour-table coverage sweep would catch that
+  those two do not already catch, more robustly. `test_leftover` sweeps the
+  REAL nose along REAL roughing moves against the real Off-mode target — no
+  frame question to resolve, because there is no comp on the comparison side
+  at all — and `test_x_continuity` catches exactly the single-missing-level
+  case `test_leftover`'s own docstring says it cannot see. Rebuilding the
+  classic sweep on the settled frame would reintroduce frame-fragile signal
+  for a question these two already answer more directly. Nothing built,
+  nothing generated touched — this is the pre-authorized stop outcome, not a
+  shortfall.
+  A different, genuinely open gap surfaced while reading `test_surface_equality.py`
+  for this comparison: its own "WHAT IS NOT COVERED" names the stop contour
+  (`_pl_stop_*`, 4400) as a third surface never checked for containment against
+  the finish contour — an OVER-cut question (roughing eating the pre-finish
+  allowance), not the under-cut coverage question this item was about. Recorded
+  in `analysis/129` so it is not rediscovered from nothing; not opened as a new
+  point here since building it was not asked for and is greatEndian's call.
 
 ## Reported 2026-08-26 — the tiny backwards pass behind the boss
 
