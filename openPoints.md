@@ -2077,7 +2077,15 @@ the two cuts only touch.
   than dropping it, which also removes the coupling that let any ladder change
   cause a plunge.
 
-- [ ] **Not every floor is reachable, and one of them is a point.**
+- [x] **Not every floor is reachable, and one of them is a point — CONFIRMED
+  FOR BOTH**, 2026-09-11. `testing_11` had never been checked for the same
+  cause as `testing_15_4`; it is the same. Measured: min R **17.5000 touched at
+  exactly one point**, with a single real flat at R20.00 running 15.0 mm -
+  against `testing_15_4`'s min R 19.0000 at one point and one flat at R20.00
+  over 44.4 mm. A level is one radius held across a sweep, so a floor belonging
+  to a region that bottoms at a point has nothing to cut. **1 of 2 is the right
+  answer on both**, and `test_floor_ladder` now asserts reachable floors rather
+  than entitled ones. Original note:
   testing_15_4's chamfer bottoms at r19 at a SINGLE POINT, so no level can cut
   at its 20.016 floor and the pass is correctly blocked — 2 of 3 floors is the
   right answer there. testing_11 lands on 1 of 2 and has **not** been checked
