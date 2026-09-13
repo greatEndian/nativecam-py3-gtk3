@@ -382,6 +382,7 @@ def main():
     test_table_layout()
     test_interval_windows()
     test_level_split()
+    test_detect_sections_rising_min()
 
     print()
     if FAILED:
@@ -702,6 +703,80 @@ def test_level_split():
     check('a profile with no peak keeps the level in one span',
           L.build_level_split_gcode(poly(1, children=flat)) == '',
           L.build_level_split_gcode(poly(1, children=flat))[:120])
+
+
+def test_detect_sections_rising_min():
+    """A RISING section's min_x is its own START, never its far end.
+
+    Regression for the bug analysis/130 found and analysis/14N fixed: on a
+    category change `sec_min_x` reset to `float('inf')` rather than to the
+    pivot vertex's own X, so the reset was next updated only by the point
+    PROCESSED IN THAT SAME ITERATION - which for a rising run is the section's
+    far (shallow) end, not its start. Mathematically the true minimum of a
+    monotonic non-decreasing run can ONLY be at its own start; this asserts
+    that property directly rather than pinning one hand-run's number, so it
+    is not fooled by a different but still-wrong reset target.
+
+    Every non-first FALLING and FLAT section is also checked here, in the
+    style of a negative control: they were never wrong (a falling run's own
+    minimum lands at its own far end, which the loop's per-point tracking
+    naturally captures), so this also proves the fix did not disturb them.
+    """
+    # falls to 10, rises back to 20 - analysis/130's own worked example
+    secs = ls.detect_sections([(0.0, 20.0), (3.0, 10.0), (6.0, 20.0)])
+    check('valley: the falling section keeps its own (correct) minimum',
+          secs[0] == (0.0, 3.0, 10.0), 'got %s' % (secs[0],))
+    check('valley: the rising section reports its OWN START (10), not its '
+          'far end (20)', secs[1] == (3.0, 6.0, 10.0), 'got %s' % (secs[1],))
+
+    # testing_0.xml's real profile (analysis/14N): flat, then a short rise
+    # from D40 to D45, then flat again - the rise is section index 1, not 0,
+    # which is exactly the case the original reset discarded
+    secs = ls.detect_sections([(0.5, 40.0), (-5.0, 40.0), (-10.0, 45.0),
+                               (-25.4, 45.0)])
+    check('testing_0 shape: flat section unaffected',
+          secs[0] == (0.5, -5.0, 40.0), 'got %s' % (secs[0],))
+    check('testing_0 shape: rising section reports 40.0 (its own start), '
+          'not 45.0 (its far end)',
+          secs[1] == (-5.0, -10.0, 40.0), 'got %s' % (secs[1],))
+    check('testing_0 shape: trailing flat section unaffected',
+          secs[2] == (-10.0, -25.4, 45.0), 'got %s' % (secs[2],))
+
+    # NEGATIVE CONTROL, property-based: a zigzag with TWO rising, non-first
+    # sections, built entirely from sloped segments so no boundary sits on a
+    # shared Z (a vertical wall's bottom point belongs to a DIFFERENT
+    # question - which side of a boundary owns it, the thing _side_min in
+    # _boundary_list already exists to answer - and would make "the true
+    # minimum sampled from this section's own points" ambiguous for reasons
+    # unrelated to this bug). Every section here is unambiguous: falling
+    # sections keep the minimum the loop naturally tracks at their own far
+    # end, and both rising sections must report their own start.
+    pts = [(0.0, 60.0), (-10.0, 20.0), (-15.0, 50.0), (-25.0, 10.0),
+           (-30.0, 45.0), (-40.0, 5.0)]
+    secs = ls.detect_sections(pts)
+    check('zigzag: five alternating sections found',
+          len(secs) == 5, 'got %s' % (secs,))
+    want = [(0.0, -10.0, 20.0),    # falling - its own far end
+            (-10.0, -15.0, 20.0),  # RISING - its own start, not 50.0
+            (-15.0, -25.0, 10.0),  # falling - its own far end
+            (-25.0, -30.0, 10.0),  # RISING - its own start, not 45.0
+            (-30.0, -40.0, 5.0)]   # falling - its own far end
+    check('zigzag: every section matches the hand-derived value',
+          secs == want, 'got %s want %s' % (secs, want))
+    for i, (z_from, z_to, min_x) in enumerate(secs):
+        lo, hi = min(z_from, z_to), max(z_from, z_to)
+        true_min = min(x for z, x in pts if lo - ls.EPS <= z <= hi + ls.EPS)
+        check('zigzag section %d (Z%.1f..%.1f): min_x is the true sampled '
+              'minimum' % (i, z_from, z_to),
+              abs(min_x - true_min) < ls.EPS,
+              'got %.6f want %.6f' % (min_x, true_min))
+
+    # The very first section was always seeded correctly (from points[0]
+    # before the loop starts) - confirm a profile that OPENS with a rise
+    # still reports its own start, so the fix has not changed that case.
+    secs = ls.detect_sections([(0.0, 10.0), (-5.0, 30.0), (-10.0, 20.0)])
+    check('a profile that opens with a rise keeps reporting its own start',
+          secs[0] == (0.0, -5.0, 10.0), 'got %s' % (secs[0],))
 
 
 if __name__ == '__main__':

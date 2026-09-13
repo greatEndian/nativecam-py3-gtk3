@@ -21,22 +21,30 @@ Branch: `liveTooling`. Last pushed: `d6aae05`.
 
 ## Found 2026-09-11 — unit-test worker, geometry coverage sweep
 
-- [ ] **`detect_sections`' `min_x` is wrong for every non-first RISING
-  section** — `analysis/130`. It reports the section's far end (its
-  shallowest point) instead of its own start (its true minimum, mathematically
-  guaranteed for a monotonic rise). `floor_regions` reads this value directly
-  and its own docstring promises `min_x` IS the region's deepest material, so
-  any OD profile with a rising region that is not the profile's own first
-  section gets that region's roughing floor computed from the wrong (looser)
-  diameter. Not a new class of bug - `analysis/057` hit the same flaw in
-  `detect_sections` for the peak test and worked around it with `_side_min`
-  rather than fixing `detect_sections` itself; `floor_regions` was never given
-  that treatment. NOT FIXED - found by a worker forbidden from touching
-  geometry; needs the fingerprint gate and greatEndian's call on whether the
-  fix belongs in `detect_sections` (reseed `sec_min_x` with the pivot's own x
-  on reset) or in a `floor_regions`-local re-derivation. Unknown whether any
-  shipped project's profile actually has a rising non-first region deep enough
-  for it to matter in practice.
+- [x] **FIXED AT THE ROOT — 2026-09-13, `analysis/140`.** `detect_sections`'
+  `min_x` reset now seeds from the pivot's own X (`px`), the same way the
+  first section is already seeded from `points[0]`, instead of `float('inf')`
+  - a rising section now reports its own start (its true minimum) rather than
+  its far end. Chosen over a `floor_regions`-local re-derivation (the
+  `_side_min` shape `analysis/057` used for a different consumer) because
+  fixing the root removes the trap for every caller instead of adding a THIRD
+  one-off "find a section's true minimum" implementation.
+  Real measurement, not assumption: an initial standalone scan wrongly
+  reported 0 of 46 projects affected - `lathe_sections.py` publishes globals
+  (`DIAMETER_MODE` etc.) as a side effect of a full `to_gcode()` walk, and a
+  bare reconstructed `Feature` never gets them, silently feeding
+  `resolve_points` different input than real generation. Caught by tracing
+  `detect_sections`'s real calls during an actual `to_gcode()` walk.
+  Properly measured: **16 of 46 projects change motion**, all traced to the
+  identical mechanism - `floor_ladder`'s own pre-existing `region_cut_length`
+  filter now correctly drops a spurious intermediate roughing stage that a
+  wrongly-placed section boundary was manufacturing. The DEEPEST (final)
+  roughing floor is bit-for-bit identical old vs new in all 16; only the
+  now-unnecessary re-anchor stage goes away, collapsing each to the plain
+  single-floor ladder `poly_lathe_mill.ngc` always had. `check_tangent` PASS
+  (min |dot| 0.99946) on the largest change, `testing_13_arcs`. New property-
+  based regression test in `test_sections.py`, proven to fail on the pre-fix
+  code.
 
 ## Building 2026-08-26 — the perpendicular X wall detour
 

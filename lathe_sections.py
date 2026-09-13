@@ -1110,7 +1110,12 @@ def detect_sections(points):
             if abs(pz - sec_z_from) > EPS:
                 sections.append((sec_z_from, pz, sec_min_x))
             sec_z_from = pz
-            sec_min_x = float('inf')
+            # Seeded with the pivot's OWN x, the same way the very first
+            # section is seeded from points[0] above - not float('inf'). A
+            # rising section's true minimum sits at its own start, which is
+            # this pivot; resetting to 'inf' discarded it and let the section's
+            # far (shallow) end win instead (analysis/130, analysis/14N).
+            sec_min_x = px
 
         prev_category = category
         if cx < sec_min_x:
