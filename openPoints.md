@@ -11,11 +11,106 @@ not left to be remembered.
 
 - `- [ ]` open, `- [x]` done. A finished item moves to **Done**, newest first,
   with the commit that closed it.
+- `- [~]` is a third state already in use below and worth naming here:
+  **verified/predicted in Python but not yet wired into the toolpath** — the
+  measurement is done and gated, but nothing in `lib/` reads it yet, so the
+  motion is untouched and there is nothing to tick as finished.
 - A point that needs a decision from greatEndian is marked **NEEDS A CALL** and
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
 Branch: `liveTooling`. Last pushed: `d6aae05`.
+
+---
+
+## Index — reconciled against `analysis/` 2026-09-13, `analysis/190`
+
+Full reconciliation: every `- [ ]`/`- [~]` entry in this file checked against
+its own body and against `analysis/` by grep, not memory. See
+`analysis/190-openpoints-reconciliation.md` for the entry-by-entry evidence,
+every body/analysis disagreement found, and every "fixed" claim with nothing
+behind it. Six entries were re-ticked here as part of that pass (two of them
+the exact stale entries that prompted it), one stale duplicate block removed,
+one "NEEDS A CALL" corrected to reflect a call already made.
+
+**Counts** (top-level entries only; nested sub-items are not separately
+indexed): **161 done**, **20 blocked** (on greatEndian, on ID work resuming,
+or on a real-machine test), **39 genuinely open and unblocked**, **8** in the
+`[~]` verified-not-wired state (one ongoing staged migration, not separately
+actionable items), **3** informational/documented findings with no action
+pending, **1** watch item (nothing to do until it recurs).
+
+**Genuinely open and unblocked — what a worker can pick up next**, titled as
+they appear in the file, roughly smallest/most self-contained first:
+
+- Programmed Point toggle (preview, tiny)
+- Regenerate on rewind as an option (preview, tiny)
+- `Accuracy` slider → `StockField.columns_for` (preview, tiny)
+- The stock datum offsets, it does not CLAMP
+- A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
+- Timeline marks for collisions, and a Verification line in Stats
+- Collision detection is built and tested but not wired to the pane
+- Noted, not fixed: the front interval of the first blocked level is emitted twice
+- Two "halves" are choices, not measurements
+- The first stage still ends on a light cut
+- `leftovers()` models the stock from the moves it is given
+- Intermediate finish passes under Native comp use the radial value alone
+- 2 — tool orientation as a programmable B axis
+- 3 — Use Tailstock (M21/M22)
+- 4 — turn in negative diameter
+- 5 — coolant modes beyond None/Flood/Mist
+- 6 — cutting-data presets
+- 17 — Make Sharp Corners
+- 20 — Use Canned Cycle as a framing choice
+- 21 — Extend to Stock
+- 22 — linearisation tolerance
+- 24 — approach / retract reference datums, in Z and in X
+- 25 — Z Clearance and X Clearance as two stand-offs measured from the cut
+- Do `taper`, `taper_id` and `boring` fold an allowance into D too? (the
+  `taper` half only — `taper_id`/`boring` are ID, blocked)
+- `turning` and `radius_od` have no Tool nose comp parameter at all
+- A front or back angle over 90° still has no defined contour
+- Negative stock to leave is not exposed, and fails SILENTLY past its bound
+- VALIDATION — the Z limits are only half validated
+- A cfg cannot CHANGE a parameter's minimum or maximum on an existing project
+- RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB
+- Does a mirrored insert really lose EVERY ramp on testing_15_9?
+- A neutral insert still defers to the roughing direction for its flank shadow
+- Should a ramp also be refused when the tool faces the right way but the surface is steeper than its front angle?
+- The artificial back-angle section and compensation do not agree
+- 3. FRONT TO BACK + SECTIONING 5 mm PRODUCES BAD SECTIONS
+- One extra cutting lead on `testing_15_9` back-to-front, unexplained
+- Still unexercised, and each needs a part to settle it (`sect_top_r` sites 2/3, `band=0`, the stop-contour reach clamp)
+- 12 — rest machining — MEASURED, not built (a real design, larger than the gap description implies)
+- The ramp and stop machinery is still runtime O-code (`s_reach`, the slope term, the flat-boundary clamp — a big, well-scoped Python-migration item)
+
+**Blocked** (on greatEndian's decision, on ID work resuming, or on a
+real-machine test — not available work): STILL OPEN on the X wall · "BOTH
+DIRECTIONS" + REGENERATE CRASHES (needs a captured traceback) · Minimal
+retract falls back on ID/no-floor · No arc-first project has cut metal on a
+real machine · NEEDS A CALL — may a roughing level pass an obstruction ·
+ID work has no floor ladder at all · Compensation is all-or-nothing
+(`taper_id`/`boring` remainder) · AN EXPANDED TOOL TABLE (needs reference
+material) · the holder model (decided, awaiting a real cut) · Rework the tool
+dimensions onto a CAM package's template (needs reference material) · The
+comp entry drives into the ID wall · ID lead-in/out gouge · Grooving and
+drilling have no compensation story · Grooving and drilling stay OPEN until
+the outside polyline is finished · Back angle clearance defaults to 2° and it
+CHANGES THE PART ("this is the one worth your eyes") · A front limit's
+lead-in still encroaches 0.707 mm (NEEDS A CALL) · So the remaining reading is
+COMPENSATION (needs an answer on which nose-comp setting) · NEEDS
+greatEndian's eye (pre-finish gap width) · 18 — the wall pass (NEEDS A CALL)
+· 19 — grooving split radial/axial (blocked on grooving existing at all).
+
+**Informational — a documented fact or corrected understanding, not a
+pending task**: In CAM comp is refused on FACING only (design is intentional,
+nothing to fix) · VALIDATION — a `[VALIDATION]` block cannot use
+`resolve_points` (documented in `LEARNINGS-LOG.md`) · The gate cannot see a
+SINGLE missing pass on most geometry, and that stands (accepted limitation,
+`test_x_continuity` is the complementary gate).
+
+**Watch, not work**: the AXIS crash fixed in `be094c2` — nothing to do unless
+it recurs.
 
 ---
 
@@ -1077,7 +1172,12 @@ the two cuts only touch.
 
 ## Reported 2026-08-24 — greatEndian's three, on testing_15_6 / 15_7
 
-- [ ] **1. RESPECT TOOL FRONT ANGLE MEASURES THE ANGLE FROM THE WRONG AXIS.**
+- [x] **1. PARTLY DONE — the fix landed 2026-08-24 and was verified further on
+  2026-09-11; ONE PIECE REMAINS AND IT NEEDS A CALL** (below). RECONCILED
+  2026-09-13: this whole entry was found still unticked with its own body
+  already saying "FIXED... analysis/064" and a further confirming measurement
+  dated 2026-09-11 — recommended today as available next work, which it is
+  not. Original report kept below for the reasoning.
   greatEndian: *"respect tool front angle counts angle from opposite side ..
   T2 has 15deg and code generates restriced area as like there is -15"*,
   `photo/frontAngleRespectIssue_0.png`, testing_15_6 with Respect tool front
@@ -1112,8 +1212,13 @@ the two cuts only touch.
     that means the trailing one. Nobody has said they want the same number for
     both.
 
-- [ ] **2. BACK TO FRONT: THE PRE-FINISH PASS AT THE PART BACK HAS A MIRRORED
-  LEAD-IN AND A WRONG X, CUTTING AN UNDERCUT.** greatEndian: *"again I
+- [x] **2. DONE — both faults closed (2a 2026-08-25, 2b/2c 2026-09-01),
+  measured and gated.** RECONCILED 2026-09-13: found still unticked with 2a,
+  2b and 2c all already `[x]` below and the nested NEEDS A CALL already
+  answered (variant A applied). One separate, genuinely open finding survives
+  from the 2a gate — `testing_13_arcs.xml` does not generate in nose-comp Off
+  — kept below as its own item, unrelated to this one's closure.
+  Original report kept for the reasoning. greatEndian: *"again I
   reporting issue with Direction Back to front, where prefinish pass at real
   part back has mirrored lead in direction and it also has wrong X
   position(undercut present)"*, `photo/backToFrontPathDirection.png`,
@@ -1136,7 +1241,8 @@ the two cuts only touch.
   Z-69.8920 back to front, whereas finish leads in at Z+0.7071 -> Z0.0000 in
   both. `lathe_poly_pass.ngc:222` still has `#<li_bz> = [#<z_dir> * COS...]`,
   the exact form the lead-OUT was moved off in the uncommitted hunk.
-  - [ ] **NEEDS A CALL before the fix.** "Mirrored" admits two readings and
+  - [x] **NEEDS A CALL before the fix — ANSWERED: variant A, applied 2a
+    2026-08-25 (below).** "Mirrored" admits two readings and
     they want opposite changes:
     - **Pin the lead-in to +Z**, exactly as the lead-out was pinned. The
       approach then always comes from the free end. At a back entry that means
@@ -1716,63 +1822,15 @@ the two cuts only touch.
     storing `version="1.24"` comes back at 1.76 with the new text after
     `update_features`. Motion identical on all 46 — a tooltip must not move
     G-code, and it did not.
-- [x] **NATIVE-COMP COVERAGE GAP — CLOSED**, 2026-09-09, `analysis/119`.
-  `testing_13_arc_first` mode 1: **21 uncovered segments → 0, PASS**, gouge
-  0.0000, wrong-side control still failing correctly. `testing_13_arcs` 23 → 2
-  with gouge 0.0358 → **0.0183**; its residual 2 are the front-face reach bug
-  below, not chording. `_min_segment`'s blanket `2.4 × nose_r` was ~60× what an
-  arc chord needs — the shrink is `R·tan(deficit/2)` per end and a densified
-  chord turns 4.5° — so it is now computed per corner, with a 2× margin, a
-  0.02 mm floor and the deficit clamped at 160°. Sharp corners now ask for
-  *more* than the blanket did and are still dropped.
-  - **The better-looking route had to be abandoned.** Protecting every
-    on-profile point gave 0 uncovered and gouge 0.0000 on `testing_13_arcs` —
-    and **aborted the real project** at runtime with the concave-corner gouge.
-    `prove_cam_comp` passed it, because it overrides the project
-    (`n_comp 2, op 2, pf_on 0`) and tests a program the operator never runs.
-    A green prover is not a green project; the sweep is what caught it.
-  - **Three attempts read this as geometry and it was a window all along.**
-    `analysis/117` rejected the per-corner rule because ramps went 9 → 0; that
-    was ERAMP overflowing silently. With commit A's 600 slots the same rule
-    keeps every ramp — `test_ramps` reports **68 ramps checked**.
-  - The fix pushed **ENTRY to exactly 100%** of its window (`entry_n = 100`,
-    fitting by one slot; 61% before), so 3600–4600 was repacked — FLOORC 250,
-    FC 200, ENTRY 280, STOP 270, CAM untouched. No window now above 80%, no
-    project emits a WARNING.
-- [x] **~~Front-face reach on `testing_13_arcs`~~ — THE PREMISE WAS WRONG**,
-  2026-09-09, `analysis/120`. The pass does **not** stop at Z −2.6788; it
-  machines the whole face with one 3 mm straight at nose-centre R8.4000, exactly
-  tangent to the R8.0 flat. Z −2.6788 was just the first point the prover
-  happened to *sample*. Two instrument faults: `sample_moves` samples arc
-  interiors but only straight *endpoints*, so a 3 mm feed contributed no
-  coverage; and an internal corner tighter than the nose would have been
-  reported as a failure. Both fixed in `prove_cam_comp` — densified straights
-  for the coverage pass, and "unreachable by this nose" separated from
-  "uncovered", judged by construction.
-  - **Scoped to coverage only.** Densifying everything also moved gouge figures
-    (`testing_15_3` 0.0110 → 0.0176, `testing_14_inside_nat` 0.3621 → **4.0952**)
-    — the latter being `profile_bound`'s known multi-valued weakness from
-    `analysis/116`, not a discovery. After scoping, every gouge figure is
-    identical to its historical baseline and only coverage moves.
-- [x] **~~An 18 µm gouge wherever a chorded arc meets another surface~~ —
-  FORCED, NOT FIXABLE BY CHORDING**, 2026-09-09, `analysis/121`. It is **native
-  comp only**: In-CAM on the same profile is gouge 0.0000, 0 uncovered, PASS.
-  The corner deficit is 87.19°, so comp needs the segment leaving it to be
-  ≥ `0.4·tan(43.6°) = 0.381 mm` and the first chord is **0.3926** — within 3% of
-  the floor. Every term is pinned: chord length → 5.6° span → 2.8° direction
-  error → `0.4·sin(2.87°) = 0.0200` displacement, against 0.0183 measured.
-  - **The obvious fix was built and measured failing.** Splitting the first and
-    last chord in two did not improve the gouge (0.0183 → 0.0187) *and* made
-    three projects abort with the concave-corner error. Reverted. Same wall
-    commit B hit from the other side.
-  - **It never reaches the finished surface as things ship**: all 40 projects
-    carrying the parameter have `n_comp = 0`, where the finish pass has `D = 0`
-    and no compensation at all. It applies to the pre-finish pass, ~0.025 out of
-    stock the finish pass removes anyway.
-  - Real remedies: use **In-CAM** on arc-into-corner profiles (already exact —
-    worth a `PARAM_N_COMP` tooltip, not done here because a `.cfg` edit needs a
-    `version` bump that migrates every saved project), or carry arcs as real
-    `G2`/`G3` records, the route declined on 2026-09-09.
+
+  RECONCILED 2026-09-13: this entry, "Front-face reach on testing_13_arcs" and
+  "An 18 µm gouge..." were each duplicated immediately below, verbatim except
+  the second copy of this one ending "not done here because a .cfg edit
+  needs a version bump" — contradicting its own first copy above, which
+  already records the bump done (1.75 → 1.76). Checked which is true rather
+  than guessed: `cfg/lathe/polyline.cfg` is at `version = 1.76` and
+  `PARAM_N_COMP`'s tooltip carries the "PREFER IN CAM..." text today, so the
+  first copy is current and the second was a stale leftover, removed.
 - [x] **THE RAMP TABLE WAS OVERFLOWING TODAY — FIXED**, 2026-09-09,
   `analysis/118`. Not a future risk: `testing_13_arc_first` generated
   `entry_n 60` and `eramp_n 0`, needing `59×4+3 = 239` slots against ERAMP's
@@ -2237,11 +2295,21 @@ the two cuts only touch.
   parametric ops' roughing compensation is picked up after it — not before.
   Nothing here is withdrawn, and nothing about it has been measured away.
 
-- [ ] **Compensation is all-or-nothing — `taper_id`, `boring` and `facing`
-  still switch it on inside the finishing loop only.** Standing rule in
-  `CLAUDE.md` and memory. Done: the **OD taper** (`analysis/005`) and the
-  **polyline's roughing** (`analysis/006`, proved by `test_rough_comp.py` -
-  overcut past the pre-finish contour 0.1116 → 0.0503 mm).
+- [ ] **PARTLY DONE — only `taper_id` and `boring` remain, and BOTH are ID
+  work, paused.** RECONCILED 2026-09-13: this entry read "facing is OD and
+  can be done now" while `facing`'s roughing loop already carries
+  `#<_fc_rough_ofx>` / `#<_fc_rough_ofz>` and the comment at
+  `facing.ngc:99-106` states the rule is satisfied — confirmed by reading the
+  live file, not memory. `facing_rough_offset()` in `lathe_sections.py`
+  computes it whenever `n_comp` is 1 or 2, `analysis/122` (roughing
+  compensated, real-project A/B on `testing_6`/`8`/`9`) and `analysis/124`
+  (the same offset moved from O-code into Python). So of the four ops named
+  here, three are done — OD **taper** (`analysis/005`), the **polyline's
+  roughing** (`analysis/006`), and now **facing** — and the entire remaining
+  scope of this headline is `taper_id` + `boring`, both ID work. **Nothing
+  here is available work until ID work resumes**; kept unticked because the
+  item is not fully closed, not because any of it is actionable now.
+  Standing rule in `CLAUDE.md` and memory.
 
   **The pattern to copy, in order:**
 
@@ -2646,8 +2714,12 @@ the two cuts only touch.
   - greatEndian ruled `h = 0` does not occur: *"h every time depends at tool
     tip insert dimension which we have to grab from expanded tool table"*.
 
-- [ ] **NEEDS A CALL — the holder model is BUILT and measured, and it cuts
-  LESS, not more.** `analysis/074`. `FLANK_SHANK_BOUNDS`, off by default.
+- [ ] **DECIDED, NOT A CALL ANY MORE — the holder model is BUILT and measured,
+  and it cuts LESS, not more.** RECONCILED 2026-09-13: headline said "NEEDS A
+  CALL" while the body already records greatEndian's answer (leave OFF,
+  pending a real cut). Left unticked because the real-machine test itself
+  hasn't happened — that is external, not documentation work.
+  `analysis/074`. `FLANK_SHANK_BOUNDS`, off by default.
   Three regimes replace two: the wedge to the insert's edge length, then the
   block's flat floor `rp - 12.0946` to the holder length, then nothing.
   **I predicted it would recover the 10.0899 mm and it does the opposite**:
@@ -3033,7 +3105,11 @@ validation ones.
     emitted. Both fixes are the same: the direction is a cfg parameter, read it
     at generation time.
 
-- [ ] **THE PHASE-1 HANDOVER — MEASURED, AND MY EARLIER CLAIM RETRACTED** —
+- [x] **THE PHASE-1 HANDOVER — MEASURED, AND MY EARLIER CLAIM RETRACTED** —
+  RECONCILED 2026-09-13: ticked because the caveat this chain chases is
+  confirmed real below and closed by the very next (already `[x]`) item,
+  `analysis/089`. Kept as its own entry for the retraction, which is the
+  point of it.
   2026-09-03, `analysis/086`. I said the boundary of the migration was the
   handover reassigning `sect_top_r`. **All three of its sites fire 0 times over
   30 configurations** - the ceiling is never moved. That claim was wrong, and
@@ -3106,7 +3182,12 @@ validation ones.
   configurations. The rest of the stack is still prediction only.
   Superseded text follows.
 
-- [ ] **~~THE STACK IS PREDICTED - NOTHING IS WIRED.~~** `window (085) -> sub-span
+- [x] **~~THE STACK IS PREDICTED - NOTHING IS WIRED.~~** RECONCILED 2026-09-13:
+  the item immediately above this one already announces "superseded text
+  follows" and later entries (the ladder wired, then table-driven including
+  the loop's end) show wiring actually happening — so "nothing is wired" is
+  itself the superseded claim, kept for the record its own strike-through
+  already signals. `window (085) -> sub-span
   (084) -> interval (083, 089) -> level set (080..082, 089)`, all at generation
   time, on 36 configurations including the part built to break it. The `.ngc`
   still decides everything at runtime and the motion is untouched. What changed
@@ -4132,8 +4213,10 @@ is a defect; they are absences, and most were parked deliberately:
   naming, and worth checking before adding anything or we end up with four
   parameters doing three jobs.
 
-- [ ] **The finding that outranks the list: it is a CAD-model package and we are
-  not.** Much of Geometry and Radii — Model front/back, Chuck front, Selection,
+- [x] **The finding that outranks the list: it is a CAD-model package and we are
+  not.** RECONCILED 2026-09-13: this is the concluding insight of the scan
+  above it, not a task of its own — the next line already lists what it
+  closed as done. Much of Geometry and Radii — Model front/back, Chuck front, Selection,
   picked faces, Model OD/ID, *Outermost of…* — exists to point at solid geometry
   we do not have, because **our profile is the input**. Copying that vocabulary
   would leave parameters that can never resolve. What survives the translation
