@@ -558,19 +558,47 @@ class NCamProjectIOMixin:
                                         q.attr['path'] = p.attr['path']
                                         if 'value' in p.attr :
                                             q.attr['value'] = p.attr['value']
-                                        # Carry a saved bound forward only while the
-                                        # cfg still declares one. Every minimum/maximum
-                                        # in cfg/ is a static declaration, so a saved
-                                        # copy is just a snapshot of what the cfg said
-                                        # when the project was saved - and copying it
-                                        # back unconditionally meant a cfg could never
-                                        # relax a bound: the stale limit kept winning
-                                        # on every existing project, so the change
-                                        # only ever reached newly added features.
-                                        if 'minimum_value' in p.attr and 'minimum_value' in q.attr :
-                                            q.attr['minimum_value'] = p.attr['minimum_value']
-                                        if 'maximum_value' in p.attr and 'maximum_value' in q.attr :
-                                            q.attr['maximum_value'] = p.attr['maximum_value']
+                                        # BOUNDS ARE NOT COPIED, on purpose. `q` is a
+                                        # freshly-parsed Feature(src=...) - its own
+                                        # minimum_value/maximum_value already ARE the
+                                        # cfg's current declaration, untouched here.
+                                        # Every minimum/maximum in cfg/ is a static
+                                        # declaration, not project state; copying a
+                                        # saved bound back over it (as this used to do)
+                                        # meant a cfg could never tighten OR widen a
+                                        # range on any project that already existed -
+                                        # analysis/043, analysis/220.
+                                        #
+                                        # The VALUE above is copied regardless, and is
+                                        # deliberately NOT clamped into the new bounds
+                                        # here: silently rewriting a saved cutting
+                                        # number is worse than the bug this replaces.
+                                        # If the cfg's new range no longer contains the
+                                        # carried-over value, that is surfaced instead -
+                                        # msg_inv already prints unconditionally and
+                                        # only shows a dialog when a GUI toplevel is
+                                        # visible (analysis/070), so this is safe from
+                                        # a headless migration too.
+                                        if (q.get_type() in ('float', 'int')
+                                                and 'minimum_value' in q.attr
+                                                and 'maximum_value' in q.attr
+                                                and 'value' in q.attr) :
+                                            v = get_float(q.attr['value'])
+                                            lo = get_float(q.attr['minimum_value'])
+                                            hi = get_float(q.attr['maximum_value'])
+                                            if v < lo or v > hi :
+                                                f_B.msg_inv(_(
+                                                    '%(param)s is %(value)s, outside '
+                                                    'the %(lo)s to %(hi)s range this '
+                                                    'version of the cfg declares. Kept '
+                                                    'as saved, not changed '
+                                                    'automatically - check it before '
+                                                    'relying on it.') % {
+                                                        'param': q.get_name(),
+                                                        'value': q.get_display_string(),
+                                                        'lo': q.get_min_value(),
+                                                        'hi': q.get_max_value()},
+                                                    900)
                                         if 'hidden' in p.attr :
                                             q.attr['hidden'] = p.attr['hidden']
                                         if 'grayed' in p.attr :

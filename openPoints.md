@@ -4229,26 +4229,26 @@ Done from this scan: **15** separate X/Z stock to leave (`analysis/024`),
 
 ## Bounds do not migrate — found 2026-08-13
 
-- [ ] **A cfg cannot CHANGE a parameter's minimum or maximum on an existing
-  project.** `update_features` copies the saved bounds back over the cfg's:
-
-  ```
-  cfg declares   min 0.01    max 10.0
-  saved project  min -45.0   max 45.0
-  after migration min -45.0  max 45.0     the stale bound wins
-  ```
-
-  Found narrowing the back angle clearance (`analysis/043`): the new range
-  reaches newly added features only, so on every existing project the operator
-  can still type −45. The comment above those lines already argues the cfg
-  should win — *"a saved copy is just a snapshot of what the cfg said when the
-  project was saved"* — but the guard added only covers the cfg DROPPING a
-  bound, not changing one.
-  - The fix is one line, letting the cfg win, and it touches **every bound of
-    every parameter of every migrating feature** — so it needs its own task and
-    its own measurement across the demo projects, not a quiet edit.
-  - Separately: **nothing clamps a stored VALUE on load**, so a project holding
-    an out-of-range value keeps cutting with it until that field is edited.
+- [x] **FIXED — 2026-09-13, `analysis/220`.** `update_features` no longer
+  copies a saved project's `minimum_value`/`maximum_value` back over the
+  cfg's own — the two copy-lines are gone, so the freshly-parsed cfg's own
+  bounds simply stand. Narrowing and widening both proven on the real
+  `PARAM_BACK_CLEAR` case this was found on: saved −45.0..45.0 → cfg
+  0.01..10.0 now actually narrows; saved 1.0..5.0 → cfg 0.01..10.0 now
+  actually widens. The saved **value** is untouched in both directions, by
+  design — bounds are a cfg declaration, a value is what the operator typed.
+  **The out-of-range case, decided rather than guessed**: a value the new,
+  narrower bound no longer contains is left exactly as saved — not clamped,
+  since a silent rewrite of a saved cutting number is worse than the bug
+  this replaces — and surfaced instead through `Feature.msg_inv()`, already
+  proven safe headless (`analysis/070`). The `version`-bump requirement is
+  unchanged: measured directly, a bounds change still needs the cfg's
+  `version` to be strictly greater than the saved project's or migration
+  does not fire at all, exactly like any other cfg change.
+  `test_param_bounds_migration.py`, new: 8 checks against the real migration
+  path and the real `tool-change.cfg`, including a negative control (an
+  in-range value prints no notice) and proven failing 4-of-8 on the pre-fix
+  code via `git stash`.
 
 ## Watch list
 
