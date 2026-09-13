@@ -114,6 +114,26 @@ class PreviewPane(object):
         self._last_status = ''
         self._busy = False
         self._pending = None
+        # collision detection - see _worker/_done. `_checked` tells apart
+        # "ran and found nothing" from "had no tool/stock to run with", which
+        # an empty hit list alone cannot: ncam_preview.collisions() returns []
+        # for both.
+        self._collisions = []
+        self._collisions_checked = False
+        # Programmed Point: the control-point cross drawn on the tool -
+        # always on until toggled off from the Display menu.
+        self.show_point = True
+        # Regenerate on rewind: whether scrubbing the timeline BACKWARDS
+        # rebuilds the stock field from raw stock (correct, the only
+        # behaviour there used to be) or leaves whatever was already cut in
+        # place (faster, but shows material as already removed ahead of the
+        # tool). See _stock_field. Stop/rewind-to-bar is unaffected either
+        # way - it always rebuilds.
+        self.regen_on_rewind = True
+        # Accuracy: the divisor StockField.columns_for samples the nose
+        # circle at - see that function's docstring. 6.0 is its own default,
+        # so the slider starts where the simulation always behaved.
+        self.accuracy_divisor = 6.0
 
         self.widget = gtk.Notebook()
         self.widget.set_scrollable(True)
@@ -355,6 +375,56 @@ class PreviewPane(object):
               'many small segments.'))
         self.points_btn.connect('toggled', lambda _b: self.area.queue_draw())
         self.disp_menu.append(self.points_btn)
+
+        self.point_btn = gtk.CheckMenuItem(label=_('Programmed point'))
+        self.point_btn.set_active(True)
+        self.point_btn.set_tooltip_text(
+            _('The small cross on the tool marking the COMMANDED control '
+              'point - what the G-code says, as opposed to the nose circle '
+              'that actually touches the part. On by default; turn off if it '
+              'clutters a busy plot.'))
+        self.point_btn.connect('toggled', self._on_point)
+        self.disp_menu.append(self.point_btn)
+
+        self.regen_btn = gtk.CheckMenuItem(label=_('Regenerate on rewind'))
+        self.regen_btn.set_active(True)
+        self.regen_btn.set_tooltip_text(
+            _('When scrubbing the timeline backwards, rebuild the simulated '
+              'stock from raw material (correct, but rebuilds the whole '
+              'field). Off is faster but leaves material already cut ahead '
+              'of the tool showing as removed. Stop always rewinds fully '
+              'either way.'))
+        self.regen_btn.connect('toggled', self._on_regen_rewind)
+        self.disp_menu.append(self.regen_btn)
+        self.disp_menu.append(gtk.SeparatorMenuItem())
+
+        # Accuracy: a slider rather than a checkbox, so it lives in the menu
+        # as its own row - the menu already costs one button of width and
+        # none of height, which a slider on the steady-state row would not.
+        acc_row = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=6)
+        acc_row.set_border_width(3)
+        acc_row.pack_start(gtk.Label(label=_('Accuracy')), False, False, 0)
+        self.accuracy_scale = gtk.Scale.new_with_range(
+            gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.01)
+        self.accuracy_scale.set_draw_value(False)
+        self.accuracy_scale.set_size_request(90, -1)
+        # the slider position that reproduces StockField.columns_for's own
+        # default divisor (6.0), so a pane nobody has touched simulates
+        # exactly as it always did
+        self._acc_lo, self._acc_hi = 2.0, 24.0
+        self.accuracy_scale.set_value(
+            (6.0 - self._acc_lo) / (self._acc_hi - self._acc_lo))
+        self.accuracy_scale.connect('value-changed', self._on_accuracy)
+        acc_row.pack_start(self.accuracy_scale, True, True, 0)
+        self.accuracy_item = gtk.MenuItem()
+        self.accuracy_item.add(acc_row)
+        self.accuracy_item.set_tooltip_text(
+            _('How finely the simulated stock is sampled. Left is coarser '
+              'and faster to rebuild when the timeline scrubs backwards; '
+              'right is finer and closer to the true nose radius. Does not '
+              'change the generated program, only how the preview simulates '
+              'it.'))
+        self.disp_menu.append(self.accuracy_item)
         self.disp_menu.append(gtk.SeparatorMenuItem())
 
         self.col_items = {}
@@ -439,14 +509,39 @@ class PreviewPane(object):
         _trace('refresh start')
         self._busy = True
         self._set_status(_('Reading toolpath...'))
-        t = threading.Thread(target=self._worker, args=(fname,), daemon=True)
+        # Collision detection needs the stock extents and the current tool
+        # geometry, and both are read here - on the GTK thread, before the
+        # worker starts - rather than from inside the worker. stock_cb reads
+        # the live feature tree (a GtkTreeStore), which is not safe to touch
+        # off the GTK thread; self.nose_r and friends are already plain
+        # numbers snapshotted by set_tool(), so copying them here just fixes
+        # what the check runs against for the duration of this one refresh.
+        stock = None
+        if self.stock_cb is not None:
+            try:
+                stock = self.stock_cb()
+            except Exception:
+                stock = None
+        tool = {'nose_r': self.nose_r, 'orient': self.orient,
+                'front_deg': self.front_deg, 'back_deg': self.back_deg,
+                'flank_len': self.flank_len, 'cl_deg': self.cl_deg,
+                'shank_h': self.shank_h, 'shank_off': self.shank_off}
+        t = threading.Thread(target=self._worker, args=(fname, stock, tool),
+                             daemon=True)
         t.start()
 
-    def _worker(self, fname):
+    def _worker(self, fname, stock, tool):
         tp = ncam_preview.parse_program(fname, self.ini_path)
-        GLib.idle_add(self._done, tp)
+        # Runs here, not on the GTK thread: both parse_program and
+        # ncam_preview.collisions() are GTK-free pure functions (see the
+        # module docstring), and the check costs on the order of a second on
+        # a real project - doing it inline in _done would freeze the panel
+        # the same way an inline interpreter run would.
+        checked = ncam_preview.collisions_checked(tp, stock, tool['nose_r'])
+        hits = ncam_preview.collisions(tp, stock, **tool) if checked else []
+        GLib.idle_add(self._done, tp, checked, hits)
 
-    def _done(self, tp):
+    def _done(self, tp, checked=False, hits=None):
         _trace('done')
         # the interpreter runs on a worker thread and hands the result back
         # with idle_add, so the panel can be gone by the time it lands.
@@ -464,6 +559,9 @@ class PreviewPane(object):
         self.toolpath = tp
         self._acc = None          # lengths belong to the old path
         self._reset_field()
+        self._collisions_checked = checked
+        self._collisions = hits or []
+        self._update_collision_marks()
         self._busy = False
         self.flat_buffer.set_text(
             tp.flat or _('(no flattened listing - the interpreter run failed)'))
@@ -472,13 +570,34 @@ class PreviewPane(object):
         if tp.error:
             self._set_status(_('Preview: %s') % tp.error)
         else:
-            self._set_status(_('%(f)d cutting moves, %(r)d rapids')
-                             % {'f': len(tp.feeds), 'r': len(tp.rapids)})
+            msg = (_('%(f)d cutting moves, %(r)d rapids')
+                   % {'f': len(tp.feeds), 'r': len(tp.rapids)})
+            if self._collisions:
+                msg += _('  -  %d collision(s)') % len(self._collisions)
+            self._set_status(msg)
         self.area.queue_draw()
         nxt, self._pending = self._pending, None
         if nxt:
             self.refresh(nxt)
         return False
+
+    def _update_collision_marks(self):
+        """Tick marks on the timeline at each collision's fraction along it.
+
+        `Collision.at` is already the fraction of the whole program - see its
+        docstring in ncam_preview.py - so no further mapping is needed here,
+        only deduplicating marks that land on the same spot and telling the
+        two kinds of hit apart with a one-letter label.
+        """
+        self.sim_scale.clear_marks()
+        seen = set()
+        for c in self._collisions:
+            key = round(c.at, 3)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = 'R' if c.kind == ncam_preview.RAPID_HIT else 'B'
+            self.sim_scale.add_mark(c.at, gtk.PositionType.BOTTOM, label)
 
     def _load_text(self, fname):
         try:
@@ -524,7 +643,28 @@ class PreviewPane(object):
             L.append('  %-22s %9.1f mm  %8s  %5.1f%%'
                      % (row['name'][:22], row['dist'],
                         ncam_preview.fmt_time(row['time']), row['share']))
+        L.append('')
+        L.append(self._verification_line())
         self.stats_buffer.set_text('\n'.join(L))
+
+    def _verification_line(self):
+        """One line: whether the collision check ran, and its verdict.
+
+        Formatting lives here rather than in ncam_preview.collision_stats() -
+        that function returns plain counts, testable with no GTK and no
+        gettext, the same split statistics()/`_render_stats` already use.
+        """
+        if not self._collisions_checked:
+            return _('Verification     not checked - no tool profile or '
+                     'stock to check against')
+        cs = ncam_preview.collision_stats(self._collisions)
+        if cs['count'] == 0:
+            return _('Verification     clean - no collisions found')
+        return (_('Verification     %(n)d collision(s): %(r)d rapid into '
+                  'material, %(b)d tool body into material, worst '
+                  '%(d).3f mm deep')
+                % {'n': cs['count'], 'r': cs['rapid'], 'b': cs['body'],
+                   'd': cs['worst']})
 
     def _render_info(self):
         """The Info page - where the tool is now, and under what."""
@@ -691,9 +831,11 @@ class PreviewPane(object):
             self._acc, self._total = ncam_preview.path_lengths(self.toolpath)
         _pos, idx, _k = ncam_preview.position_at(self.toolpath, self.sim_t,
                                                  self._acc, self._total)
-        if self._field is None or idx <= self._field_upto:
+        if self._field is None or (self.regen_on_rewind
+                                    and idx <= self._field_upto):
             a0, a1, b0, b1 = stock
-            cols = ncam_preview.StockField.columns_for(a0, a1, self.nose_r)
+            cols = ncam_preview.StockField.columns_for(
+                a0, a1, self.nose_r, divisor=self.accuracy_divisor)
             self._field = ncam_preview.StockField(a0, a1, b0, b1, cols)
             self._field_upto = -1
 
@@ -753,6 +895,21 @@ class PreviewPane(object):
 
     def _on_contour(self, _btn):
         self._render_status()             # the legend follows the overlay
+        self.area.queue_draw()
+
+    def _on_point(self, btn):
+        self.show_point = btn.get_active()
+        self.area.queue_draw()
+
+    def _on_regen_rewind(self, btn):
+        self.regen_on_rewind = btn.get_active()
+
+    def _on_accuracy(self, scale):
+        v = scale.get_value()
+        self.accuracy_divisor = self._acc_lo + v * (self._acc_hi - self._acc_lo)
+        # the column count depends on it, so whatever field exists was built
+        # for the OLD accuracy and has to be rebuilt, not just redrawn
+        self._reset_field()
         self.area.queue_draw()
 
     def _shown_cats(self):
@@ -942,7 +1099,7 @@ class PreviewPane(object):
                 'cl_deg': self.cl_deg, 'included_deg': self.included_deg,
                 'front_deg': self.front_deg, 'back_deg': self.back_deg,
                 'flank_len': self.flank_len, 'shank_h': self.shank_h,
-                'shank_off': self.shank_off}
+                'shank_off': self.shank_off, 'show_point': self.show_point}
 
     # -- zoom and pan -------------------------------------------------------
     def _arm_events(self, area):

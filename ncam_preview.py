@@ -860,7 +860,8 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   tool.get('cl_deg'), tool.get('included_deg'),
                   tool.get('front_deg'), tool.get('back_deg'),
                   tool.get('flank_len', 0.0), tool.get('shank_h', 0.0),
-                  shank_off=tool.get('shank_off', (0.0, 0.0)))
+                  shank_off=tool.get('shank_off', (0.0, 0.0)),
+                  show_point=tool.get('show_point', True))
 
     if tp.error:
         _centre_text(cr, width, height * 1.85, tp.error)
@@ -1477,7 +1478,8 @@ def tool_holder(pos, nose_r, orient, front_deg=None, back_deg=None,
 
 def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
               cl_deg=None, included_deg=None, front_deg=None, back_deg=None,
-              flank_len=0.0, shank_h=0.0, shank_off=(0.0, 0.0)):
+              flank_len=0.0, shank_h=0.0, shank_off=(0.0, 0.0),
+              show_point=True):
     """The tool at `pos`: its nose circle, and the insert behind it.
 
     The BODY LIES IN THE SAME DIRECTION AS THE NOSE OFFSET, not opposite it.
@@ -1575,14 +1577,18 @@ def draw_tool(cr, pos, plane, s, ox, oy, nose_r=0.0, orient=0,
         cr.arc(cx, cy, r, 0, 2 * math.pi)
         cr.stroke()
 
-    # the commanded point itself, always drawn: it is what the G-code says
-    cr.set_source_rgb(*COL['tool'])
-    cr.set_line_width(1.6)
-    cr.move_to(px - 4, py)
-    cr.line_to(px + 4, py)
-    cr.move_to(px, py - 4)
-    cr.line_to(px, py + 4)
-    cr.stroke()
+    # the commanded point itself: it is what the G-code says, so it defaults
+    # to drawn - `show_point=False` is the Programmed Point toggle in the
+    # preview pane, off for whoever finds the cross a distraction on top of
+    # the nose circle rather than a check.
+    if show_point:
+        cr.set_source_rgb(*COL['tool'])
+        cr.set_line_width(1.6)
+        cr.move_to(px - 4, py)
+        cr.line_to(px + 4, py)
+        cr.move_to(px, py - 4)
+        cr.line_to(px, py + 4)
+        cr.stroke()
 
 
 # which way the nose sits from the control point, as (Z, radius) signs -
@@ -1614,7 +1620,7 @@ class StockField(object):
     """
 
     @staticmethod
-    def columns_for(z0, z1, nose_r, cap=4000):
+    def columns_for(z0, z1, nose_r, cap=4000, divisor=6.0):
         """Enough columns that the nose circle is not visibly quantised.
 
         Sampling a disc at column centres biases the result DEEPER by
@@ -1622,12 +1628,18 @@ class StockField(object):
         is 0.06 mm, and the simulated part came out 0.07-0.12 mm under its
         profile - small, but exactly the sort of error someone would try to
         explain as a compensation fault. A sixth of the nose radius puts it
-        under a micron.
+        under a micron - that sixth is `divisor`'s default, and the Accuracy
+        slider in the preview pane is nothing but a caller supplying a
+        different one: a smaller divisor means fewer, coarser columns (faster
+        to rebuild when the timeline scrubs backwards), a larger one means
+        more, finer columns. The default is unchanged, so every existing
+        caller - and the field the simulation starts with - is unaffected.
         """
         span = abs(z1 - z0)
         if span <= 0 or nose_r <= 0:
             return 600
-        return int(max(200, min(cap, span / (nose_r / 6.0))))
+        divisor = divisor if divisor and divisor > 0 else 6.0
+        return int(max(200, min(cap, span / (nose_r / divisor))))
 
     def __init__(self, z0, z1, inner, outer, columns=600):
         self.z0, self.z1 = min(z0, z1), max(z0, z1)
@@ -1854,6 +1866,30 @@ def collisions(tp, stock, nose_r=0.0, orient=0, front_deg=None, back_deg=None,
             # leaving it in place would report every later move as a collision
             field.cut_move(m.a, m.b, nose_r, d)
     return out
+
+
+def collisions_checked(tp, stock, nose_r):
+    """Whether `collisions()` would actually run a check, or refuse.
+
+    `collisions()` returns `[]` both when it looked and found nothing, and
+    when it had nothing to look with - no moves, no stock, or no nose radius.
+    Those are different facts for a Stats page to report ("clean" vs. "not
+    checked"), so this mirrors the same early-exit condition on its own,
+    without duplicating the walk itself.
+    """
+    return bool(tp.moves) and bool(stock) and nose_r > 0
+
+
+def collision_stats(hits):
+    """Counts and worst depth for the Stats page - a dict like statistics().
+
+    Kept separate from formatting (which belongs to the GTK layer, the same
+    split `statistics()` already uses) so it is testable with plain data.
+    """
+    rapid = sum(1 for c in hits if c.kind == RAPID_HIT)
+    body = len(hits) - rapid
+    worst = max((c.depth for c in hits), default=0.0)
+    return {'count': len(hits), 'rapid': rapid, 'body': body, 'worst': worst}
 
 
 def _nose_c(nose_r, orient):
