@@ -2808,20 +2808,40 @@ the two cuts only touch.
   answer for those tools - a different closing line, or a refusal the operator
   can see - rather than a quietly wrong picture.
 
-## Simulation — paused at your word
+## Simulation — wired 2026-09-13, `24c0b80`, `analysis/200`
 
-- [ ] **Collision detection is built and tested but not wired to the pane**
-  (`fdfa99d`). Reports rapids into metal and the tool body into metal, 1.5 s
-  on testing_15_2. It was held back because its output depended on the tool
-  shape - **that blocker is gone**: with the shank it reports **0 hits on the
-  demo lathe program at every shank size, 12, 25 and 32 mm**, and still catches
-  a holder driven through the bar 40 mm behind the tip, which no insert can
-  reach. Only the wiring is left.
-- [ ] Timeline marks for collisions, and a Verification line in Stats —
-  designed, not built.
-- [ ] `Accuracy` slider → `StockField.columns_for`.
-- [ ] `Regenerate on rewind` as an option (currently always on).
-- [ ] `Programmed Point` toggle (the control-point cross is always drawn).
+RECONCILED 2026-09-14, `analysis/240`, by `openpoints_check.py`'s own hint on
+the `Accuracy` slider entry: all five below were still `- [ ]` a full day
+after `24c0b80` wired every one of them, `test_preview_wiring.py` (30 checks)
+passing. The checker's sibling-list is what surfaced the other four once the
+first one was caught - the section heading is renamed for the same reason
+`ce28d71` used dated headings elsewhere, so a stale "paused" is not left
+standing over work that no longer is.
+
+- [x] **Collision detection is wired to the pane.** `refresh()`/`_worker()`
+  snapshot stock+tool on the GTK thread; `collisions_checked()`/
+  `collisions()` (both pure, GTK-free) run on the worker thread alongside the
+  interpreter run; `_done()` stores the verdict, marks the timeline
+  (`Gtk.Scale.add_mark`, per distinct collision fraction) and adds it to
+  Stats and the status bar. Distinguishes "ran and found nothing" from "had
+  no tool/stock to run with" - `collisions()` alone returns `[]` for both,
+  `collisions_checked()` does not.
+- [x] Timeline marks for collisions, and a Verification line in Stats — both
+  built alongside the wiring above, same commit.
+- [x] **`Accuracy` slider drives `StockField.columns_for`** via a new
+  `divisor=` kwarg (default unchanged, so no existing motion or preview
+  moves) - `self.accuracy_divisor` in `ncam_preview_ui.py`.
+- [x] **`Regenerate on rewind` is a real toggle**, default ON (unchanged
+  behaviour for anyone who never touches it) - gates `_stock_field()`'s
+  backwards-scrub rebuild; Stop's rewind-to-bar is unaffected either way.
+- [x] **`Programmed Point` toggle** gates the control-point cross via a new
+  `show_point=` kwarg on `draw_tool` (default True, unchanged), proven with
+  a pixel-level comparison, not just "did not crash."
+
+  Verified 2026-09-14 rather than ticked on the checker's word-match alone:
+  `test_preview_wiring.py` passing (30 checks, including the clean-vs-
+  colliding `_done()` path, the divisor's monotonicity, and the pixel-level
+  toggle proof) and `24c0b80`'s own diff read directly.
 
 ## ID work — PAUSED at greatEndian's word, 2026-08-02
 

@@ -148,21 +148,36 @@ def main():
           'findings: %s' % findings)
 
     # ------------------------------------------------------------------
-    # C3 - the real, currently-open "Simulation" cluster
+    # C3 - the real "Simulation" cluster, frozen at the commit before this
+    # checker's own fix ticked it (analysis/240) - reading the LIVE file
+    # here would make this test decay the exact way openPoints.md itself
+    # does the moment the entry it is about gets fixed, which is precisely
+    # what happened the first time this was written against oc.check_all()
+    # with no argument.
     # ------------------------------------------------------------------
-    findings, hints, unverified = oc.check_all()
-    hint_titles = [t for _l, t, _d in hints]
-    check('C3 catches the real, still-open Accuracy slider entry '
-          '(wired by 24c0b80, test_preview_wiring.py passing)',
-          any('Accuracy' in t for t in hint_titles),
-          'hints: %s' % hint_titles)
+    try:
+        pre_fix = git_show('30dc1f4', 'openPoints.md')
+    except subprocess.CalledProcessError:
+        print('SKIP  30dc1f4 not reachable in this checkout - git history '
+              'trimmed?')
+        pre_fix = None
 
-    acc = next((d for _l, t, d in hints if 'Accuracy' in t), '')
-    check('C3 names real evidence for it (a file:line in ncam_preview_ui.py)',
-          'ncam_preview_ui.py' in acc, acc)
-    check('C3 surfaces its open siblings under the same heading (the '
-          'lesson analysis/240 exists to encode - staleness clusters)',
-          'other open entr' in acc, acc)
+    if pre_fix is not None:
+        findings, hints, unverified = oc.check_all(pre_fix)
+        hint_titles = [t for _l, t, _d in hints]
+        check('C3 catches the real, still-open (at 30dc1f4) Accuracy '
+              'slider entry (wired by 24c0b80, test_preview_wiring.py '
+              'passing)',
+              any('Accuracy' in t for t in hint_titles),
+              'hints: %s' % hint_titles)
+
+        acc = next((d for _l, t, d in hints if 'Accuracy' in t), '')
+        check('C3 names real evidence for it (a file:line in '
+              'ncam_preview_ui.py)',
+              'ncam_preview_ui.py' in acc, acc)
+        check('C3 surfaces its open siblings under the same heading (the '
+              'lesson analysis/240 exists to encode - staleness clusters)',
+              'other open entr' in acc, acc)
 
     # NEGATIVE CONTROL for C3: a backtick term with no matching declaration
     # anywhere must not hint
