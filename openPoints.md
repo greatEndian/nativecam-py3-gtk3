@@ -47,6 +47,8 @@ they appear in the file, roughly smallest/most self-contained first:
 - Regenerate on rewind as an option (preview, tiny)
 - `Accuracy` slider → `StockField.columns_for` (preview, tiny)
 - The stock datum offsets, it does not CLAMP
+- The preview's ini comes only from `INI_FILE_NAME`; `self.ini_file` is dead code (`analysis/211`)
+- The "Both directions" negative result is qualified — its previews parsed no motion (`analysis/211`)
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
 - Timeline marks for collisions, and a Verification line in Stats
 - Collision detection is built and tested but not wired to the pane
@@ -3741,6 +3743,37 @@ concluded from the tables that nothing was missing. All three were wrong.
   - Why no gate saw it: the repeat cuts air, so surface equality, x-continuity
     and the leftover checks all stayed true. They ask whether what exists is
     correct; none asked whether anything is emitted twice.
+
+## Found 2026-09-16 — the preview's ini comes only from the environment
+
+- [ ] **`self.ini_file` IS NEVER SET, SO THE PREVIEW'S INI COMES ONLY FROM
+  `INI_FILE_NAME`**, `analysis/211`. `ncam_preview_ui.py:1206` reads
+  `getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME')`, and nothing
+  in the project ever assigns `ini_file` — that half is dead code.
+  **AXIS is unaffected**: `/usr/bin/linuxcnc:802` exports `INI_FILE_NAME`,
+  which is why no user has seen this. But any run that passes the ini on the
+  command line instead (a test harness, `ncam.py -i <ini>`) leaves the preview
+  with `None`, so `_canon_dump` takes `cwd` from the `.ngc`'s own directory and
+  drops `-t` — the ini's relative `SUBROUTINE_PATH` cannot resolve and every
+  parse dies at its first o-word.
+  - Measured on a freshly generated testing_15_7: that command shape gives
+    **rc=1 with 0 motion lines** (`EOF in file … seeking o-word: o<facing>`),
+    against **rc=0 with 457 motion lines** run correctly from the ini's
+    directory. Generation itself is healthy either way.
+  - Decide: set `ini_file` on the panel from the `-i` argument, or delete the
+    dead half and read the environment honestly. A harness cannot be expected
+    to know it must export a variable nothing documents.
+
+- [ ] **THE "BOTH DIRECTIONS" NEGATIVE RESULT IS QUALIFIED BY THE ABOVE.**
+  `c3c678d`'s 250-iteration hunt ran with the preview's ini `None`, so all
+  **197** of its interpreter runs aborted identically with zero motion. It
+  genuinely covered edit → regenerate → the `msg_inv` dialog (which fired and
+  was auto-dismissed), but **never a preview that parsed a toolpath** — and the
+  suspected crash involves the preview worker interleaving with the next edit.
+  Re-run with `INI_FILE_NAME` exported before treating "did not reproduce" as
+  meaningful. The harness's own instrument validation is sound, and its 44
+  `Timeout (0:00:25)!` entries are watchdog ticks, not hangs
+  (`dump_traceback_later(25, repeat=True)`, 1112 s ÷ 25 ≈ 44.5).
 
 ## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
