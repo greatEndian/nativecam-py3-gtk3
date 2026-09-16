@@ -424,6 +424,60 @@ the two cuts only touch.
   launched linuxcnc, captured when it actually happens** - without it any fix
   is a guess, and two GUI guesses have already been wrong this week.
 
+  **2026-09-16, worker/crash-hunt, `analysis/291`: did NOT reproduce
+  standalone after 250 iterations (~19 min), instrument validated first.**
+  `tools/crash_hunt_both_dir.py` drives a real `ncam.NCam()` in a visible
+  `Gtk.Window` under Xvfb - a visible toplevel matters, because `msg_inv`
+  skips its dialog entirely with none, and the suspect named in this task is
+  that dialog - cycling `#param_dir`/`#param_f_dir` 0->2->1->2 on
+  testing_15_7/15_8 with `action_regen()` after each change, varied 0-3000 ms
+  delays (including interrupting a still-running preview parse), inside one
+  real `Gtk.main()` so the worker thread's `GLib.idle_add(self._done, ...)`
+  genuinely interleaves. Confirmed the harness hits the actual suspect
+  dialog ("Both directions... Orientation 2 is a directional insert...",
+  T2 = D0.8 Q2 in both projects' tool table) 402 times over the run, every
+  one auto-dismissed clean. Result: `regen_fail=0`, zero uncaught exceptions
+  (`sys.excepthook`/`threading.excepthook`, both witnessed against a forced
+  exception before trusting them), zero GLib criticals/warnings on 9 domains
+  (witnessed against a forced `g_log` critical via ctypes). Three gaps this
+  standalone attempt could not cover, in order of suspicion: (1)
+  `action_regen()` by design never calls `linuxcnc.command()` -
+  `autorefresh_call()` does, when Auto-refresh is ON, which this run left
+  OFF throughout; (2) the panel sat in a bare `Gtk.Window`, not AXIS's real
+  Tk/GTK socket embedding; (3) the debounced autorefresh
+  cancel/rearm-per-edit timer in `update_do_btns` was never exercised. Full
+  numbers and the log greps: `analysis/291-both-directions-crash-hunt.md`.
+
+  **Ready-to-paste command for greatEndian** (do this in AXIS, not
+  headless - needs the instrumented terminal + the exact click sequence,
+  since standalone could not force it):
+  ```bash
+  cd /home/user/nativeCamDev
+  rm -f /tmp/linuxcnc.lock
+  mkdir -p photo
+  PYTHONFAULTHANDLER=1 G_DEBUG=fatal-criticals G_MESSAGES_DEBUG=all \
+    linuxcnc configs/sim/axis/ncam_demo/lathe-mm.ini \
+    2>&1 | tee photo/crash-$(date +%Y%m%d-%H%M%S).log
+  ```
+  `PYTHONFAULTHANDLER=1` prints a Python traceback on the process's own
+  crash (segfault/abort) with no code change needed; `G_DEBUG=fatal-criticals`
+  turns any GTK/GLib critical - which by itself normally only logs and
+  carries on - into an immediate abort, so if the fault is one of those it
+  now stops AT the offending call instead of drifting into an unrelated
+  crash later, and PYTHONFAULTHANDLER then prints where. Click sequence to
+  try, repeated as many times as it takes since it is random: open
+  testing_15_7 or testing_15_8 (both carry a directional T2 insert already),
+  select the Lathe Polyline feature, turn Auto-refresh ON (untested
+  standalone - see gap 1 above), flip Direction (roughing) to "Both
+  directions", flip Direction (finishing) to "Both directions" too, then
+  press Regenerate repeatedly and FAST - including pressing it again before
+  the previous run's status line has cleared, and including clicking OK on
+  the "directional insert" warning as fast as possible right before the next
+  press. If it survives a few dozen presses, cycle Direction back through
+  Front-to-back/Back-to-front/Both a few times between presses rather than
+  leaving it parked on Both. Send the resulting `photo/crash-*.log` back -
+  that is the traceback nothing has ever captured.
+
 ## Changed 2026-08-26 — Skip short roughing passes is a typed length
 
 - [x] **IT WAS A BOOL RESOLVING TO ONE FIXED LIMIT; IT IS A THRESHOLD NOW.**
