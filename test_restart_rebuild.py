@@ -87,10 +87,8 @@ def main():
     # tracked cfg/ (see worker_worktree.py link-sim) - fine for reading, but
     # proof 1 and 2 below EDIT a cfg and a menu.xml, and must never touch a
     # tracked file to do it.
+    # The cfg copy itself is made AFTER NCam() starts - see materialize_cfg().
     cfg_link = os.path.join(dst, 'ncam', 'cfg')
-    if os.path.islink(cfg_link):
-        os.remove(cfg_link)
-    shutil.copytree(os.path.join(HERE, 'cfg'), cfg_link)
 
     cat_lathe = os.path.join(dst, 'ncam', 'catalogs', 'lathe')
     os.makedirs(cat_lathe, exist_ok=True)
@@ -109,6 +107,23 @@ def main():
     pid0 = os.getpid()
 
     app = ncam.NCam()
+
+    # NCam's own startup runs update_user_tree (ncam_app_actions.py:115-143),
+    # which for lib/graphics/cfg DELETES a real NCAM_DIR/<dir> and replaces it
+    # with a symlink to SYS_DIR/<dir> - the TRACKED tree. So a cfg copy made
+    # before this point is destroyed and re-pointed at the repo, and PROOF 1's
+    # edit below then writes straight into tracked source. Measured: every run
+    # left `M cfg/lathe/facing.cfg` in the worktree, and PROOF 1 was not
+    # testing an isolated copy at all. _rebuild_panel() does not call
+    # update_user_tree, so doing it here holds for the rest of the run.
+    if os.path.islink(cfg_link):
+        os.remove(cfg_link)
+    elif os.path.isdir(cfg_link):
+        shutil.rmtree(cfg_link)
+    shutil.copytree(os.path.join(HERE, 'cfg'), cfg_link)
+    if os.path.realpath(cfg_link).startswith(os.path.realpath(HERE) + os.sep):
+        print('FAIL  setup: the scratch cfg still resolves into tracked source')
+        sys.exit(1)
 
     # realize it for real - write_ngc() refuses to run otherwise
     win = Gtk.Window()
