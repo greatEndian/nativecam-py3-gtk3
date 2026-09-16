@@ -448,6 +448,35 @@ the two cuts only touch.
   cancel/rearm-per-edit timer in `update_do_btns` was never exercised. Full
   numbers and the log greps: `analysis/291-both-directions-crash-hunt.md`.
 
+  **`analysis/291`'s negative result was then found untrustworthy, and fixed:
+  `analysis/211`** found that `c3c678d`'s harness put the ini on `sys.argv`
+  but never exported `INI_FILE_NAME` — the ONLY place `PreviewPane` reads it
+  from (`ncam_preview_ui.py:1206`; `self.ini_file` is dead code, never
+  assigned anywhere). So all **197** of its `rs274` preview runs died
+  identically at `rc=1` with **0 motion lines** ("EOF … seeking o-word:
+  o<facing>") — the harness reached the suspect dialog and the
+  edit→regenerate path, but never a preview that actually parsed a toolpath,
+  which is exactly the window the suspected crash lives in.
+
+  **2026-09-16, re-run with the fix, `analysis/292`: STILL did not
+  reproduce, now a meaningful negative.** Harness fix (harness only, per the
+  task - `ncam_preview_ui.py`'s resolution rule is untouched, a separate open
+  point below): `build_app()` exports `INI_FILE_NAME` before `ncam.NCam()`
+  is constructed. **Acceptance gate run BEFORE the long hunt, as required**:
+  regenerate `testing_15_7`/`testing_15_8` for real, wait for the preview's
+  worker thread, assert `rc=0` and non-zero moves —
+  **`testing_15_7`: rc=0, 456 moves; `testing_15_8`: rc=0, 472 moves** (was
+  rc=1, 0 moves). Gate PASSED, then the full 250-iteration hunt was re-run
+  with the **same seed (42) and delay set** (0/5/15/40/100/250/600/1200/
+  3000 ms) as `c3c678d`: `regen_ok=250 regen_fail=0`, **zero** Python
+  exceptions, **zero** GLib criticals/warnings, exit code 0. This time **163
+  of 250** regenerate calls landed a fully-parsed preview (the rest
+  coalesced by `PreviewPane.refresh()`'s own "keep newest, drop pending"
+  rule under short delays - expected, not a bug) - the suspected
+  worker-thread/next-edit overlap was genuinely exercised this time, unlike
+  `c3c678d`, and it still did not crash. Full numbers:
+  `analysis/292-both-directions-crash-hunt-rerun.md`.
+
   **Ready-to-paste command for greatEndian** (do this in AXIS, not
   headless - needs the instrumented terminal + the exact click sequence,
   since standalone could not force it):
@@ -477,6 +506,33 @@ the two cuts only touch.
   Front-to-back/Back-to-front/Both a few times between presses rather than
   leaving it parked on Both. Send the resulting `photo/crash-*.log` back -
   that is the traceback nothing has ever captured.
+
+- [ ] **NEW, found 2026-09-16 chasing the crash above, `analysis/292`:
+  `write_ngc()` writes `ncam.ngc` NON-ATOMICALLY, and the preview reads the
+  live path directly - a torn read is possible.**
+  `ncam_app_actions.py:924-926`:
+  ```python
+  with open(fname, "w") as f:
+      f.write(self.to_gcode())
+  ```
+  `open(fname, "w")` truncates in place at open time, no temp-file-plus-
+  rename. Caught live during the 250-iteration re-run above: an `rs274`
+  preview run had `ncam.ngc` open and was still reading it when **four**
+  more `action_regen()` cycles overwrote the same path underneath it: the
+  interpreter read a torn file and died with `File ended with no percent
+  sign (%) or program end (M2) | o<poly_lathe_mill> endsub` - EOF landing
+  mid o-subroutine, no closing `M2`/`%`. Happened **twice** in 250
+  iterations (both identical). **Not the reported crash** - no traceback, no
+  GLib critical; `PreviewPane._done` handled it exactly as designed
+  (`tp.error` set, partial `tp.moves` kept, status line shows the error) -
+  but a genuine, previously-invisible race, only visible now that the
+  preview actually parses (`c3c678d`'s preview was already failing
+  identically every time, so this race could never have shown up there).
+  Not fixed - out of scope for the crash-hunt task that found it. A fix
+  would write to a temp file in the same directory and `os.replace()` it
+  into place, which is atomic on the same filesystem and would make a
+  concurrent reader see either the whole old file or the whole new one,
+  never a splice.
 
 ## Changed 2026-08-26 — Skip short roughing passes is a typed length
 
