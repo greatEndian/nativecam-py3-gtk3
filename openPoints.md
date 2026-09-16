@@ -81,7 +81,7 @@ they appear in the file, roughly smallest/most self-contained first:
 - One extra cutting lead on `testing_15_9` back-to-front, unexplained
 - Still unexercised, and each needs a part to settle it (`sect_top_r` sites 2/3, `band=0`, the stop-contour reach clamp)
 - 12 — rest machining — MEASURED, not built (a real design, larger than the gap description implies)
-- The ramp and stop machinery is still runtime O-code (`s_reach`, the slope term, the flat-boundary clamp — a big, well-scoped Python-migration item)
+- The ramp and stop machinery is still runtime O-code (`s_reach`, the slope term, the flat-boundary clamp — a big, well-scoped Python-migration item; migration plan now at `analysis/300`)
 
 **Blocked** (on greatEndian's decision, on ID work resuming, or on a
 real-machine test — not available work): STILL OPEN on the X wall · "BOTH
@@ -3298,6 +3298,24 @@ validation ones.
   level scan's own perpendicular offset. Python already answers most of these
   questions better, and the roughing defect at the top of this file is the
   first place it has actually cost something. `analysis/023`.
+
+  **Migration plan written, 2026-09-16, `analysis/300`** — not implemented.
+  Found: the raw perpendicular-offset scan (`o<scan01>`/`o<mc01>`) is already
+  dead code on every project with a floor contour (Python's own table
+  short-circuits it); the stop/entry reach formulas and the flat-boundary
+  point are pure per-segment geometry Python already has the inputs for and
+  can move now; the clamped-candidate WINNER and the minimal-retract/lead-air
+  machinery cannot move without the ladder-order migration
+  (`analysis/080/081/089/118`, the `[~]` item below) landing first — not a
+  live-tool-table block, a call-order one. A flat per-(window, level)
+  resolved-stop table would need ~1088 slots against 400 currently free
+  (measured against the layout's own documented worst case, 544 rows on a
+  17-window Artificial part), so Stage 2 targets per-segment tables (≤~270
+  slots) instead. Measured on the current O-code (scratch-instrumented,
+  never the tracked file), `testing_15_5`/`_6`/`_9`: `s_reach` floor 1.524 mm
+  (3×`rough_cut`), slope term reaching 2.929396 mm on a shallow flank; 368
+  resolved-stop rows and 850 entry-candidate rows captured as Stage 1's
+  differential-test ground truth.
 
 ## Pre-finish pass — where it sits, measured 2026-08-11
 
