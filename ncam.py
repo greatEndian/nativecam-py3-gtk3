@@ -3131,24 +3131,14 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
 
         TOOL_TABLE.load_table()
 
-        # find the catalog and menu file
-        catname = self.catalog_dir + '/menu-custom.xml'
-        cat_dir_name = search_path(search_warning.none, catname, CATALOGS_DIR)
-        if cat_dir_name is not None :
-            print(_('Using %s\n') % (catname))
-        else :
-            catname = self.catalog_dir + '/menu.xml'
-            cat_dir_name = search_path(search_warning.dialog, catname, CATALOGS_DIR)
-            print(_('Using default %(mnu)s,  no %(dir)s/menu-custom.xml found\n') %
-                  {'mnu':catname, 'dir':self.catalog_dir})
-        if cat_dir_name is None :
+        # find the catalog and menu file. Shared with the in-process restart
+        # rebuild (ncam_app_actions._rebuild_panel) via _load_catalog_xml, so
+        # both read the catalog the same way - see analysis/280.
+        try :
+            self.catalog = self._load_catalog_xml()
+        except RuntimeError as e :
+            print(str(e))
             sys.exit(1)
-
-        with open(cat_dir_name) as f:
-            mnu_xml = f.read()
-        mnu_xml = re.sub(r"_\(", "", mnu_xml)
-        mnu_xml = re.sub(r"\)_", "", mnu_xml)
-        self.catalog = etree.fromstring(mnu_xml)
 
         self.pref.read(self.catalog_dir)
         GLOBAL_PREF = self.pref

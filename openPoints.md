@@ -72,7 +72,6 @@ they appear in the file, roughly smallest/most self-contained first:
 - Negative stock to leave is not exposed, and fails SILENTLY past its bound
 - VALIDATION — the Z limits are only half validated
 - A cfg cannot CHANGE a parameter's minimum or maximum on an existing project
-- RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB
 - Does a mirrored insert really lose EVERY ramp on testing_15_9?
 - A neutral insert still defers to the roughing direction for its flank shadow
 - Should a ramp also be refused when the tool faces the right way but the surface is steeper than its front angle?
@@ -1940,29 +1939,48 @@ the two cuts only touch.
   greatEndian's call, not a guess.
 
 
-- [ ] **RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB** — greatEndian
-  2026-08-13: *"restart is working but it starts in separated window outside axis
-  ui"*. `96e91ec` fixed the HAL half; this is the X half. `analysis/048`.
-  - **Measured, not reasoned**: AXIS embeds the panel in
+- [x] **RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB — FIXED**, worker
+  branch `worker/restart-rebuild` (GUI worktree lane), `analysis/280`.
+  greatEndian 2026-08-13: *"restart is working but it starts in separated
+  window outside axis ui"*. `96e91ec` fixed the HAL half; `analysis/048`
+  scoped the X half; this built it.
+  - **Measured, not reasoned** (analysis/048): AXIS embeds the panel in
     `Tkinter.Frame(root_window, container=1, ...)`, and **Tk destroys a
     `container=1` frame when the window embedded in it goes away**. By the time
     the replacement runs, the XID on its command line is dead — `Gtk.Plug.new()`
     raises `BadWindow`, gladevcp swallows it under `Gdk.error_trap_push()`, and
-    the plug stays a toplevel. Reproduced under Xvfb: a plain `tk.Frame` survives
-    its child and a second process reparents in fine; a `container=1` frame is
-    `XERROR BadWindow` immediately after.
-  - **So no re-exec can ever reach the tab**, and AXIS exposes no way to rebuild
-    it: `load_gladevcp_panel()` runs once at startup with no re-entry point, and
-    AXIS tracks only the `halcmd loadusr` wrapper, which exits 0 at once.
-  - **The answer is an IN-PROCESS rebuild** — the point of the menu item is to
-    pick up changed `cfg/` and `catalogs/`, not to get a new pid. Scoped in
-    `analysis/048`: save the project, rebuild menus/toolbars from
-    `catalogs/<machine>/menu.xml`, reload the project through
-    `update_features` (the migration path that already exists), and leave the
-    plug, the HAL component and the preview pane alone. NOT built — it changes
-    the startup sequence and wants its own plan.
-  - The confirmation dialog now states what actually happens rather than only
-    that LinuxCNC is untouched.
+    the plug stays a toplevel. **So no re-exec can ever reach the tab.**
+  - **Fixed with an IN-PROCESS rebuild.** `action_restart_ncam`
+    (`ncam_app_actions.py`) no longer forks/execs/quits; it saves, then calls
+    a new `_rebuild_panel()`: re-parses the catalog via a new shared
+    `_load_catalog_xml()` (factored out of `NCam.__init__`, also used there),
+    rebuilds the menubar/toolbar/Add-dialog from it, and reloads the current
+    project through `update_features()` (the same migration path a normal
+    project open already uses) — the `Gtk.Plug`, HAL component and preview
+    pane are never touched. `create_actions()` is deliberately never called
+    again (it would connect a second accelerator handler per keystroke on
+    top of a same-name `GSimpleAction` replace) — proved by a call-count
+    instrument, not assumed. The old fork/exec `_spawn_relaunch` is removed
+    outright, not kept as a fallback: analysis/048 measured that no path
+    through it can ever land back in the tab.
+  - **Self-verified**, not embedded-in-real-AXIS (that step is still open,
+    see below): a new `test_restart_rebuild.py` harness proves, with a real
+    `ncam.NCam()` under Xvfb — a cfg edit and a catalog edit are picked up
+    on rebuild, 3 consecutive rebuilds of an unchanged project duplicate
+    nothing (action/menu/toolbar counts and `create_actions()`'s own call
+    count all flat), the project and its generated `ncam.ngc` sha1 survive
+    a rebuild byte-identical, and the process (pid) survives with a working
+    regenerate after. All PASS. `test_ui_panel.py` and `flake8` also pass;
+    `test_menu_layout.py` fails **only** in a fresh worktree missing the
+    main tree's accumulated `current_work.xml` (an unrelated, pre-existing,
+    documented worktree-fixture gap — proved by an A/B run, not assumed;
+    see analysis/280) and passes at the same worktree with the main tree's
+    project state copied in.
+  - **NOT YET DONE: confirmed inside real AXIS.** The worker could not do
+    this (no real LinuxCNC/AXIS session). greatEndian: click Utilities >
+    Restart NativeCAM in a real AXIS-embedded session, confirm the panel
+    stays in the tab (not a new toplevel window) and that a `.cfg`/catalog
+    edit made beforehand shows up after the click.
 
 - [x] **LEAD-OUT MISPLACED UNDER COMPENSATION — FIXED**, 2026-08-04,
   `analysis/009`. greatEndian's criterion: *"lead in and lead out can not end
@@ -4311,6 +4329,19 @@ Done from this scan: **15** separate X/Z stock to leave (`analysis/024`),
 ---
 
 ## Done
+
+- [x] **RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB — FIXED**, worker branch
+  `worker/restart-rebuild`, `analysis/280`. Replaced the fork/exec/quit
+  restart with an in-process rebuild: `_rebuild_panel()` re-parses the
+  catalog, rebuilds the menubar/toolbar/Add-dialog, and reloads the project
+  through `update_features()` — the plug, HAL component and preview pane are
+  never touched, and `create_actions()` is never called a second time (which
+  would double-connect accelerators). Old `_spawn_relaunch` removed outright.
+  Self-verified with a real `ncam.NCam()` under Xvfb (`test_restart_rebuild.py`):
+  cfg and catalog edits picked up, 3 consecutive rebuilds duplicate nothing,
+  the project and `ncam.ngc` sha1 survive unchanged, same pid throughout. NOT
+  verified inside real AXIS — the full entry (with the real-AXIS confirmation
+  steps) is still in place near line 1942 rather than duplicated here.
 
 - [x] **NATIVE: the pre-finish pass collapsed onto the finish contour** —
   2026-08-03. `tip_comp_dia` built D as `2*extra_r + nose_dia`, but with a

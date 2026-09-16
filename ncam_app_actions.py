@@ -460,59 +460,38 @@ class NCamAppActionsMixin:
 
 
     def action_restart_ncam(self, *_a):
-        """Restart the NativeCAM panel without touching LinuxCNC.
+        """Rebuild the NativeCAM panel in place, without touching LinuxCNC.
 
-        NativeCAM runs inside a GladeVCP panel embedded in AXIS - which is why
-        it can be replaced on its own. Killing AXIS to get a fresh panel also
-        stops the machine controller, and there is no reason for a stuck GUI to
-        cost that.
+        THE FIRST VERSION forked a detached child and exited so it could
+        re-exec, on the theory that a fresh process would reparent into
+        AXIS's embedding frame the way the first one did. Measured false in
+        analysis/048: AXIS embeds this panel in a Tk frame created with
+        `container=1`, and Tk DESTROYS such a frame the moment the window
+        embedded in it goes away. By the time any replacement process starts,
+        the XID it was given is already dead - Gtk.Plug.new() raises
+        BadWindow, gladevcp swallows it, and the panel comes back as its own
+        toplevel outside the tab. No re-exec can ever land back in the tab,
+        and AXIS exposes no way to rebuild the tab itself
+        (load_gladevcp_panel() runs once with no re-entry point) - so nothing
+        a replacement process does can fix this. The pid restart is gone
+        entirely, not kept as a fallback: analysis/280.
 
-        THE FIRST VERSION USED os.execv AND NEVER CAME BACK. The reasoning was
-        that keeping the pid keeps AXIS's embedding valid, so the panel returns
-        in the same place. Both halves of that were wrong, and in opposite
-        directions:
+        What "Restart NativeCAM" is actually for is picking up edited cfg/
+        and catalogs/ files, not a new pid - and that is reachable without
+        leaving this process at all. _rebuild_panel() re-parses the catalog,
+        rebuilds the menus/toolbars from it, and reloads the current project
+        through the same update_features() migration path a normal project
+        open already uses, so every feature re-reads its .cfg. The Gtk.Plug,
+        the HAL component and the preview pane are never touched.
 
-        - Keeping the pid was never needed. `gladevcp.xembed.reparent` does a
-          FORCED Xlib reparent of a Gtk.Plug into AXIS's Tk frame - not a
-          GtkSocket handshake. A Tk frame does not destroy itself when its
-          child window goes away, so the parent XID outlives the process and a
-          fresh one can reparent into it.
-        - Keeping the pid is what BROKE it. gladevcp releases its HAL component
-          in a `finally: halcomp.exit()`, and execv replaces the process image
-          without unwinding, so that never runs. HAL still sees the component
-          owned by a live pid - the SAME pid - and refuses to create it again.
-          gladevcp catches that and calls **sys.exit(0)**: silent, status 0, no
-          panel. Measured directly: `HAL: ERROR: duplicate component name`.
-
-        So the restart must let this process EXIT CLEANLY, and start the
-        replacement only afterwards. A detached child is forked first and
-        blocks reading a pipe whose only other end this process holds; when we
-        exit, every copy of that write end closes, the read returns EOF and the
-        child execs the original command line. No polling, and no pid-reuse
-        race - the pipe cannot report EOF early.
-
-        `sys.argv` is re-used verbatim because it still carries gladevcp's
-        `-x <XID>`, which is what puts the new panel back in AXIS's frame.
-
-        The project is saved first, and the restart is abandoned if that fails
-        - losing a feature tree to a convenience button would be a poor trade.
+        The project is saved first, and the rebuild is abandoned if that
+        fails - losing a feature tree to a convenience button would be a
+        poor trade.
         """
-        # The warning is not caution, it is a measured fact - see analysis/048.
-        # AXIS embeds this panel in a Tk frame created with `container=1`, and
-        # Tk DESTROYS such a frame when the window embedded in it goes away. So
-        # by the time the replacement starts, the XID it was given no longer
-        # exists: Gtk.Plug.new() on a dead window raises BadWindow, gladevcp
-        # swallows it under Gdk.error_trap_push(), and the panel comes up as its
-        # own toplevel. Nothing the replacement can do reaches the tab, and AXIS
-        # exposes no way to recreate it - load_gladevcp_panel() runs once at
-        # startup with no re-entry point.
         if not mess_yesno(_('Restart NativeCAM?\n\nThe current project is '
-                            'saved first. LinuxCNC and the machine are not '
-                            'touched.\n\nNOTE: the panel will reopen in its '
-                            'OWN WINDOW, not in the AXIS tab, and the tab will '
-                            'be left empty. AXIS destroys the tab when the '
-                            'panel exits and offers no way to rebuild it, so '
-                            'returning it to the tab needs LinuxCNC restarted.')):
+                            'saved first, then the panel is rebuilt in place '
+                            '- it stays in the AXIS tab. LinuxCNC and the '
+                            'machine are not touched.')):
             return
         try:
             self.action_saveCurrent()
@@ -520,48 +499,46 @@ class NCamAppActionsMixin:
             mess_dlg(_('Could not save before restarting:\n%s') % e)
             return
         try:
-            sys.stderr.write('[ncam] restarting NativeCAM\n')
-            sys.stderr.flush()
-            sys.stdout.flush()
-        except Exception:
-            pass
-        try:
-            self._spawn_relaunch()
+            self._rebuild_panel()
         except Exception as e:
             mess_dlg(_('Could not restart NativeCAM:\n%s') % e)
             return
-        # Quitting the main loop is what makes this work: it returns through
-        # gladevcp's `finally: halcomp.exit()`, which frees the HAL name the
-        # replacement needs. Killing the process instead would leave it held.
-        gtk.main_quit()
 
-    def _spawn_relaunch(self):
-        """Fork a detached child that re-runs our command line once we exit.
+    def _rebuild_panel(self):
+        """Rebuild menus/toolbars from the catalog and reload the project.
 
-        The child holds the read end of a pipe and blocks on it. The write end
-        is kept open here and nowhere else - Python 3 makes pipe fds
-        non-inheritable, so no subprocess we later spawn can hold it open - so
-        it closes exactly when this process dies, however it dies. The child
-        then execs and reparents into AXIS's frame.
+        Deliberately does NOT call create_actions() again: every action is a
+        Gio.SimpleAction added by name into self.gaction_group, and each one
+        also does self.accel_group.connect(key, mods, ...) for its
+        accelerator - calling create_actions() a second time would connect a
+        second accelerator handler for the same keystroke (both would fire),
+        even though the GSimpleAction itself is a same-name replace, not a
+        duplicate. Menu items look up "app.<name>" by string at activate
+        time, so leaving the actions alone and only rebuilding the widgets
+        that are catalog-driven is enough - see the blast-radius table in
+        analysis/280.
         """
-        if getattr(self, '_relaunch_fd', None) is not None:
-            return          # already armed; a second child would be a second panel
-        r, w = os.pipe()
-        pid = os.fork()
-        if pid == 0:                                   # the child
-            try:
-                os.close(w)
-                os.setsid()                            # survive our exit
-                while os.read(r, 1):                   # EOF when we are gone
-                    pass
-                os.close(r)
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            except Exception:
-                pass
-            os._exit(1)                                # never returns normally
-        os.close(r)
-        # held open deliberately, for as long as this process lives
-        self._relaunch_fd = w
+        self.catalog = self._load_catalog_xml()
+
+        self.get_toolbar_actions()
+        self.create_menubar()
+        self.create_nc_toolbar()
+        # catalog_src points into the OLD self.catalog tree; this re-derives
+        # it from the fresh one and repopulates the Add dialog's icon store
+        self.create_add_dialog()
+
+        self.menubar.show_all()
+        self.nc_toolbar.show_all()
+        # both create_* above pack_start (append) into main_box, which would
+        # otherwise strand the menubar/toolbar at the bottom of the window -
+        # restore_bar_order() is the same fix _apply_icon_colour already uses
+        self.restore_bar_order()
+
+        # re-reads every feature's .cfg through the same migration path a
+        # normal project open already uses (update_features); also resets
+        # the undo stack and current selection the same way opening any
+        # project does
+        self.load_currentWork()
 
     def action_preferences(self, *arg):
         old_quick_access_icon_size = ncam.quick_access_icon_size

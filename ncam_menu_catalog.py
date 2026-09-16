@@ -1,3 +1,7 @@
+import re
+
+from lxml import etree
+
 import ncam
 from ncam import (
     gtk, gdk, gobject, _, get_pixbuf, search_path, search_warning, mess_dlg,
@@ -6,6 +10,34 @@ from ncam import (
 
 
 class NCamMenuCatalogMixin:
+    def _load_catalog_xml(self):
+        """(Re)parse catalogs/<machine>/menu.xml (or menu-custom.xml).
+
+        Exactly the block NCam.__init__ used to have inline, factored out so
+        __init__ and the in-process restart rebuild (ncam_app_actions.py,
+        _rebuild_panel) read the catalog the same way and cannot drift.
+        Raises RuntimeError rather than exiting the process - __init__ still
+        wants a hard exit on failure, but the rebuild path must be able to
+        report a failure and leave the running panel exactly as it was.
+        """
+        catname = self.catalog_dir + '/menu-custom.xml'
+        cat_dir_name = search_path(search_warning.none, catname, CATALOGS_DIR)
+        if cat_dir_name is not None:
+            print(_('Using %s\n') % (catname))
+        else:
+            catname = self.catalog_dir + '/menu.xml'
+            cat_dir_name = search_path(search_warning.dialog, catname, CATALOGS_DIR)
+            print(_('Using default %(mnu)s,  no %(dir)s/menu-custom.xml found\n') %
+                  {'mnu': catname, 'dir': self.catalog_dir})
+        if cat_dir_name is None:
+            raise RuntimeError(_('No %s catalog file found') % catname)
+
+        with open(cat_dir_name) as f:
+            mnu_xml = f.read()
+        mnu_xml = re.sub(r"_\(", "", mnu_xml)
+        mnu_xml = re.sub(r"\)_", "", mnu_xml)
+        return etree.fromstring(mnu_xml)
+
     def _create_menu_item(self, _action, imgfile = None):
         # Modern GAction-bound menu item bypassing _action.create_menu_item() deprecations
         is_toggle = getattr(_action, '_is_toggle', False)
