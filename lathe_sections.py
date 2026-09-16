@@ -2728,6 +2728,7 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
     # 33.4671, a grid the windows do not share - and gate ONE could not see
     # them: no cut lands on an invented level, so "every cut level is on the
     # ladder" stayed true. The accounting gate caught them as a HOLE.
+    p1 = []
     if sect_mode != 1 and abs(top - start_r) > EPS:
         p1 = walk(start_r, top, p1_step, p1_first)
         if top_override is not None:
@@ -2739,9 +2740,23 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
                     break
             p1 = keep
         out.append((-1, p1))
+    # PHASE 1 ALREADY CUT ITS OWN CEILING RADIUS. p1's walk ends there -
+    # `out.append(r)` runs before the floor break - and every phase-2
+    # window's OWN walk starts there too: `lvl_start` is `p2_start`, which
+    # is this same `top` (or `top_override`, what p1 was truncated at).
+    # Emitting that shared boundary radius as the first level of window 0
+    # as well duplicates a whole pass - lead-in, full cut, lead-out, retract
+    # - cut once in metal and once in air. See analysis/21N. Phase 1 always
+    # finishes whatever level it last touches before handing over (058), so
+    # once p1 is non-empty its last radius needs no second visit.
+    p1_ceiling = p1[-1] if p1 else None
     for w in range(windows):
         lvl_start = start_r if sect_mode == 1 else p2_start
-        out.append((w, walk(lvl_start, step_target, p2_step, p2_first, True)))
+        radii = walk(lvl_start, step_target, p2_step, p2_first, True)
+        if (p1_ceiling is not None and radii
+                and abs(radii[0] - p1_ceiling) <= 0.002):
+            radii = radii[1:]
+        out.append((w, radii))
     return out
 
 

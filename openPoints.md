@@ -50,7 +50,6 @@ they appear in the file, roughly smallest/most self-contained first:
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
 - Timeline marks for collisions, and a Verification line in Stats
 - Collision detection is built and tested but not wired to the pane
-- Noted, not fixed: the front interval of the first blocked level is emitted twice
 - Two "halves" are choices, not measurements
 - The first stage still ends on a light cut
 - `leftovers()` models the stock from the moves it is given
@@ -3668,16 +3667,46 @@ concluded from the tables that nothing was missing. All three were wrong.
   - Validated both ways: FAILs with the fix reverted (`X34.5318 -> X33.5955 gap
     0.9363 at Z-37.5000`), passes with it applied, negative control fires.
 
-- [ ] **Noted, not fixed**: the front interval of the first blocked level is
-  emitted **twice** — identical moves, `34.0636 0.0000 -> -31.2092` here.
-  Pre-existing, follows whichever level is first blocked, costs an air-cutting
-  repeat rather than any wrong metal.
+- [x] **NOT REPRODUCIBLE, measured 2026-09-15, `analysis/210`**: the front
+  interval of the first blocked level was emitted **twice** — identical moves,
+  `34.0636 0.0000 -> -31.2092` here. testing_15_6 now shows **zero** duplicated
+  cutting moves, and its motion is byte-identical across the `analysis/210`
+  change (494 moves before and after), so this is not what that fix removed.
+  Plausibly closed by `analysis/036`/`058` on the same blocked path. If it
+  returns it needs a fresh reproduction, not the phase-1 ceiling fix.
 
 - **The lesson.** Three checks in a row looked at the passes that EXIST and
   found them regular. A missing pass is only visible if you ask which levels are
   ABSENT — dumping the whole ladder sorted by X, front and behind intervals side
   by side, showed it in one line. Prefer a measurement that enumerates what
   should be there over one that inspects what is.
+
+## Found and fixed 2026-09-15 — phase 1's ceiling level was cut twice
+
+- [x] **A WHOLE ROUGHING PASS WAS EMITTED TWICE ON THE CLEAN PATH**,
+  `analysis/210`. `roughing_ladder`'s phase-1 walk ends **at** the section
+  ceiling (`walk()` appends before the floor break), and every phase-2 window
+  starts its own walk at that same radius. `poly_lathe_mill`'s dedup flag
+  `_pl_ph1_front_cut` is only set on the OBSTRUCTION branch, so on a clean
+  sweep window 0 never learns the radius was already cut and repeats it —
+  lead-in, full cut, lead-out, retract, the second one entirely in air.
+  Measured on testing_9_6: X28.262 over Z0.0..−49.238, byte-identical, moves
+  13–16 and 17–20 of 182.
+  - Fixed in **Python only** — the emitted level table; `poly_lathe_mill.ngc`
+    untouched. Phase 2 drops a first level equal to phase 1's last within the
+    0.002 mm tolerance the function already uses.
+  - **46-project fingerprint: 39 identical, 7 changed**, and the 7 are exactly
+    the ones the duplicate sweep named. All 7 LOSE moves, none gains
+    (9_5 280→274, 9_6 182→178, 9_6_1 194→190, 9_8 188→184, 10 482→470,
+    11 490→478, 12_0 192→180 — the 12s are the multi-window projects).
+  - **No pass went missing**: distinct Z-cut level counts and top radii
+    identical before and after on every project. Controls byte-identical
+    (15_5 478, 15_6 494, blocked 114).
+  - `test_ceiling_dup.py` is the regression test and was validated against the
+    unfixed code — all 7 fail there, 10/10 pass fixed.
+  - Why no gate saw it: the repeat cuts air, so surface equality, x-continuity
+    and the leftover checks all stayed true. They ask whether what exists is
+    correct; none asked whether anything is emitted twice.
 
 ## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
