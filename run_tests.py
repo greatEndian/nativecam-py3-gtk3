@@ -57,6 +57,24 @@ PASS, PASSED_ON_RETRY, FAILED, TIMEOUT, KNOWN_FAIL, SKIPPED = (
     'PASS', 'PASSED ON RETRY', 'FAILED', 'TIMEOUT', 'KNOWN FAIL', 'SKIPPED')
 
 
+def tracked_state():
+    """`git status --porcelain` for TRACKED files, as a set, or None.
+
+    None means "cannot tell" (not a git tree, git missing) and disables the
+    check rather than inventing a verdict. Untracked files are excluded with
+    -uno: a driver writing a scratch file into the tree is untidy, not the
+    fault this guards against.
+    """
+    try:
+        r = subprocess.run(['git', 'status', '--porcelain', '-uno'],
+                           cwd=HERE, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode:
+        return None
+    return set(ln for ln in r.stdout.splitlines() if ln.strip())
+
+
 def discover(script_dir):
     names = sorted(f for f in os.listdir(script_dir)
                     if f.startswith('test_') and f.endswith('.py'))
@@ -130,12 +148,28 @@ def main():
         paths = [os.path.join(HERE, n) for n in names]
 
     results = []
+    dirtied = []
     for path in paths:
         name = os.path.basename(path)
         print('running %-32s' % name, end=' ', flush=True)
+        before = tracked_state()
         kind, times, tail = classify(name, path, args.timeout, known_fail)
+        after = tracked_state()
         results.append((name, kind, times, tail))
+        # A driver must not modify a TRACKED file. Compared as sets, so a tree
+        # that was already dirty before the run is not blamed on the driver -
+        # only paths this driver newly touched count. Earned 2026-09-16: a
+        # committed harness wrote into cfg/lathe/facing.cfg on every run
+        # because NCam's own startup re-symlinked its "scratch" copy back at
+        # the repo (analysis/212), and nothing in the suite noticed.
+        new_dirt = sorted(after - before) if (before is not None
+                                              and after is not None) else []
+        if new_dirt:
+            dirtied.append((name, new_dirt))
         suffix = (' - %s' % tail) if kind == FAILED and tail else ''
+        if new_dirt:
+            suffix += '  [DIRTIED TRACKED: %s]' % ', '.join(
+                d.strip() for d in new_dirt)
         print('%-16s (%s)%s' % (kind, fmt_times(times), suffix))
 
     print()
@@ -153,6 +187,16 @@ def main():
     print('  known fail:      %d  %s' % (len(buckets[KNOWN_FAIL]),
           ' '.join(buckets[KNOWN_FAIL])))
     print('  skipped:         %d  %s' % (len(skipped), ' '.join(skipped)))
+    print('  dirtied tree:    %d  %s' % (len(dirtied),
+          ' '.join(n for n, _ in dirtied)))
+
+    if dirtied:
+        print()
+        print('A DRIVER MODIFIED A TRACKED FILE. A test that edits the repo is '
+              'not testing an isolated copy, whatever it reports:')
+        for name, paths_ in dirtied:
+            for d in paths_:
+                print('    %-28s %s' % (name, d.strip()))
 
     if buckets[PASSED_ON_RETRY]:
         print()
@@ -161,7 +205,7 @@ def main():
               'anything else, that is the load artifact analysis/134 '
               'describes, not a fixed bug.')
 
-    exit_code = 1 if (buckets[FAILED] or buckets[TIMEOUT]) else 0
+    exit_code = 1 if (buckets[FAILED] or buckets[TIMEOUT] or dirtied) else 0
     sys.exit(exit_code)
 
 

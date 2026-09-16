@@ -48,6 +48,7 @@ they appear in the file, roughly smallest/most self-contained first:
 - `Accuracy` slider → `StockField.columns_for` (preview, tiny)
 - The stock datum offsets, it does not CLAMP
 - The preview's ini comes only from `INI_FILE_NAME`; `self.ini_file` is dead code (`analysis/211`)
+- Other harnesses building a real `NCam()` may also edit tracked `cfg`/`lib`/`graphics` — now gated by `run_tests.py` (`analysis/212`)
 - The "Both directions" negative result is qualified — its previews parsed no motion (`analysis/211`)
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
 - Timeline marks for collisions, and a Verification line in Stats
@@ -3774,6 +3775,30 @@ concluded from the tables that nothing was missing. All three were wrong.
   meaningful. The harness's own instrument validation is sound, and its 44
   `Timeout (0:00:25)!` entries are watchdog ticks, not hangs
   (`dump_traceback_later(25, repeat=True)`, 1112 s ÷ 25 ≈ 44.5).
+
+## Found and fixed 2026-09-16 — a harness's "scratch" cfg was the tracked repo
+
+- [x] **`test_restart_rebuild.py` EDITED TRACKED SOURCE ON EVERY RUN**,
+  `analysis/212`, fixed in `099be90` on `worker/restart-rebuild`. PROOF 1 made
+  a real scratch copy of `cfg/` at setup — then `ncam.NCam()` started, and
+  `update_user_tree` (`ncam_app_actions.py:115-143`) **deleted that copy and
+  symlinked `NCAM_DIR/cfg` back to `SYS_DIR/cfg`**, so the proof's "scratch"
+  write landed in the repo: `M cfg/lathe/facing.cfg`, version 1.27 → 2.27,
+  `PARAM_B_X` renamed. Caught with an audit hook — raw path scratch, realpath
+  tracked — after a replica of the setup alone proved the guard itself works.
+  PROOF 1 was therefore never testing an isolated copy. The rebuild feature is
+  unaffected (21 proofs pass; `_rebuild_panel` does not call
+  `update_user_tree`). Fix: copy after startup, plus a setup assertion.
+  - Note for any future harness: `SYS_DIR` is wherever `ncam.py` lives, so the
+    same code run in the MAIN tree edits the main tree's `cfg/`.
+
+- [x] **`run_tests.py` NOW FAILS ANY DRIVER THAT DIRTIES TRACKED FILES.**
+  Snapshots `git status --porcelain -uno` before and after each driver and
+  compares as SETS, so a tree that was already dirty is not blamed on a driver
+  and untracked scratch files do not trigger it. Validated both ways: a
+  throwaway control driver that exits 0 while editing `CAM-MAP.md` is reported
+  `[DIRTIED TRACKED: M CAM-MAP.md]` and the run exits 1, while the
+  pre-existing `M run_tests.py` was correctly not attributed to it.
 
 ## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
