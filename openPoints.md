@@ -48,6 +48,7 @@ they appear in the file, roughly smallest/most self-contained first:
 - `Accuracy` slider → `StockField.columns_for` (preview, tiny)
 - The stock datum offsets, it does not CLAMP
 - The preview's ini comes only from `INI_FILE_NAME`; `self.ini_file` is dead code (`analysis/211`)
+- `write_ngc()` is not atomic and the preview reads the live path — regenerate can truncate the file mid-read (`analysis/213`, NEEDS A CALL)
 - Other harnesses building a real `NCam()` may also edit tracked `cfg`/`lib`/`graphics` — now gated by `run_tests.py` (`analysis/212`)
 - The "Both directions" negative result is qualified — its previews parsed no motion (`analysis/211`)
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
@@ -3803,6 +3804,30 @@ concluded from the tables that nothing was missing. All three were wrong.
   throwaway control driver that exits 0 while editing `CAM-MAP.md` is reported
   `[DIRTIED TRACKED: M CAM-MAP.md]` and the run exits 1, while the
   pre-existing `M run_tests.py` was correctly not attributed to it.
+
+## Found 2026-09-16 — Regenerate truncates the file the preview is reading
+
+- [ ] **`write_ngc()` IS NOT ATOMIC, AND THE PREVIEW READS THE LIVE PATH**,
+  `analysis/213`. `ncam_app_actions.py:909` does `open(fname, "w")` — which
+  truncates `ncam.ngc` at once — then writes ~2270 lines, while
+  `ncam_preview_ui.py:534` parses **that same path** on a worker thread.
+  `refresh()`'s `_busy`/`_pending` guard only stops queueing interpreter runs;
+  it does not stop the next regenerate truncating the file under a reader.
+  - **Measured, not reasoned**: in the second crash hunt (previews genuinely
+    parsing, 163 ok), 2 of 165 failed with `File ended with no percent sign
+    (%) or program end (M2) | o<poly_lathe_mill> endsub` — `rs274` hitting EOF
+    mid-subroutine, steps ~22 and ~108 on testing_15_7, each recovering on the
+    next pass. A truncated FILE, not a bad program.
+  - **Candidate cause of the standing "BOTH DIRECTIONS + REGENERATE CRASHES,
+    AND IT IS RANDOM"** — intermittent, timing-dependent, tied to regenerate,
+    and probably not specific to Both directions (that setting just widens the
+    window). **NOT proof**: a truncated parse shows `Preview: <error>` in the
+    status line, not a dead panel. **NEEDS A CALL** — greatEndian, when it
+    "crashes", does the panel vanish, does AXIS die, or does it show an error?
+  - Fix not applied, and it is your call because it touches the live generated
+    file: write a temp file and `os.replace()` it (smaller, fixes every reader
+    including LinuxCNC loading the file), and/or have the preview parse a
+    snapshot.
 
 ## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
