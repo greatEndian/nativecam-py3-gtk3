@@ -71,6 +71,16 @@ real intermittent fault and the best candidate yet, but whether it is *the*
 crash needs either a captured traceback or greatEndian saying what "crashes"
 looks like: does the panel vanish, does AXIS die, or does it show an error?
 
+**ANSWERED, 2026-09-16 — and the answer rules this out as the cause.**
+greatEndian: *"it many times crash line disappearing everyhing"* — the
+panel/line **disappears**. This race cannot do that: `parse_program` puts
+failures in `.error` rather than raising (`ncam_preview.py:261`), `_worker`
+catches nothing fatal, and the pane simply draws the error text. So the torn
+read is a **separate** fault. It is still being fixed (greatEndian: *"go
+#3"*), because a truncated `ncam.ngc` also reaches LinuxCNC when it loads the
+file — but the disappearing-panel crash remains open and unexplained, and no
+one should treat this fix as having addressed it.
+
 ## Why no earlier run could have seen it
 
 The first hunt (`c3c678d`) never parsed motion at all — every one of its 197
@@ -78,7 +88,45 @@ interpreter runs aborted at the first o-word (`analysis/211`), so a truncated
 read was indistinguishable from the constant failure. Only a run whose
 previews genuinely succeed can show two of them failing.
 
-## Proposed fix, not applied
+## APPLIED, 2026-09-16 — greatEndian: *"go #3"*
+
+`atomic_write.write_atomic()` (new module, GTK-free and importing nothing from
+`ncam`, the `lathe_sections.py` shape) writes a temp file **in the target's own
+directory** — `os.replace` is only atomic within one filesystem — `fsync`s it,
+reapplies the existing file's mode, and `os.replace`s it into place. Created
+with a plain `open()` rather than `mkstemp`, whose 0600 would have silently
+downgraded `ncam.ngc` from 644; the temp file is removed if anything fails.
+
+Wired at the two paths a *second* reader consumes concurrently:
+`write_ngc()` (`ncam_app_actions.py:931`) and the flat listing handed straight
+to `send_to_linuxcnc` (`:204`).
+
+**`test_atomic_write.py`, validated both ways** — the negative control runs the
+same reader against a copy of the old non-atomic write, because a race test
+that cannot catch the original bug proves nothing (`analysis/127`):
+
+```
+control (old non-atomic write): 13718 reads, 12824 torn
+atomic write:                   11850 reads,     0 torn
+```
+
+Also asserted: mode stays 644, no temp litter left beside the target, and a
+write into a missing directory raises rather than half-succeeding.
+
+Gates: flake8 `rc=0`, `cam_map rc=0`, `run_tests.py` 4/4 with `dirtied tree:
+0`, and **46/46 projects fingerprint-identical** — this changes only *how* the
+file is written, never its content, and that run exercised `write_ngc`
+end-to-end 46 times.
+
+## Consumer survey — why only those two files
+
+Every other `open(..., 'w')` in the project writes something no second process
+reads while it is being written: `M123` is created once at startup and only
+when absent (`ncam.py:3296`), and the rest are preferences, cfg and project
+saves read by NativeCAM itself on demand. Making those atomic would be churn,
+not a fix.
+
+## The original proposal, for the record
 
 Either or both, and it is greatEndian's call because it touches the live
 generated file everything else depends on:

@@ -48,7 +48,6 @@ they appear in the file, roughly smallest/most self-contained first:
 - `Accuracy` slider → `StockField.columns_for` (preview, tiny)
 - The stock datum offsets, it does not CLAMP
 - The preview's ini comes only from `INI_FILE_NAME`; `self.ini_file` is dead code (`analysis/211`)
-- `write_ngc()` is not atomic and the preview reads the live path — regenerate can truncate the file mid-read (`analysis/213`, NEEDS A CALL)
 - Other harnesses building a real `NCam()` may also edit tracked `cfg`/`lib`/`graphics` — now gated by `run_tests.py` (`analysis/212`)
 - The "Both directions" negative result is qualified — its previews parsed no motion (`analysis/211`)
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
@@ -3807,7 +3806,18 @@ concluded from the tables that nothing was missing. All three were wrong.
 
 ## Found 2026-09-16 — Regenerate truncates the file the preview is reading
 
-- [ ] **`write_ngc()` IS NOT ATOMIC, AND THE PREVIEW READS THE LIVE PATH**,
+- [x] **FIXED 2026-09-16 — `write_ngc()` IS NOW ATOMIC** (greatEndian: *"go
+  #3"*). New GTK-free `atomic_write.write_atomic()`: temp file in the target's
+  own directory, `fsync`, mode preserved (a plain `open()`, not `mkstemp`'s
+  0600), then `os.replace`. Wired at both paths a second reader consumes -
+  `write_ngc` and the flat listing sent to LinuxCNC. `test_atomic_write.py`
+  validated BOTH ways: the old write tore **12824 of 13718** reads, the new
+  one **0 of 11850**. 46/46 fingerprint-identical, so content is untouched.
+  Every other `open(...,'w')` in the project was surveyed and has no
+  concurrent reader (`M123` is written once at startup when absent). The
+  original finding follows.
+
+- [x] **`write_ngc()` WAS NOT ATOMIC, AND THE PREVIEW READS THE LIVE PATH**,
   `analysis/213`. `ncam_app_actions.py:909` does `open(fname, "w")` — which
   truncates `ncam.ngc` at once — then writes ~2270 lines, while
   `ncam_preview_ui.py:534` parses **that same path** on a worker thread.
@@ -3821,9 +3831,13 @@ concluded from the tables that nothing was missing. All three were wrong.
   - **Candidate cause of the standing "BOTH DIRECTIONS + REGENERATE CRASHES,
     AND IT IS RANDOM"** — intermittent, timing-dependent, tied to regenerate,
     and probably not specific to Both directions (that setting just widens the
-    window). **NOT proof**: a truncated parse shows `Preview: <error>` in the
-    status line, not a dead panel. **NEEDS A CALL** — greatEndian, when it
-    "crashes", does the panel vanish, does AXIS die, or does it show an error?
+    window). **NOT the reported crash — ANSWERED 2026-09-16.** greatEndian:
+    *"it many times crash line disappearing everyhing"* — the panel/line
+    VANISHES. A torn read only sets `tp.error` and shows `Preview: <error>`
+    in the status line; it never takes the panel down. So this race is a
+    **separate real fault**, being fixed on its own merits, and the
+    "BOTH DIRECTIONS + REGENERATE CRASHES" hunt stays open with its original
+    symptom: everything disappears.
   - Fix not applied, and it is your call because it touches the live generated
     file: write a temp file and `os.replace()` it (smaller, fixes every reader
     including LinuxCNC loading the file), and/or have the preview parse a

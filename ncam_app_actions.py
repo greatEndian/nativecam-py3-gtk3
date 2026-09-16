@@ -5,6 +5,7 @@ import subprocess
 import time
 import webbrowser
 
+import atomic_write
 import lathe_comp
 import tkinter as Tkinter
 
@@ -200,8 +201,7 @@ class NCamAppActionsMixin:
             return
         fname = os.path.join(ncam.NGC_DIR, FLAT_FILE)
         try :
-            with open(fname, 'w') as f :
-                f.write(flat)
+            atomic_write.write_atomic(fname, flat)
         except Exception as e :
             mess_dlg(_('Could not write %(filename)s:\n\n%(err)s')
                      % {'filename': FLAT_FILE, 'err': str(e)})
@@ -923,8 +923,12 @@ class NCamAppActionsMixin:
         except Exception:
             return None
         fname = os.path.join(ncam.NGC_DIR, GENERATED_FILE)
-        with open(fname, "w") as f:
-            f.write(self.to_gcode())
+        # Atomic, because a Regenerate can land while the preview's rs274 -
+        # or LinuxCNC, which is handed this path by name - is still reading
+        # it, and a plain open(..., "w") truncates at open() and only then
+        # refills. analysis/213 measured 2 of 165 preview parses dying on EOF
+        # mid-subroutine from exactly that.
+        atomic_write.write_atomic(fname, self.to_gcode())
         return fname
 
     def send_to_linuxcnc(self, fname = None) :
