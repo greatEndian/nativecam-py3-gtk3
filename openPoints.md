@@ -2999,6 +2999,14 @@ validation ones.
   independent of any tool nose today. Do not lower the cfg minimum without
   that decision.
 
+  **Decided 2026-09-16: held, not scheduled.** Exposing this isn't a
+  parameter-bounds edit — roughing (`poly_lathe_mill.ngc` +
+  `lathe_level_pass.ngc`) has no floor concept that can express "past the
+  model, but only as far as the nose lets you," so lowering the cfg minimum
+  alone would let the UI accept a value roughing can't honour correctly. That
+  needs its own `/spec-builder` pass (new floor computation, its own
+  46-project verification) before the cfg minimum moves. Not queued yet.
+
 - [ ] **Intermediate finish passes under Native comp use the radial value
   alone.** `G41.1 D` is a single number. Only bites with Passes > 1 AND Native;
   the final pass is offset 0 and the pre-finish traces a Python table, so both
