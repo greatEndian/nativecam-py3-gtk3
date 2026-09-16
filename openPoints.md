@@ -35,7 +35,10 @@ one "NEEDS A CALL" corrected to reflect a call already made.
 
 **Counts** (top-level entries only; nested sub-items are not separately
 indexed): **162 done**, **20 blocked** (on greatEndian, on ID work resuming,
-or on a real-machine test), **38 genuinely open and unblocked**, **8** in the
+or on a real-machine test), **36 genuinely open and unblocked** — counted from
+the bullets below on 2026-09-16, not carried forward from an older figure;
+five Simulation entries that `24c0b80` ticked in the body had been left
+standing in this index and were removed — **8** in the
 `[~]` verified-not-wired state (one ongoing staged migration, not separately
 actionable items), **3** informational/documented findings with no action
 pending, **1** watch item (nothing to do until it recurs).
@@ -43,16 +46,12 @@ pending, **1** watch item (nothing to do until it recurs).
 **Genuinely open and unblocked — what a worker can pick up next**, titled as
 they appear in the file, roughly smallest/most self-contained first:
 
-- Programmed Point toggle (preview, tiny)
-- Regenerate on rewind as an option (preview, tiny)
-- `Accuracy` slider → `StockField.columns_for` (preview, tiny)
 - The stock datum offsets, it does not CLAMP
 - The preview's ini comes only from `INI_FILE_NAME`; `self.ini_file` is dead code (`analysis/211`)
+- `openpoints_check.py` never compares this INDEX against the entry bodies — five ticked entries sat here as open
 - Other harnesses building a real `NCam()` may also edit tracked `cfg`/`lib`/`graphics` — now gated by `run_tests.py` (`analysis/212`)
 - The "Both directions" negative result is qualified — its previews parsed no motion (`analysis/211`)
 - A 0.0042 mm rapid overlap survives on roughing direction 1 (trivial, low value)
-- Timeline marks for collisions, and a Verification line in Stats
-- Collision detection is built and tested but not wired to the pane
 - Two "halves" are choices, not measurements
 - The first stage still ends on a light cut
 - `leftovers()` models the stock from the moves it is given
@@ -3842,6 +3841,25 @@ concluded from the tables that nothing was missing. All three were wrong.
     file: write a temp file and `os.replace()` it (smaller, fixes every reader
     including LinuxCNC loading the file), and/or have the preview parse a
     snapshot.
+
+## Found 2026-09-16 — the staleness checker does not check the index
+
+- [ ] **`openpoints_check.py` COMPARES ENTRY BODIES AGAINST `analysis/`, NEVER
+  THE INDEX LIST AGAINST THE BODIES.** Found by reading the index out to
+  greatEndian: **five** entries sat in "genuinely open and unblocked" that the
+  body had ticked `[x]` on 2026-09-13 in `24c0b80` — the three tiny preview
+  ones (Programmed Point, Regenerate on rewind, `Accuracy` slider) and the two
+  collision ones (timeline marks/Stats line, collision detection wiring). The
+  checker reported "no high-confidence staleness" throughout, because every
+  one of those bodies is correct and carries its evidence; only the index was
+  wrong. Count corrected 38 → 33 and the five bullets removed here.
+  - The irony is the point: `analysis/240` built this tool because
+    `openPoints.md` goes stale, and the index is the part a reader trusts
+    first — it is the file's own summary of what is left.
+  - A C-check comparing each index bullet against the `[ ]`/`[x]` state of the
+    entry it names would have caught all five in one pass. Not built; it needs
+    a way to match a bullet to its entry, which is why it was not done here as
+    a drive-by.
 
 ## Gap 1, front tool clearance — WARNING WIRED, toolpath still open, 2026-08-13
 
