@@ -4274,8 +4274,23 @@ def offset_contour(points, nose_r, orient, side=1, extra=0.0, extra_z=None):
     """
     if extra_z is None:
         extra_z = extra
-    if not points or len(points) < 2 or nose_r + max(extra, extra_z) <= EPS:
+    if not points or len(points) < 2:
         return list(points)
+    total_extra = max(extra, extra_z)
+    if nose_r <= EPS and total_extra <= EPS:
+        # no nose and no allowance requested at all - the established no-op,
+        # not the bound below (build_prefinish_contour_gcode relies on
+        # nose_r=0.0 with a REAL positive extra still offsetting normally)
+        return list(points)
+    if nose_r + total_extra <= EPS:
+        # extra asked for more retreat than the nose has to give. Silently
+        # returning the untouched profile here reads as "0.0 offset applied"
+        # with no sign anything was refused - openPoints.md 2026, measured
+        # -0.40/-0.50 with a 0.4 nose both landing here with no warning.
+        raise ValueError(
+            'offset_contour: extra %.4f (extra_z %.4f) exceeds what a %.4f '
+            'nose allows - the bound is extra > %.4f (-nose_r); the request '
+            'cannot be honoured' % (extra, extra_z, nose_r, -nose_r))
     roll = nose_r + extra
 
     off = NOSE_OFFSET[orient] if 0 < orient < len(NOSE_OFFSET) else None

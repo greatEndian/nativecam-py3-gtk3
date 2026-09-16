@@ -69,7 +69,7 @@ they appear in the file, roughly smallest/most self-contained first:
   `taper` half only — `taper_id`/`boring` are ID, blocked)
 - `turning` and `radius_od` have no Tool nose comp parameter at all
 - A front or back angle over 90° still has no defined contour
-- Negative stock to leave is not exposed, and fails SILENTLY past its bound
+- Negative stock to leave is not exposed (guard now refuses loudly past its bound — analysis/260; exposure itself is still open)
 - VALIDATION — the Z limits are only half validated
 - A cfg cannot CHANGE a parameter's minimum or maximum on an existing project
 - RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB
@@ -2982,14 +2982,22 @@ is not, and it is the one to look at.
 Everything left open from `analysis/024` and `analysis/025`, including the
 validation ones.
 
-- [ ] **Negative stock to leave is not exposed, and fails SILENTLY past its
-  bound.** `offset_contour` already cuts past the model correctly down to
-  `extra > -nose_r` — measured −0.10 → −0.1000 and −0.39 → −0.3900 with a 0.4
-  nose. At −0.40 and −0.50 the guard returns the profile unchanged: **ask for
-  0.5 past the model and get 0.0, with no warning.** The cfg minimum is 0.0 so
-  it is unreachable today. Exposing it needs the bound enforced loudly and a
-  decision about roughing, which cannot hold a negative allowance without a
-  nose.
+- [x] **The silent-failure half — `offset_contour` now refuses loudly past its
+  bound**, `analysis/260`. At `extra <= -nose_r` it used to return the
+  profile unchanged with no warning (measured −0.40 and −0.50 with a 0.4
+  nose, both silently 0.0); it now raises `ValueError` naming the bound and
+  the value asked for. `extra > -nose_r` is unaffected (−0.10 → −0.1000,
+  −0.39 → −0.3900, still correct), and the established `nose_r=0, extra=0`
+  no-op is unaffected too. Motion fingerprint 46/46 identical — every
+  project is still bounded to `extra >= 0.0` by the cfg minimum, so none of
+  them could reach the changed branch either way.
+
+- [ ] **The exposure half remains open — greatEndian's call, not done here.**
+  The cfg minimum is still 0.0, so a negative allowance stays unreachable
+  from the UI. Exposing it needs a decision about roughing, which cannot
+  hold a negative allowance without a nose — roughing levels are computed
+  independent of any tool nose today. Do not lower the cfg minimum without
+  that decision.
 
 - [ ] **Intermediate finish passes under Native comp use the radial value
   alone.** `G41.1 D` is a single number. Only bites with Passes > 1 AND Native;
