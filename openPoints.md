@@ -3065,11 +3065,16 @@ validation ones.
   does not block. **No test may exercise a severity-1 validation**, which is
   why the crossed-limits check is untested.
 
-- [ ] **VALIDATION — the Z limits are only half validated.** The crossed case
-  is refused. NOT checked: a limit that falls outside the profile entirely (it
-  silently does nothing), and limits that leave too little to machine. Both
-  need the resolved profile, which the block cannot have — they belong in the
-  `[AFTER]` block or in Python at generation time.
+- [x] **VALIDATION — the Z limits are only half validated — DONE**,
+  2026-09-16, `analysis/250`. `z_limit_span.py` (new module, one writer other
+  than `lathe_sections.py`) catches both: a limit outside the profile
+  entirely, naming the typed value and the profile's true Z range; and limits
+  leaving less than `2*nose_r + rough_cut` to machine, geometry-derived not a
+  magic number. Wired into `polyline.cfg`'s `[AFTER]` (version 1.76 → 1.77),
+  as `(WARNING ...)` G-code comments — no `msg_inv`, so headless-safe and
+  unit-tested with plain `python3` (`test_z_limit_span.py`). Migration proved
+  on testing_15_5.xml (stored version 1.43). Fingerprint: 46/46 identical —
+  comment-only, no motion change.
 
 - [~] **THE BLOCKED DECISION IS IN PYTHON AND PROVED CALL FOR CALL** —
   2026-09-03, `analysis/082`. `lathe_sections.level_blocked()` returns what

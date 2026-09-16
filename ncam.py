@@ -2951,6 +2951,7 @@ if __name__ == '__main__' :
 
 import lathe_comp
 import lathe_sections
+import z_limit_span
 from ncam_feature_tree import NCamFeatureTreeMixin
 from ncam_project_io import NCamProjectIOMixin
 from ncam_ui_chrome import NCamUIChromeMixin
