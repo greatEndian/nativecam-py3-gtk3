@@ -34,8 +34,8 @@ the exact stale entries that prompted it), one stale duplicate block removed,
 one "NEEDS A CALL" corrected to reflect a call already made.
 
 **Counts** (top-level entries only; nested sub-items are not separately
-indexed): **161 done**, **20 blocked** (on greatEndian, on ID work resuming,
-or on a real-machine test), **39 genuinely open and unblocked**, **8** in the
+indexed): **162 done**, **20 blocked** (on greatEndian, on ID work resuming,
+or on a real-machine test), **38 genuinely open and unblocked**, **8** in the
 `[~]` verified-not-wired state (one ongoing staged migration, not separately
 actionable items), **3** informational/documented findings with no action
 pending, **1** watch item (nothing to do until it recurs).
@@ -73,7 +73,6 @@ they appear in the file, roughly smallest/most self-contained first:
 - `turning` and `radius_od` have no Tool nose comp parameter at all
 - A front or back angle over 90° still has no defined contour
 - Negative stock to leave is not exposed (guard now refuses loudly past its bound — analysis/260; exposure itself is still open)
-- VALIDATION — the Z limits are only half validated
 - A cfg cannot CHANGE a parameter's minimum or maximum on an existing project
 - RESTART NATIVECAM LANDS OUTSIDE THE AXIS TAB
 - Does a mirrored insert really lose EVERY ramp on testing_15_9?
