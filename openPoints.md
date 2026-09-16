@@ -534,6 +534,26 @@ the two cuts only touch.
   concurrent reader see either the whole old file or the whole new one,
   never a splice.
 
+  Both instances, exact log positions (`/tmp/crash_hunt_main_relay2.log`,
+  seed 42, `testing_15_7.xml` both times):
+  - **step 22/250** — rs274 started before step 19 (`t≈243.4s`), four more
+    `action_regen()` cycles landed at steps 19-22 (`t=250.1`-`261.6s`) while
+    it was still reading; `rs274` exited `rc=1` at `t=261.944s`;
+    `moves=486 error='...o<poly_lathe_mill> endsub'` logged at `t=268.747s`.
+  - **step 108/250** — same shape, `rs274` exited `rc=1` at `t=634.921s`;
+    `moves=470` (same error) logged at `t=640.566s`.
+
+  Both landed on the **shortest** delays in the set (0/5/15 ms) that keep the
+  next edit's `action_regen()` firing before the previous preview's `rs274`
+  finishes - consistent with the torn-read theory, since those are exactly
+  the delays that let a write land mid-read. The harness does not currently
+  log which delay fired each step (`crash_hunt_both_dir.py:599-600`,
+  `rng.choice(DELAYS_MS)` unlogged); could deliberately raise the hit rate by
+  restricting `DELAYS_MS` to only `[0, 5, 15]` for a dedicated run, or by
+  logging the chosen delay per step so future runs can correlate directly
+  instead of reading it off timestamps. Not done here - out of scope for the
+  crash-hunt task, which was hunting the reported GUI crash, not this race.
+
 ## Changed 2026-08-26 — Skip short roughing passes is a typed length
 
 - [x] **IT WAS A BOOL RESOLVING TO ONE FIXED LIMIT; IT IS A THRESHOLD NOW.**
