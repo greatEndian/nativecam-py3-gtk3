@@ -465,7 +465,15 @@ def prove_preview_parses(app, ncam_mod, gtk, proj_dir):
         # action_regen() returns, and _done() clears it when the worker
         # thread's result lands via idle_add.
         app.action_regen()
-        landed = wait_for_preview(app, gtk, timeout_s=60)
+        # SONNET-LANES.md: another lane's rs274 use under the same shared
+        # /tmp/ncam-rs274.lock queues this one behind it rather than racing
+        # it, and a long GEOMETRY sweep can hold the lock for minutes -
+        # measured live during this task: a concurrent
+        # test_motion_fingerprint.py run made one gate rs274 call take 112 s
+        # against 10.9 s uncontended. 600 s absorbs that instead of misreading
+        # contention as a broken fix (analysis/134, analysis/230's false-FAIL
+        # shape).
+        landed = wait_for_preview(app, gtk, timeout_s=600)
 
         tp = app.preview_pane.toolpath
         moves = len(tp.moves) if (tp is not None and tp.moves) else 0
