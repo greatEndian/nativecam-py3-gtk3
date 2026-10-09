@@ -19,7 +19,7 @@ not left to be remembered.
   says what the choice is between. Nothing gets guessed twice.
 - Numbers, not adjectives: if something is wrong by 9.73 mm, say 9.73 mm.
 
-Branch: `liveTooling`. Last pushed: `d6aae05`.
+Branch: `liveTooling`. Last pushed: `5bddd32` (checked 2026-10-05).
 
 ---
 
@@ -35,8 +35,9 @@ one "NEEDS A CALL" corrected to reflect a call already made.
 
 **Counts** (top-level entries only; nested sub-items are not separately
 indexed): **162 done**, **20 blocked** (on greatEndian, on ID work resuming,
-or on a real-machine test), **36 genuinely open and unblocked** — counted from
-the bullets below on 2026-09-16, not carried forward from an older figure;
+or on a real-machine test), **37 genuinely open and unblocked** — counted from
+the bullets below on 2026-09-16 (36), plus the stale-branch entry added
+2026-10-05 (`analysis/310`), not carried forward from an older figure;
 five Simulation entries that `24c0b80` ticked in the body had been left
 standing in this index and were removed — **8** in the
 `[~]` verified-not-wired state (one ongoing staged migration, not separately
@@ -83,6 +84,8 @@ they appear in the file, roughly smallest/most self-contained first:
 - Still unexercised, and each needs a part to settle it (`sect_top_r` sites 2/3, `band=0`, the stop-contour reach clamp)
 - 12 — rest machining — MEASURED, not built (a real design, larger than the gap description implies)
 - The ramp and stop machinery is still runtime O-code (`s_reach`, the slope term, the flat-boundary clamp — a big, well-scoped Python-migration item; migration plan now at `analysis/300`)
+- Two stale branches to remove once greatEndian says so: `crash-hunt-relay` and `worktree-agent-a4a1768ec665006c8` (`analysis/310`)
+- The app records nothing when it dies: no `faulthandler`, no GDK log file. A nested item under the blocked crash entry, but itself unblocked (`analysis/310`)
 
 **Blocked** (on greatEndian's decision, on ID work resuming, or on a
 real-machine test — not available work): STILL OPEN on the X wall · "BOTH
@@ -113,6 +116,19 @@ SINGLE missing pass on most geometry, and that stands (accepted limitation,
 it recurs.
 
 ---
+
+## Found 2026-10-05 — session 7 orientation, `analysis/310`
+
+- [ ] **Two stale branches to remove, once greatEndian says so.**
+  `crash-hunt-relay` (`01029f3`, with its worktree under
+  `.claude/worktrees/agent-a4a1768ec665006c8`) is fully contained in
+  `worker/crash-hunt`. `worktree-agent-a4a1768ec665006c8` is 465 commits
+  behind `liveTooling` and carries only two `.gitignore` commits. Both exist
+  on origin too, so removing them means deleting on the remote, which is
+  greatEndian's call. Separately, `worker/restart-rebuild` and
+  `worker/crash-hunt` both merge into `liveTooling` without conflicts
+  (`git merge-tree`, 2026-10-05). Merging them is still waiting on
+  greatEndian's word.
 
 ## Found 2026-09-11 — unit-test worker, geometry coverage sweep
 
@@ -424,6 +440,14 @@ the two cuts only touch.
   NativeCAM or AXIS. **Needs the Python traceback from the terminal that
   launched linuxcnc, captured when it actually happens** - without it any fix
   is a guess, and two GUI guesses have already been wrong this week.
+  - [ ] **THE APP RECORDS NOTHING WHEN IT DIES** — 2026-10-05, `analysis/310`.
+    A grep finds no `faulthandler`, no GLib/GDK log handler and no core-dump
+    setting anywhere in the app. A fault below Python (GTK/GDK/Xlib), which
+    fits a panel that vanishes with no traceback, leaves no trace unless
+    someone is watching the terminal. Proposed, not built (ask first, it
+    touches `ncam.py`): `faulthandler` plus a GDK log handler, both writing
+    to a file at startup. Gate: a segfaulting child leaves its traceback in
+    the log, and the fingerprint stays 46/46 identical.
 
 ## Changed 2026-08-26 — Skip short roughing passes is a typed length
 
