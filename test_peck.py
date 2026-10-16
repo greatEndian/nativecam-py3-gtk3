@@ -30,6 +30,7 @@ be untouched. A feature that quietly alters every existing project is worse than
 a feature that is missing.
 """
 import os
+import fcntl
 import shutil
 import subprocess
 import sys
@@ -64,7 +65,9 @@ def run(sets):
         subprocess.run(cmd, capture_output=True, text=True)
         if not os.path.isfile(out):
             return None
-        tp = P.parse_program(out, INI)
+        with open('/tmp/ncam-rs274.lock', 'a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            tp = P.parse_program(out, INI)
         if tp.error:
             return None
         mv = [m for m in tp.moves if m.op == 'Lathe Polyline'
@@ -96,10 +99,13 @@ def dwells(sets):
         subprocess.run(cmd, capture_output=True, text=True)
         if not os.path.isfile(out):
             return None
-        r = subprocess.run(['rs274', '-g', '-b', '-i', INI, out],
-                           capture_output=True, text=True,
-                           cwd=os.path.dirname(INI), timeout=300)
-        return sum(1 for ln in r.stdout.splitlines() if 'DWELL' in ln.upper())
+        import ncam_preview as P
+        with open('/tmp/ncam-rs274.lock', 'a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            tp = P.parse_program(out, INI)
+        if tp.error or not tp.completed:
+            return None
+        return len(tp.dwells)
     except Exception:
         return None
     finally:
@@ -180,7 +186,7 @@ def main():
 
     # --- the dwell -------------------------------------------------------
     # It must add TIME and no motion: same moves, same travel, same reach.
-    # And it must happen once per peck, which is counted from the interpreter's
+    # It happens only after each retract, counted from the interpreter's
     # own canon output rather than the file - the G4 lives in the SUBROUTINE,
     # so grepping the generated program finds nothing and proves nothing.
     dw = run(['polyline:param_peck_len=%s' % PECK,
@@ -207,7 +213,7 @@ def main():
         print('SKIP  dwell count needs rs274')
     else:
         pecks = int(round((on['travel'] - off['travel']) / (2.0 * RET)))
-        check('   and it dwells exactly once per peck',
+        check('   and it dwells exactly once per retracting peck',
               n_dw - n_base == pecks,
               '%d dwells for %d pecks (%d in the program without a dwell)'
               % (n_dw - n_base, pecks, n_base))

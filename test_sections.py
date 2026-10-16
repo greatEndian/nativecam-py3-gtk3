@@ -572,6 +572,7 @@ def test_table_layout():
     regions = [('level ladder', L.LVL_BASE, L.LVL_TOP),
                ('ramp directions', L.ERAMP_BASE, L.ERAMP_TOP),
                ('flank envelope', L.FLANK_BASE, L.FLANK_TOP),
+               ('continuous short-pass intervals', L.SHORT_BASE, L.SHORT_TOP),
                ('per-window deepest cut', L.WDEEP_BASE, L.WDEEP_TOP),
                ('resume envelope', L.RESUME_BASE, L.RESUME_TOP),
                ('level split peaks', L.LVLSPLIT_BASE, L.LVLSPLIT_TOP),

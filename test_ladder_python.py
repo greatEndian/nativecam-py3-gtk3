@@ -103,7 +103,8 @@ def compare(project, sect, direction, d, P):
         (num(src, r'#<_pl_sectioning>\s*=\s*([-\d.]+)', 0.0) or 0) > 0 and cnt > 0,
         (topd / dm) if topd is not None else None,
         int(num(src, r'#<_pl_sect_mode>\s*=\s*([\d.]+)', 0.0) or 0),
-        max(cnt, 1))
+        max(cnt, 1),
+        skip_thin=num(src, r'#<_pl_skip_thin>\s*=\s*([-\d.]+)', 0.0) or 0.0)
     pred = set()
     for _w, rs in lad:
         pred.update(rs)

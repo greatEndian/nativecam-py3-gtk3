@@ -163,7 +163,9 @@ o<lathe_poly_pass> sub
 	(pe_len and the raw direction are known whatever the mode; the unit vector)
 	(is only formed inside the pe_ok gate, which In CAM skips, so it is formed)
 	(again here rather than reused.)
-	o<ext_bz> if [[#<z_dir> GT 0] AND [#<pe_len> GT 0.000001]]
+	(In CAM the physical front was projected in Python before wall splitting.)
+	(A reversed cleanup part's local direction does not make it a new front.)
+	o<ext_bz> if [[#<nose_on> NE 2] AND [#<z_dir> GT 0] AND [#<pe_len> GT 0.000001]]
 		#<ex_uz> = [#<pe_dz> / #<pe_len>]
 		#<ex_ux> = [#<pe_dx> / #<pe_len>]
 		(a segment with no Z extent - a pure face cut - cannot be extended to)
@@ -361,7 +363,15 @@ o<lathe_poly_pass> sub
 	(would become the compensation entry move and fail the length check; start)
 	(at record 2 instead, making the long record1-to-record2 cut the entry move)
 	#<_pass_z_dir> = #<z_dir>
+	(CAM wall subpaths already contain their planned wall and cleanup moves.)
+	(Do not apply the legacy wall detour a second time when one is reversed.)
+	(Back-to-front contours ignore X wall cut and stay connected in all modes.)
+	#<saved_xw_dir> = #<_x_wall_dir>
+	o<cam_wall> if [[#<nose_on> EQ 2] OR [#<z_dir> LT 0]]
+		#<_x_wall_dir> = 0
+	o<cam_wall> endif
 	o<trace_lathe> CALL [#<pds>] [0] [1] [0] [0] [0] [2]
+	#<_x_wall_dir> = #<saved_xw_dir>
 
 	(CANCEL COMPENSATION IN FREE AIR, NOT ON THE PART. G40 here left the)
 	(retreat below running UNCOMPENSATED from the profile's own last)

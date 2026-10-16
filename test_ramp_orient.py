@@ -105,8 +105,10 @@ def ramps_of(ngc, ini):
 def run(cfgdir, direction, tag, d):
     ini = os.path.join(cfgdir, 'lathe-mm.ini')
     out = os.path.join(d, tag + '.ngc')
+    # The historical ramp counts use the optional cleared-entry optimization.
     subprocess.run([sys.executable, GEN, '--ini', ini, '--project',
                     'testing_15_9.xml', '--out', out,
+                    '--set', 'polyline:param_li_air=1',
                     '--set', 'polyline:param_dir=%d' % direction],
                    capture_output=True, text=True)
     if not os.path.isfile(out):

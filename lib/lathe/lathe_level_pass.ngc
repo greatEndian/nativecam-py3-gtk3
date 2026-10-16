@@ -21,6 +21,7 @@ o<lathe_level_pass> sub
 	#<lo_feed>   = #12
 	#<li_rad>    = #13
 	#<lo_rad>    = #14
+	#<_pl_level_ran> = 0
 	(where this pass may BEGIN. Defined here, not inside the branch that)
 	(sets it: LinuxCNC pre-parses the whole file at load and a named)
 	(parameter first assigned in a branch reads as "not defined".)
@@ -37,6 +38,11 @@ o<lathe_level_pass> sub
 	(1 when this pass's ENTRY LEAD runs entirely through metal a previous)
 	(section has already removed - see the ld_air gate after the ramp arming)
 	#<ld_air>    = 0
+	#<sh_keep>   = 0
+	#<sh_i>      = 0
+	#<sh_p>      = 0
+	#<sh_mid>    = 0
+	#<sh_wall>   = 0
 	#<ld_ref>    = 0
 	#<ld_seen>   = 0
 	#<ld_i>      = 0
@@ -743,6 +749,17 @@ o<lathe_level_pass> sub
 		#<z_start> = [#<w_from> - #<_pl_rgh_oz>]
 	o<zs_cl> endif
 
+	#<length_start> = #<z_start>
+	(The physical front reference survives the nose-shifted window clamp.)
+	(Natural phase one and section windows can have different raw starts.)
+	o<front_reference> if [[#<_pl_sectioning> GT 0] AND [#<z_dir> GT 0]]
+		o<front_ref_new> if [EXISTS[#<_pl_begin_ref_z>]]
+			o<front_interval> if [#<w_from> GE [#<_pl_begin_ref_z> - 0.000001]]
+				#<z_start> = #<_pl_begin_z>
+			o<front_interval> endif
+		o<front_ref_new> endif
+	o<front_reference> endif
+
 	(Extend the STOP to the pre-finish contour, when Python emitted one.)
 	(The scan above keeps the FLOOR allowance - it is not only the stop, it)
 	(also decides whether this level is blocked at all, and halving it let)
@@ -1172,6 +1189,36 @@ o<lathe_level_pass> sub
 		o<lo_pull> endif
 	o<lo_res> endif
 
+	(A reverse entry at a continuous cut endpoint is at the boss,)
+	(not in the neighbour's cleared column. Python names those ends)
+	(in the same table that protects short section pieces below.)
+	o<sh_rev> if [#<_pl_cut_rev> GT 0]
+		o<sh_old> if [EXISTS[#<_pl_short_n>]]
+			o<sh_unknown> if [#<_pl_short_n> LT 0]
+				#<sh_wall> = 1
+			o<sh_unknown> endif
+			o<sh_ends> while [#<sh_i> LT #<_pl_short_n>]
+				#<sh_p> = [#<_pl_short_base> + 3 * #<sh_i>]
+				o<sh_rad> if [ABS[#[#<sh_p>] - #<level>] LT [0.000001 * #<_mm>]]
+					o<sh_lo> if [ABS[#<z_end_cut> - #[#<sh_p> + 1]] LT [0.0001 * #<_mm>]]
+						#<sh_wall> = 1
+					o<sh_lo> endif
+					o<sh_hi> if [ABS[#<z_end_cut> - #[#<sh_p> + 2]] LT [0.0001 * #<_mm>]]
+						#<sh_wall> = 1
+					o<sh_hi> endif
+				o<sh_rad> endif
+				#<sh_i> = [#<sh_i> + 1]
+			o<sh_ends> endwhile
+		o<sh_old> endif
+	o<sh_rev> endif
+
+	(Merged plans already identify entries stopped by an actual obstacle.)
+	o<merge_wall_known> if [EXISTS[#<_pl_merge_id>]]
+		o<merge_wall_rev> if [[#<_pl_merge_id> GT 0] AND [#<_pl_cut_rev> GT 0]]
+			#<sh_wall> = #<_pl_merge_wall>
+		o<merge_wall_rev> endif
+	o<merge_wall_known> endif
+
 	(WHICH WINDOW THE LEAD REACHES INTO, ASKED BY GEOMETRY, NOT BY ORDER.)
 	(The first version of this gate carried ONE value - the deepest level the)
 	(previously PROCESSED window cut - and that is only the neighbour the lead)
@@ -1196,7 +1243,13 @@ o<lathe_level_pass> sub
 	(_pl_wdeep_ok guards a project generated before the table existed, whose)
 	(slots would read 0 - "cut to the centre" - and drop every lead on the)
 	(part.)
-	o<ld_gate> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
+	(Respect a configured lead unless skipping cleared entries was selected.)
+	(Old generated programs lack this setting and keep their legacy behavior.)
+	#<ld_enabled> = 1
+	o<ld_setting> if [EXISTS[#<_pl_li_air>]]
+		#<ld_enabled> = #<_pl_li_air>
+	o<ld_setting> endif
+	o<ld_gate> if [[#<ld_enabled> GT 0] AND [#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
 		(the entry END, and the direction the lead comes in FROM. A forward)
 		(pass enters at z_start and is led into from before it; a reversed)
 		(pass enters at z_end_cut, at the far end, and is led into from)
@@ -1264,17 +1317,19 @@ o<lathe_level_pass> sub
 		(there is no evidence it is cleared and the lead stays.)
 		(debug LDG w=%d lvl=%f seen=%d ref=%f z0=%f z1=%f)
 		o<ld_deep> if [[#<ld_seen> GT 0] AND [#<level> GE [#<ld_ref> - 0.000001]]]
-			#<ld_air> = 1
-			(the ramp goes with it. Disarming ONLY the ramp is what made an)
-			(earlier attempt at this worth 22% instead of the measured 35%:)
-			(the pass did not lose its approach, it fell back to the plain)
-			(1.0 mm lead at 45 degrees - an X step of 0.7072, DEEPER than one)
-			(depth of cut - so the air time came back as a plunge. The lead)
-			(lengths are zeroed with it below, which drops the pass onto the)
-			(no-lead path that already exists and is already proven: stand)
-			(off in Z by the clearance, descend X there through the cleared)
-			(column, cut. Nothing new is invented for this.)
-			#<pa_on> = 0
+			o<ld_wall> if [#<sh_wall> EQ 0]
+				#<ld_air> = 1
+				(the ramp goes with it. Disarming ONLY the ramp is what made an)
+				(earlier attempt at this worth 22% instead of the measured 35%:)
+				(the pass did not lose its approach, it fell back to the plain)
+				(1.0 mm lead at 45 degrees - an X step of 0.7072, DEEPER than one)
+				(depth of cut - so the air time came back as a plunge. The lead)
+				(lengths are zeroed with it below, which drops the pass onto the)
+				(no-lead path that already exists and is already proven: stand)
+				(off in Z by the clearance, descend X there through the cleared)
+				(column, cut. Nothing new is invented for this.)
+				#<pa_on> = 0
+			o<ld_wall> endif
 		o<ld_deep> endif
 	o<ld_gate> endif
 
@@ -1369,8 +1424,32 @@ o<lathe_level_pass> sub
 	o<inv> endif
 
 	o<shrt> if [#<_pl_min_pass> GT 0]
-		o<shrt2> if [ABS[#<z_end_cut> - #<z_start>] LT #<_pl_min_pass>]
-			o<lathe_level_pass> return
+		(Front approach alignment adds air; keep it out of the length filter.)
+		o<shrt2> if [ABS[#<z_end_cut> - #<length_start>] LT #<_pl_min_pass>]
+			(A section can leave a short final piece of a long continuous cut.)
+			(Dropping that piece leaves the level short of the boss. Python)
+			(names the longer intervals; only read the matching record here.)
+			(EXISTS preserves programs generated before this table existed.)
+			o<sh_table> if [EXISTS[#<_pl_short_n>]]
+				o<sh_over> if [#<_pl_short_n> LT 0]
+					#<sh_keep> = 1
+				o<sh_over> endif
+				#<sh_mid> = [[#<length_start> + #<z_end_cut>] / 2]
+				#<sh_i> = 0
+				o<sh_walk> while [#<sh_i> LT #<_pl_short_n>]
+					#<sh_p> = [#<_pl_short_base> + 3 * #<sh_i>]
+					o<sh_level> if [ABS[#[#<sh_p>] - #<level>] LT [0.000001 * #<_mm>]]
+						o<sh_span> if [[#<sh_mid> GE #[#<sh_p> + 1]] AND [#<sh_mid> LE #[#<sh_p> + 2]]]
+							#<sh_keep> = 1
+							o<sh_walk> break
+						o<sh_span> endif
+					o<sh_level> endif
+					#<sh_i> = [#<sh_i> + 1]
+				o<sh_walk> endwhile
+			o<sh_table> endif
+			o<sh_skip> if [#<sh_keep> EQ 0]
+				o<lathe_level_pass> return
+			o<sh_skip> endif
 		o<shrt2> endif
 	o<shrt> endif
 
@@ -1467,6 +1546,57 @@ o<lathe_level_pass> sub
 		#<ap_z> = #<pa_z>
 		#<ap_x> = #<pa_x>
 	o<ap_use> endif
+	(The physical section ends keep their names when travel is reversed.)
+	#<sf_z> = #<ap_z>
+	#<sf_x> = #<ap_x>
+	#<sb_z> = #<z_end_cut>
+	#<sb_x> = #<level>
+	#<sf_on> = 0
+	#<sb_on> = 0
+	#<sf_air> = 0
+	#<sb_air> = 0
+	#<sf_uz> = [0 - #<z_dir>]
+	#<sf_ux> = 0
+	#<sb_uz> = [0 - #<z_dir>]
+	#<sb_ux> = 0
+	#<st_id> = 0
+	o<st_exists> if [EXISTS[#<_pl_st_id>]]
+		#<st_id> = #<_pl_st_id>
+	o<st_exists> endif
+	#<st_apply> = [#<_pl_w_idx> GE 0]
+	o<st_apply_new> if [EXISTS[#<_pl_st_full_valid>]]
+		#<st_apply> = 1
+	o<st_apply_new> endif
+	o<st_active> if [[#<st_id> GT 0] AND [#<st_apply> GT 0]]
+		#<st_ez> = 0
+		#<st_ex> = 0
+		o<st_entry_ramp> if [#<pa_on>]
+			#<st_ez> = #<e_rdz>
+			#<st_ex> = #<e_rdx>
+		o<st_entry_ramp> endif
+		o<ncam_section_tangent> CALL [#<st_id>] [#<ap_z>] [#<ap_x>] [0] [#<level>] [#<st_ez>] [#<st_ex>]
+		o<st_front> if [#<_pl_st_cap> GT 0.000001]
+			#<sf_z> = [#<ap_z> + #<_pl_st_cap> * #<_pl_st_dz>]
+			#<sf_x> = [#<ap_x> + #<_pl_st_cap> * #<_pl_st_dx>]
+			#<sf_uz> = [0 - #<_pl_st_uz>]
+			#<sf_ux> = [0 - #<_pl_st_ux>]
+			#<sf_on> = 1
+			o<st_f_air> if [EXISTS[#<_pl_st_air>]]
+				#<sf_air> = #<_pl_st_air>
+			o<st_f_air> endif
+		o<st_front> endif
+		o<ncam_section_tangent> CALL [#<st_id>] [#<z_end_cut>] [#<level>] [1] [#<level>] [0] [0]
+		o<st_back> if [#<_pl_st_cap> GT 0.000001]
+			#<sb_z> = [#<z_end_cut> + #<_pl_st_cap> * #<_pl_st_dz>]
+			#<sb_x> = [#<level> + #<_pl_st_cap> * #<_pl_st_dx>]
+			#<sb_uz> = #<_pl_st_uz>
+			#<sb_ux> = #<_pl_st_ux>
+			#<sb_on> = 1
+			o<st_b_air> if [EXISTS[#<_pl_st_air>]]
+				#<sb_air> = #<_pl_st_air>
+			o<st_b_air> endif
+		o<st_back> endif
+	o<st_active> endif
 
 	(=== WHICH END IS ENTERED, AND WHICH IS LEFT ==========================)
 	(A pass has a lead at each of its two ends and both are fixed geometry:)
@@ -1486,8 +1616,12 @@ o<lathe_level_pass> sub
 	(the existing lead-out has always negated it for the same circle at the)
 	(other end. Kept exactly as each end had it, so the two directions share)
 	(one circle rather than computing two.)
-	#<ap_bz> = #<ap_z>
-	#<ap_bx> = #<ap_x>
+	#<ap_bz> = #<sf_z>
+	#<ap_bx> = #<sf_x>
+	#<ap_uz> = #<sf_uz>
+	#<ap_ux> = #<sf_ux>
+	#<ap_st> = #<sf_on>
+	#<ap_air> = #<sf_air>
 	#<ap_vz> = #<li_bz>
 	#<ap_vx> = #<li_bx>
 	#<ap_fz> = #<li_bz>
@@ -1495,8 +1629,10 @@ o<lathe_level_pass> sub
 	#<ap_ll> = #<_li_leff>
 	#<ap_rr> = #<_li_reff>
 	#<ap_ff> = #<li_feed>
-	#<rt_bz> = #<z_end_cut>
-	#<rt_bx> = #<level>
+	#<rt_bz> = #<sb_z>
+	#<rt_bx> = #<sb_x>
+	#<rt_uz> = #<sb_uz>
+	#<rt_ux> = #<sb_ux>
 	#<rt_vz> = #<lo_bz>
 	#<rt_vx> = #<lo_bx>
 	#<rt_fz> = [0 - #<lo_bz>]
@@ -1505,8 +1641,12 @@ o<lathe_level_pass> sub
 	#<rt_rr> = #<_lo_reff>
 	#<rt_ff> = #<lo_feed>
 	o<end_sw> if [#<_pl_cut_rev> GT 0]
-		#<ap_bz> = #<z_end_cut>
-		#<ap_bx> = #<level>
+		#<ap_bz> = #<sb_z>
+		#<ap_bx> = #<sb_x>
+		#<ap_uz> = #<sb_uz>
+		#<ap_ux> = #<sb_ux>
+		#<ap_st> = #<sb_on>
+		#<ap_air> = #<sb_air>
 		#<ap_vz> = #<lo_bz>
 		#<ap_vx> = #<lo_bx>
 		#<ap_fz> = [0 - #<lo_bz>]
@@ -1514,8 +1654,10 @@ o<lathe_level_pass> sub
 		#<ap_ll> = #<_lo_leff>
 		#<ap_rr> = #<_lo_reff>
 		#<ap_ff> = #<lo_feed>
-		#<rt_bz> = #<ap_z>
-		#<rt_bx> = #<ap_x>
+		#<rt_bz> = #<sf_z>
+		#<rt_bx> = #<sf_x>
+		#<rt_uz> = #<sf_uz>
+		#<rt_ux> = #<sf_ux>
 		#<rt_vz> = #<li_bz>
 		#<rt_vx> = #<li_bx>
 		#<rt_fz> = #<li_bz>
@@ -1565,7 +1707,7 @@ o<lathe_level_pass> sub
 	(METAL. In Both directions the reversed half simply keeps its lead-outs.)
 	o<lo_gate> if [[#<_pl_lo_air> GT 0] AND [#<_pl_cut_rev> LE 0]]
 		#<lo_d> = #<_pl_prev_lvl>
-		o<lo_src> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
+		o<lo_src> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0] AND [#<_pl_w_idx> GE 0]]
 			#<lo_d> = #[2800 + #<_pl_w_idx>]
 		o<lo_src> endif
 		o<lo_ok> if [[#<lo_d> LT 999998] AND [#<lo_d> GT [#<level> + 0.000001]]]
@@ -1582,7 +1724,7 @@ o<lathe_level_pass> sub
 		(own direction at the entry is always pure Z - no profile lookup needed)
 		#<_flt_ok> = 0
 		o<ap_geom> if [#<ap_rr> GT 0]
-			o<fillet_lead> CALL [#<ap_bz>] [#<ap_bx>] [-#<z_dir>] [0] [#<ap_fz>] [#<ap_fx>] [#<ap_rr>] [#<z_dir>]
+			o<fillet_lead> CALL [#<ap_bz>] [#<ap_bx>] [#<ap_uz>] [#<ap_ux>] [#<ap_fz>] [#<ap_fx>] [#<ap_rr>] [#<z_dir>]
 		o<ap_geom> endif
 
 		o<li_base> if [#<_flt_ok>]
@@ -1594,7 +1736,20 @@ o<lathe_level_pass> sub
 		o<li_base> endif
 
 		o<hf_move> CALL [1] [[#<li_baz> + #<ap_ll> * #<ap_vz>]] [#<pass_feed>]
+		o<st_position_lead> if [[#<ap_st> GT 0] AND [#<ap_air> EQ 0]]
+			o<st_position_new> if [EXISTS[#<_pl_st_full_valid>]]
+				o<ncam_section_position> CALL [#<st_id>] [[#<li_baz> + #<ap_ll> * #<ap_vz>]] [[#<li_bax> + #<ap_ll> * #<ap_vx>]] [#<level>]
+				#<ap_air> = #<_pl_st_air>
+			o<st_position_new> endif
+		o<st_position_lead> endif
+		(A short reverse entry can cut standing metal. An extended entry)
+		(also feeds unless completed cuts prove its approach column clear.)
+		o<sh_feed> if [[[#<sh_wall> GT 0] AND [#<sh_keep> GT 0]] OR [[#<ap_st> GT 0] AND [#<ap_air> EQ 0]]]
+			F#<pass_feed>
+			G1 X[[#<li_bax> + #<ap_ll> * #<ap_vx>] * #<_diameter_mode>]
+		o<sh_feed> else
 		o<hf_move> CALL [0] [[[#<li_bax> + #<ap_ll> * #<ap_vx>] * #<_diameter_mode>]] [#<pass_feed>]
+		o<sh_feed> endif
 		(the lead feed applies to the STRAIGHT lead only - the blend radius is)
 		(already cutting into the part at the pass's own direction, so it runs)
 		(at the pass feed like the rest of the cut. With no lead feed set both)
@@ -1626,12 +1781,31 @@ o<lathe_level_pass> sub
 		(at the interval end itself, where the floor allowance still leaves)
 		(the surface lvl_d below this level.)
 		#<ap_cz> = [#<ap_bz> + #<z_dir> * #<_pl_z_clear>]
-		o<ap_rev> if [#<_pl_cut_rev> GT 0]
+		o<ap_rev> if [[#<_pl_cut_rev> GT 0] OR [#<ap_st> GT 0]]
 			#<ap_cz> = #<ap_bz>
 		o<ap_rev> endif
 		o<hf_move> CALL [1] [#<ap_cz>] [#<pass_feed>]
+		o<st_position_zero> if [[#<ap_st> GT 0] AND [#<ap_air> EQ 0]]
+			o<st_position_zero_new> if [EXISTS[#<_pl_st_full_valid>]]
+				o<ncam_section_position> CALL [#<st_id>] [#<ap_bz>] [#<ap_bx>] [#<level>]
+				#<ap_air> = #<_pl_st_air>
+			o<st_position_zero_new> endif
+		o<st_position_zero> endif
+		o<sh_feed0> if [[#<sh_wall> GT 0] OR [[#<ap_st> GT 0] AND [#<ap_air> EQ 0]]]
+			F#<pass_feed>
+			G1 X[#<ap_bx> * #<_diameter_mode>]
+		o<sh_feed0> else
 		o<hf_move> CALL [0] [[#<ap_bx> * #<_diameter_mode>]] [#<pass_feed>]
+		o<sh_feed0> endif
 	o<lead_ap> endif
+	o<st_f_in> if [[#<sf_on> GT 0] AND [#<_pl_cut_rev> LE 0]]
+		(section tangent front)
+		G1 X[#<ap_x> * #<_diameter_mode>] Z#<ap_z>
+	o<st_f_in> endif
+	o<st_b_in> if [[#<sb_on> GT 0] AND [#<_pl_cut_rev> GT 0]]
+		(section tangent back)
+		G1 X[#<level> * #<_diameter_mode>] Z#<z_end_cut>
+	o<st_b_in> endif
 
 	(the profile-angle ramp, outside the lead branch on purpose. Front to)
 	(back it is driven DOWN, from the ramp start onto the level at z_start,)
@@ -1659,7 +1833,27 @@ o<lathe_level_pass> sub
 	(the groove it has just made. That is the reference package's own wording)
 	(and it is the safe direction: backing out radially would leave the)
 	(compensated path and re-enter it, and re-entry is where gouges come from.)
-	o<peck> if [[#<_pl_peck_len> GT 0.0001] AND [#<_pl_peck_ret> GT 0.0001]]
+	o<peck> if [#<_pl_peck_len> GT 0.0001]
+		(Python resolves the fixed feed choice. Old generated programs have)
+		(neither setting and retain working motion at the pass feed.)
+		#<pk_rapid> = 0
+		#<pk_feed> = #<pass_feed>
+		o<pk_mode> if [EXISTS[#<_pl_peck_ret_rapid>]]
+			#<pk_rapid> = #<_pl_peck_ret_rapid>
+		o<pk_mode> endif
+		o<pk_feed_opt> if [EXISTS[#<_pl_peck_ret_feed>]]
+			o<pk_feed_ok> if [#<_pl_peck_ret_feed> GT 0]
+				#<pk_feed> = #<_pl_peck_ret_feed>
+			o<pk_feed_ok> endif
+		o<pk_feed_opt> endif
+		(Reach the pass start before measuring pecks. With no lead the)
+		(positioning clearance may still put the tool in front of it.)
+		F#<pass_feed>
+		G1 Z#<em_z0>
+		(Save the caller's blending tolerance and restore it before the)
+		(final remainder. Exact stops prevent tiny retracts being blended.)
+		M70
+		G61.1
 		#<pk_dir> = 1
 		o<pk_sgn> if [#<em_z1> LT #<em_z0>]
 			#<pk_dir> = -1
@@ -1670,21 +1864,33 @@ o<lathe_level_pass> sub
 			#<pk_at>   = [#<pk_at> + #<pk_dir> * #<_pl_peck_len>]
 			#<pk_left> = [#<pk_left> - #<_pl_peck_len>]
 			G1 Z#<pk_at>
-			(back along the path, never past where this cut began)
-			#<pk_bk> = [#<pk_at> - #<pk_dir> * #<_pl_peck_ret>]
-			o<pk_clamp> if [[#<pk_dir> * [#<pk_bk> - #<em_z0>]] LT 0]
-				#<pk_bk> = #<em_z0>
-			o<pk_clamp> endif
-			G1 Z#<pk_bk>
-			(wait AT THE RETRACTED POINT, where the chip is already broken)
-			(and free - a pause here lets it fall clear instead of being)
-			(dragged back into the next cut. Nothing moves during it.)
-			o<pk_dw> if [#<_pl_peck_dwell> GT 0.0001]
-				G4 P#<_pl_peck_dwell>
-			o<pk_dw> endif
-			G1 Z#<pk_at>
+			(ncam peck stop)
+			o<pk_ret> if [#<_pl_peck_ret> GT 0.0001]
+				(back along the path, never past where this cut began)
+				#<pk_bk> = [#<pk_at> - #<pk_dir> * #<_pl_peck_ret>]
+				o<pk_clamp> if [[#<pk_dir> * [#<pk_bk> - #<em_z0>]] LT 0]
+					#<pk_bk> = #<em_z0>
+				o<pk_clamp> endif
+				o<pk_motion> if [#<pk_rapid> GT 0]
+					G0 Z#<pk_bk>
+				o<pk_motion> else
+					F#<pk_feed>
+					G1 Z#<pk_bk>
+				o<pk_motion> endif
+				o<pk_dw_ret> if [#<_pl_peck_dwell> GT 0.0001]
+					G4 P#<_pl_peck_dwell>
+				o<pk_dw_ret> endif
+				F#<pass_feed>
+				G1 Z#<pk_at>
+			o<pk_ret> endif
 		o<pk_w> endwhile
+		M72
 		G1 Z#<em_z1>
+		(Without a retract, the only timed wait is at the full pass end.)
+		o<pk_dw_end> if [[#<_pl_peck_ret> LE 0.0001] AND [#<_pl_peck_dwell> GT 0.0001]]
+			(ncam peck stop)
+			G4 P#<_pl_peck_dwell>
+		o<pk_dw_end> endif
 	o<peck> else
 		G1 Z#<em_z1>
 	o<peck> endif
@@ -1698,9 +1904,34 @@ o<lathe_level_pass> sub
 	(Z order under Natural or Both directions. _pl_wdeep_ok is tested so a)
 	(program generated before the table existed never writes into slots its)
 	(own reader will not trust.)
-	o<ld_rec> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0]]
+	o<ld_rec> if [[#<_pl_sect_count> GT 0] AND [#<_pl_wdeep_ok> GT 0] AND [#<_pl_w_idx> GE 0]]
 		#[2800 + #<_pl_w_idx>] = #<level>
 	o<ld_rec> endif
+	(A completed broad straight cut is a finite clearance fact. A shorter)
+	(split interval cannot replace it or claim stock beyond its actual ends.)
+	o<st_full_record> if [[#<st_id> GT 0] AND [#<_pl_w_idx> LT 0]]
+		o<st_full_new> if [EXISTS[#<_pl_st_full_valid>]]
+			#<full_low> = #<z_end_cut>
+			#<full_high> = #<z_start>
+			o<st_full_swap> if [#<full_low> GT #<full_high>]
+				#<full_low> = #<z_start>
+				#<full_high> = #<z_end_cut>
+			o<st_full_swap> endif
+			#<full_take> = [#<_pl_st_full_valid> EQ 0]
+			(The scan can shift a common end within its 0.001 mm tolerance.)
+			(Store the new actual bounds; never extrapolate the cleared span.)
+			o<st_full_cover> if [[#<full_low> LE [#<_pl_st_full_low> + 0.001 * #<_mm>]] AND [#<full_high> GE [#<_pl_st_full_high> - 0.001 * #<_mm>]]]
+				#<full_take> = 1
+			o<st_full_cover> endif
+			o<st_full_take> if [#<full_take> GT 0]
+				#<_pl_st_full_valid> = 1
+				#<_pl_st_full_low> = #<full_low>
+				#<_pl_st_full_high> = #<full_high>
+				#<_pl_st_full_r> = #<level>
+			o<st_full_take> endif
+		o<st_full_new> endif
+	o<st_full_record> endif
+	#<_pl_level_ran> = 1
 
 
 	(THE PROFILE-ANGLE RAMP, CLIMBED. Back to front the pass arrives at)
@@ -1714,6 +1945,25 @@ o<lathe_level_pass> sub
 		G1 X[#<level> * #<_diameter_mode>] Z#<z_start>
 		G1 X[#<ap_x> * #<_diameter_mode>] Z#<ap_z>
 	o<pa_out> endif
+	o<st_f_out> if [[#<sf_on> GT 0] AND [#<_pl_cut_rev> GT 0]]
+		(section tangent front)
+		G1 X[#<sf_x> * #<_diameter_mode>] Z#<sf_z>
+	o<st_f_out> endif
+	o<st_b_out> if [[#<sb_on> GT 0] AND [#<_pl_cut_rev> LE 0]]
+		(section tangent back)
+		G1 X[#<sb_x> * #<_diameter_mode>] Z#<sb_z>
+	o<st_b_out> endif
+	(A completed profile-angle entry also cleared its sloped segment outside)
+	(the straight window. Record facts only, after cutting it in either way.)
+	o<st_ramp_record> if [[#<st_id> GT 0] AND [#<pa_on> GT 0]]
+		#<_pl_st_prev_valid> = 1
+		#<_pl_st_prev_w> = #<_pl_w_idx>
+		#<_pl_st_prev_z0> = #<sf_z>
+		#<_pl_st_prev_r0> = #<sf_x>
+		#<_pl_st_prev_z1> = #<z_start>
+		#<_pl_st_prev_dz> = #<e_rdz>
+		#<_pl_st_prev_dr> = #<e_rdx>
+	o<st_ramp_record> endif
 
 	(leave along the exit lead: blend off the pass's own direction, then the)
 	(straight out to the far point. Front to back that is the lo lead at the)
@@ -1742,7 +1992,7 @@ o<lathe_level_pass> sub
 			(rt_fz/rt_fx carries that negation already, per END, so the two)
 			(directions blend on ONE circle - the entry above hands the same)
 			(vector to the same utility for the same end.)
-			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [-#<z_dir>] [0] [#<rt_fz>] [#<rt_fx>] [#<rt_rr>] [#<z_dir>]
+			o<fillet_lead> CALL [#<end_z>] [#<phys_x>] [#<rt_uz>] [#<rt_ux>] [#<rt_fz>] [#<rt_fx>] [#<rt_rr>] [#<z_dir>]
 		o<lo_geom> endif
 
 		o<lo_arc> if [#<_flt_ok>]

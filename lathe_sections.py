@@ -28,9 +28,442 @@ not against the cfg text.
 
 import math
 import os
+import heapq
 import lathe_comp
 
 EPS = 0.0001
+# Length of one millimetre in the generated program's units, set with the
+# program-unit resolver before any geometry builder runs.
+PROGRAM_MM = 1.0
+# Per-generation literal call plans. The application emits one dispatcher after
+# all operations have registered with the active tool's geometry.
+MERGED_ROUGHING_PLANS = []
+SECTION_TANGENT_PLANS = []
+
+
+def tangent_lead_footprint(unit, length, angle, radius, x_sign, z_dir, end=0):
+    """Precompute the lead line and full blend-circle footprint at its base."""
+    uz, ur = unit
+    vz = z_dir * math.cos(math.radians(angle))
+    vr = x_sign * math.sin(math.radians(angle))
+    cz, cr = radius * z_dir * ur, -radius * z_dir * uz
+    lead_sign = 1 if end == 0 else -1
+    tz = cz + lead_sign * radius * z_dir * vr
+    tr = cr - lead_sign * radius * z_dir * vz
+    fz, fr = tz + length * vz, tr + length * vr
+    air_r = (min if x_sign > 0 else max)(0.0, cr-radius, cr+radius, tr, fr)
+    return dict(cz=cz, cr=cr, tz=tz, tr=tr, fz=fz, fr=fr, rad=radius, air_r=air_r,
+                zl=min(0.0, cz-radius, tz, fz),
+                zh=max(0.0, cz+radius, tz, fz))
+
+
+def build_section_tangent_gcode(feature, rough_cut, back_deg, nose_r=0.0,
+                                flank_len=0.0, clearance=0.0, orient=0):
+    """Register section-entry/profile tangents; zero resets the operation."""
+    def value(name):
+        p = feature.get_param('param_' + name)
+        return _to_float(p.get_ngc_value()) if p is not None else 0.0
+
+    reset = '#<_pl_st_id> = 0'
+    front, back = value('sec_ext_fr'), value('sec_ext_bk')
+    if (max(front, back) <= 0 or not value('sectioning')
+            or value('op') == 2 or rough_cut <= EPS):
+        return reset
+    windows = section_windows(feature)
+    data = floor_contour_data(feature, back_deg, nose_r, flank_len,
+                              clearance, orient, rough_cut, include_zero=True)
+    if windows is None:
+        return reset
+    if data is None or data is FLOORC_OVERFLOW:
+        return reset + '\n(ABORT, Section tangential extensions need a resolved profile table.)'
+    points = data[0]                     # compensated Z/radius, not diameters
+    stock = _stock_x(feature)
+    if stock is None:
+        return reset + '\n(ABORT, Section tangential extensions need the stock diameter.)'
+    entry = entry_contour_data(feature, back_deg, nose_r, flank_len,
+                               clearance, rough_cut, orient)
+    entry_dirs = []
+    if entry:
+        entry_dirs.extend((b[0]-a[0], b[1]-a[1])
+                          for a, b in zip(entry, entry[1:]))
+        entry_dirs.extend((dz, dr) for dz, dr, _z, _r in
+                          entry_ramp_dirs(entry, 10 * rough_cut))
+    SECTION_TANGENT_PLANS.append(dict(
+        points=points, windows=windows[0], front=front, back=back,
+        entry_dirs=entry_dirs,
+        stock=stock / DIAMETER_MODE,
+        face=WORKPIECE_FACE_Z,
+        oz=rough_nose_terms(feature, nose_r, orient)[1],
+        x_sign=-1 if value('side') == 1 else 1,
+        li=(value('li_len'), value('li_ang'), value('li_rad')),
+        lo=(value('lo_len'), value('lo_ang'), value('lo_rad'))))
+    return '#<_pl_st_id> = %d' % len(SECTION_TANGENT_PLANS)
+
+
+def section_tangent_definitions():
+    """A literal selector; only resolved endpoints and cut history stay runtime.
+
+    No parameter window is allocated. Tangents, displacement, line equations,
+    normal lengths and lead footprints are all generation-time geometry.
+    lathe_tangent_limit clips a selected ray using the actual endpoint/history.
+    """
+    if not SECTION_TANGENT_PLANS:
+        return ''
+    out = ['o<ncam_section_tangent> sub',
+           '#<id> = #1', '#<z> = #2', '#<r> = #3',
+           '#<end> = #4', '#<level> = #5', '#<_pl_st_cap> = 0',
+           '#<_pl_st_air> = 0', '#<entry_dz> = #6', '#<entry_dr> = #7']
+    for number, plan in enumerate(SECTION_TANGENT_PLANS, 1):
+        points = plan['points']
+        z_dir = 1 if points[0][0] >= points[-1][0] else -1
+        out += ['o<st_plan%d> if [#<id> EQ %d]' % (number, number),
+                '#<best> = 999999999', '#<picked> = -1']
+        segments = []
+        for a, b in zip(points, points[1:]):
+            dz, dr = b[0]-a[0], b[1]-a[1]
+            norm = math.hypot(dz, dr)
+            if norm <= 1e-8:
+                continue
+            segments.append((a, b, dz/norm, dr/norm))
+        for i, (a, b, uz, ur) in enumerate(segments):
+            label = '%d_%d' % (number, i)
+            out += ['o<st_band%s> if [[#<z> GE %s] AND [#<z> LE %s]]'
+                    % (label, _fmt(min(a[0], b[0])-1e-6*PROGRAM_MM),
+                       _fmt(max(a[0], b[0])+1e-6*PROGRAM_MM))]
+            if abs(b[0]-a[0]) > 1e-8:
+                slope = (b[1]-a[1])/(b[0]-a[0])
+                out.append('#<diff> = ABS[#<r> - [%s * #<z> + %s]]'
+                           % (_fmt(slope), _fmt(a[1]-slope*a[0])))
+            else:
+                out += ['#<diff> = 0',
+                        'o<st_vlo%s> if [#<r> LT %s]' % (label, _fmt(min(a[1], b[1]))),
+                        '#<diff> = [%s - #<r>]' % _fmt(min(a[1], b[1])),
+                        'o<st_vlo%s> endif' % label,
+                        'o<st_vhi%s> if [#<r> GT %s]' % (label, _fmt(max(a[1], b[1]))),
+                        '#<diff> = [#<r> - %s]' % _fmt(max(a[1], b[1])),
+                        'o<st_vhi%s> endif' % label]
+            out += ['o<st_near%s> if [#<diff> LT #<best>]' % label,
+                    '#<best> = #<diff>', '#<picked> = %d' % i,
+                    'o<st_near%s> endif' % label, 'o<st_band%s> endif' % label]
+
+        def emit_tangent(uz, ur, end, distance):
+            sign = -1 if end == 0 else 1
+            lead = plan['li'] if end == 0 else plan['lo']
+            footprint = tangent_lead_footprint((uz, ur), *lead,
+                                               plan['x_sign'], z_dir, end)
+            slope = ur/uz if abs(uz) > 1e-12 else 0.0
+            support = min(0.0,
+                          plan['x_sign']*(footprint['cr']-slope*footprint['cz'])
+                          - footprint['rad']*math.hypot(1, slope),
+                          plan['x_sign']*(footprint['tr']-slope*footprint['tz']),
+                          plan['x_sign']*(footprint['fr']-slope*footprint['fz']))
+            values = dict(uz=sign*uz, ux=sign*ur, dz=sign*uz*distance,
+                          dx=sign*ur*distance, slope=slope, line_support=support,
+                          **footprint)
+            out.extend('#<_pl_st_%s> = %s' % (key, _fmt(val))
+                       for key, val in values.items())
+            out.append('#<_pl_st_cap> = %d' % (1 if distance > 0 else 0))
+
+        # Back keeps the profile tangent. Front continues the actual entry
+        # already selected by the walker, not an unrelated surface below it.
+        out.append('o<st_back%d> if [#<end> EQ 1]' % number)
+        for i, (_a, _b, uz, ur) in enumerate(segments):
+            label = '%d_%d' % (number, i)
+            out.append('o<st_pick%s> if [#<picked> EQ %d]' % (label, i))
+            emit_tangent(uz, ur, 1, plan['back'])
+            out.append('o<st_pick%s> endif' % label)
+        out.append('o<st_back%d> else' % number)
+        emit_tangent(-z_dir, 0, 0, plan['front'])
+        out += ['o<st_ramp%d> if [ABS[#<entry_dz>] GT %s]'
+                % (number, _fmt(1e-6 * PROGRAM_MM)), '#<entry_found> = 0']
+        unique = {}
+        for dz, dr in plan['entry_dirs']:
+            if abs(dz) > 1e-8 * PROGRAM_MM:
+                unique[(_fmt(dz), _fmt(dr))] = (dz, dr)
+        for i, ((raw_z, raw_r), (dz, dr)) in enumerate(unique.items()):
+            tag = '%d_%d' % (number, i)
+            norm = math.hypot(dz, dr)
+            # Canonical direction runs into the cut. Raw table vectors can
+            # use either sign; orient them by the physical front Z direction.
+            sign = -z_dir if dz > 0 else z_dir
+            out += ['o<st_entry%s> if [[ABS[#<entry_dz> - %s] LE %s] AND [ABS[#<entry_dr> - %s] LE %s]]'
+                    % (tag, raw_z, _fmt(1e-6 * PROGRAM_MM),
+                       raw_r, _fmt(1e-6 * PROGRAM_MM)), '#<entry_found> = 1']
+            emit_tangent(sign*dz/norm, sign*dr/norm, 0, plan['front'])
+            out.append('o<st_entry%s> endif' % tag)
+        out += ['o<st_entry_missing%d> if [#<entry_found> EQ 0]' % number,
+                '(ABORT, Section entry tangent is unresolved - regenerate the project.)',
+                'o<st_entry_missing%d> endif' % number,
+                'o<st_ramp%d> endif' % number, 'o<st_back%d> endif' % number]
+        out += ['o<st_none%d> if [#<_pl_st_cap> LE 0]' % number,
+                'o<ncam_section_tangent> return', 'o<st_none%d> endif' % number]
+        # A front approach may start in air beyond the part. Only the back
+        # profile extension remains bounded by the defined profile ends.
+        lo, hi = min(z for z, _r in points), max(z for z, _r in points)
+        out += ['o<st_back_bound%d> if [#<end> EQ 1]' % number,
+                'o<st_zpos%d> if [#<_pl_st_dz> GT 0.00000001]' % number,
+                '#<bound> = [[%s - #<z>] / #<_pl_st_dz>]' % _fmt(hi),
+                'o<st_zpos%d> elseif [#<_pl_st_dz> LT -0.00000001]' % number,
+                '#<bound> = [[%s - #<z>] / #<_pl_st_dz>]' % _fmt(lo),
+                'o<st_zpos%d> else' % number, '#<bound> = 1',
+                'o<st_zpos%d> endif' % number,
+                'o<st_zcap%d> if [#<bound> LT #<_pl_st_cap>]' % number,
+                '#<_pl_st_cap> = #<bound>', 'o<st_zcap%d> endif' % number,
+                'o<st_back_bound%d> endif' % number]
+
+        constraint_start = len(out)
+
+        def limit(z0, z1, slope, intercept, norm=1, raw=False):
+            args = [_fmt(min(z0, z1)), _fmt(max(z0, z1)), _fmt(slope),
+                    intercept if raw else _fmt(intercept), _fmt(norm), '#<z>', '#<r>']
+            out.append('o<lathe_tangent_limit> CALL ' + ' '.join('[%s]' % v for v in args))
+
+        for a, b, _uz, _ur in segments:
+            if abs(b[0]-a[0]) <= 1e-8:
+                continue
+            slope = (b[1]-a[1])/(b[0]-a[0])
+            # The existing roughing scan deliberately grazes its floor at
+            # level + 0.001 mm. Preserve that tolerance at the ray origin.
+            floor = a[1]-slope*a[0] - plan['x_sign'] * .001001 * PROGRAM_MM
+            limit(a[0], b[0], slope, floor, math.hypot(1, slope))
+        stock_start = len(out)
+        # Partition the stock into cells, including space outside the windows.
+        # The nose-shifted first window can start behind the stock face; that
+        # strip is still stock, not free space for an extended approach.
+        face = plan['face'] if plan['face'] is not None else max(z for z, _r in points)
+        bounds = {-1e9, face}
+        for a, b, _rlo, _rhi in plan['windows']:
+            bounds.update(z-plan['oz'] for z in (a, b) if z-plan['oz'] < face)
+        ordered = sorted(bounds)
+        for cell, (low, high) in enumerate(zip(ordered, ordered[1:])):
+            middle = (low+high)/2
+            out += ['#<depth> = %s' % _fmt(plan['stock']),
+                    '#<cleared> = %s' % _fmt(plan['stock'])]
+            for i, (a, b, rlo, rhi) in enumerate(plan['windows']):
+                if not min(a, b)-plan['oz'] <= middle <= max(a, b)-plan['oz']:
+                    continue
+                label = '%d_%d_%d' % (number, cell, i)
+                out += ['o<st_w%s> if [[#<level> GE %s] AND [#<level> LE %s]]'
+                        % (label, _fmt(rlo/DIAMETER_MODE-1e-6), _fmt(rhi/DIAMETER_MODE+1e-6)),
+                        'o<st_known%s> if [[#<_pl_wdeep_ok> GT 0] AND [#%d LT 999998]]'
+                        % (label, WDEEP_BASE+i),
+                        'o<st_deep%s> if [[#<_pl_x_sgn> * [#%d - #<depth>]] LT 0]'
+                        % (label, WDEEP_BASE+i), '#<depth> = #%d' % (WDEEP_BASE+i),
+                        'o<st_deep%s> endif' % label,
+                        'o<st_airdeep%s> if [[#<_pl_x_sgn> * [#%d - #<cleared>]] LT 0]'
+                        % (label, WDEEP_BASE+i), '#<cleared> = #%d' % (WDEEP_BASE+i),
+                        'o<st_airdeep%s> endif' % label, 'o<st_known%s> endif' % label,
+                        'o<st_current%s> if [#<_pl_w_idx> EQ %d]' % (label, i),
+                        '#<depth> = #<level>', 'o<st_current%s> endif' % label,
+                        'o<st_w%s> endif' % label]
+            # Prove the entire lead footprint clear, including a shortened or
+            # skipped lead. Planned removal is not a completed cut.
+            tag = '%d_%d' % (number, cell)
+            out += ['o<st_airz%s> if [[#<entry_z> GE [%s - #<_pl_st_zh>]] AND [#<entry_z> LE [%s - #<_pl_st_zl>]]]'
+                    % (tag, _fmt(low), _fmt(high)),
+                    'o<st_airr%s> if [[#<_pl_x_sgn> * [#<entry_r> - #<cleared>]] LT %s]'
+                    % (tag, _fmt(-.000001 * PROGRAM_MM)),
+                    '#<_pl_st_air> = 0', 'o<st_airr%s> endif' % tag,
+                    'o<st_airz%s> endif' % tag]
+            # A front ray starting exactly on the stock face immediately
+            # leaves the material. Do not turn that zero-length intersection
+            # into a blocked extension; the footprint still gets checked.
+            stock_high = high - 1e-6 * PROGRAM_MM if high == face else high
+            limit(low, stock_high, 0, '#<depth>', raw=True)
+        profile_constraints = out[constraint_start:stock_start]
+        stock_constraints = out[stock_start:]
+        del out[constraint_start:]
+        footprint_keys = ('cz', 'cr', 'tz', 'tr', 'fz', 'fr', 'rad', 'zl', 'zh',
+                          'air_r', 'line_support')
+        out.extend('#<fp_%s> = #<_pl_st_%s>' % (key, key) for key in footprint_keys)
+        out += ['#<_pl_st_probe> = 0', '#<attempt> = 0',
+                'o<st_validate%d> while [[#<_pl_st_cap> GT 0.000001] AND [#<attempt> LT 128]]' % number,
+                'o<st_body%d> if [#<_pl_st_probe> EQ 0]' % number]
+        out.extend('#<_pl_st_%s> = 0' % key for key in footprint_keys)
+        out.append('o<st_body%d> else' % number)
+        out.extend('#<_pl_st_%s> = #<fp_%s>' % (key, key) for key in footprint_keys)
+        out += ['o<st_body%d> endif' % number,
+                '#<_pl_st_air> = 1',
+                '#<entry_z> = [#<z> + #<_pl_st_cap> * #<_pl_st_dz>]',
+                '#<entry_r> = [#<r> + #<_pl_st_cap> * #<_pl_st_dx> + #<_pl_st_air_r>]',
+                '#<_pl_st_bad> = 0', '#<_pl_st_next> = #<_pl_st_cap>']
+        # WDEEP records straight window cuts. A completed entry ramp also
+        # clears material beyond the window boundary. Trust that actual segment
+        # only for the same window/direction and within its measured bounds.
+        tol = _fmt(1e-6 * PROGRAM_MM)
+        out += ['#<ramp_clear> = 0',
+                'o<st_prev%d> if [[#<end> EQ 0] AND [#<_pl_st_prev_valid> GT 0]]' % number,
+                'o<st_prev_w%d> if [#<_pl_st_prev_w> EQ #<_pl_w_idx>]' % number,
+                'o<st_prev_dz%d> if [ABS[#<_pl_st_prev_dz> - #<entry_dz>] LE %s]' % (number, tol),
+                'o<st_prev_dr%d> if [ABS[#<_pl_st_prev_dr> - #<entry_dr>] LE %s]' % (number, tol),
+                '#<old_lo> = #<_pl_st_prev_z0>', '#<old_hi> = #<_pl_st_prev_z1>',
+                'o<st_prev_swap%d> if [#<old_lo> GT #<old_hi>]' % number,
+                '#<old_lo> = #<_pl_st_prev_z1>', '#<old_hi> = #<_pl_st_prev_z0>',
+                'o<st_prev_swap%d> endif' % number,
+                'o<st_prev_base%d> if [[#<z> GE [#<old_lo> - %s]] AND [#<z> LE [#<old_hi> + %s]]]'
+                % (number, tol, tol),
+                'o<st_prev_lo%d> if [[#<entry_z> + #<_pl_st_zl>] GE [#<old_lo> - %s]]' % (number, tol),
+                'o<st_prev_hi%d> if [[#<entry_z> + #<_pl_st_zh>] LE [#<old_hi> + %s]]' % (number, tol),
+                '#<line_gap> = [#<_pl_x_sgn> * [#<r> - #<_pl_st_prev_r0> - #<_pl_st_slope> * [#<z> - #<_pl_st_prev_z0>]]]',
+                'o<st_prev_plane%d> if [[#<line_gap> + #<_pl_st_line_support>] GE [0 - %s]]' % (number, tol),
+                '#<ramp_clear> = 1', 'o<st_prev_plane%d> endif' % number,
+                'o<st_prev_hi%d> endif' % number, 'o<st_prev_lo%d> endif' % number,
+                'o<st_prev_base%d> endif' % number, 'o<st_prev_dr%d> endif' % number,
+                'o<st_prev_dz%d> endif' % number, 'o<st_prev_w%d> endif' % number,
+                'o<st_prev%d> endif' % number]
+        out.extend(profile_constraints)
+        out.append('o<st_stock%d> if [#<ramp_clear> EQ 0]' % number)
+        out.extend(stock_constraints)
+        out.append('o<st_stock%d> endif' % number)
+        out += ['o<st_terminal%d> if [#<_pl_st_probe> GT 0]' % number,
+                'o<st_clear%d> if [#<_pl_st_bad> EQ 0]' % number,
+                'o<ncam_section_tangent> return', 'o<st_clear%d> endif' % number,
+                '#<_pl_st_cap> = #<_pl_st_next>', 'o<st_terminal%d> endif' % number,
+                '#<_pl_st_probe> = 1', '#<attempt> = [#<attempt> + 1]',
+                'o<st_validate%d> endwhile' % number,
+                '#<_pl_st_cap> = 0']
+        out += ['o<st_plan%d> endif' % number]
+    out += ['o<ncam_section_tangent> endsub']
+    return '\n'.join(out) + '\n' + section_position_definitions()
+
+
+def section_position_definitions():
+    """Prove the actual radial positioning column clear of remaining stock.
+
+    The lead itself may cut. Its far point, after runtime length/blend caps,
+    is the point positioning must reach through air. All window coordinates
+    and band conversions stay here; only completed-cut facts remain runtime.
+    """
+    out = ['o<ncam_section_position> sub', '#<_pl_st_air> = 0']
+    tol = _fmt(1e-6 * PROGRAM_MM)
+    for number, plan in enumerate(SECTION_TANGENT_PLANS, 1):
+        face = plan['face']
+        if face is None:
+            face = max(z for z, _r in plan['points'])
+        out += ['o<sp_plan%d> if [#1 EQ %d]' % (number, number),
+                'o<sp_face%d> if [#2 GT %s]' % (number, _fmt(face + 1e-6 * PROGRAM_MM)),
+                '#<_pl_st_air> = 1', 'o<sp_face%d> endif' % number]
+        for i, (a, b, rlo, rhi) in enumerate(plan['windows']):
+            label = '%d_%d' % (number, i)
+            low, high = sorted((a-plan['oz'], b-plan['oz']))
+            out += ['o<sp_z%s> if [[#2 GE %s] AND [#2 LE %s]]'
+                    % (label, _fmt(low), _fmt(high)),
+                    'o<sp_band%s> if [[#4 GE %s] AND [#4 LE %s]]'
+                    % (label, _fmt(rlo/DIAMETER_MODE-1e-6*PROGRAM_MM),
+                       _fmt(rhi/DIAMETER_MODE+1e-6*PROGRAM_MM)),
+                    'o<sp_known%s> if [[#<_pl_wdeep_ok> GT 0] AND [#%d LT 999998]]'
+                    % (label, WDEEP_BASE+i),
+                    'o<sp_r%s> if [[%d * [#3 - #%d]] GE [0 - %s]]'
+                    % (label, plan['x_sign'], WDEEP_BASE+i, tol),
+                    '#<_pl_st_air> = 1', 'o<sp_r%s> endif' % label,
+                    'o<sp_known%s> endif' % label, 'o<sp_band%s> endif' % label,
+                    'o<sp_z%s> endif' % label]
+        # A full-length sweep is not a section window. Its recorded finite
+        # straight span remains useful after Natural hands over at the boss.
+        out += ['o<sp_full%d> if [#<_pl_st_full_valid> GT 0]' % number,
+                'o<sp_full_z%d> if [[#2 GE #<_pl_st_full_low>] AND [#2 LE #<_pl_st_full_high>]]' % number,
+                'o<sp_full_r%d> if [[%d * [#3 - #<_pl_st_full_r>]] GE [0 - %s]]'
+                % (number, plan['x_sign'], tol),
+                '#<_pl_st_air> = 1', 'o<sp_full_r%d> endif' % number,
+                'o<sp_full_z%d> endif' % number, 'o<sp_full%d> endif' % number,
+                'o<sp_plan%d> endif' % number]
+    return '\n'.join(out + ['o<ncam_section_position> endsub']) + '\n'
+
+
+def merge_short_calls(plan, floor, oz, minimum, mm=1.0):
+    """Merge touching short section pieces, then order their layer dependencies.
+
+    Returns (scheduled tasks, merge count, isolated-short count). A task keeps
+    the original call bounds and constituent windows. No join spans a real gap.
+    """
+    tasks = []
+    for w, radius, why, calls in plan:
+        if why:
+            continue
+        for a, b, _first, blocked in calls:
+            if blocked:
+                continue
+            blocked, end = level_stop_z(floor, radius, a, b, oz, True, mm)
+            sign = 1 if a >= b else -1
+            if blocked or end is None or sign * (a - oz - end) <= 1e-6 * mm:
+                continue
+            tasks.append(dict(w=w, r=radius, a=a, b=b,
+                              lo=min(a - oz, end), hi=max(a - oz, end),
+                              wall=abs(end - (b - oz)) > 1e-5 * mm,
+                              ids=[len(tasks)], owners={w}))
+    originals = [task.copy() for task in tasks]
+    merges = 0
+    while True:
+        changed = False
+        for small in list(tasks):
+            if small['hi'] - small['lo'] >= minimum:
+                continue
+            neighbors = [t for t in tasks if t is not small
+                         and abs(t['r'] - small['r']) < 1e-7 * mm
+                         and t['hi'] - t['lo'] >= minimum
+                         and t['owners'] != small['owners']
+                         and (abs(t['lo'] - small['hi']) < 1e-5 * mm
+                              or abs(t['hi'] - small['lo']) < 1e-5 * mm)]
+            if not neighbors:
+                continue
+            long = min(neighbors, key=lambda t: min(t['ids']))
+            forward = long['a'] >= long['b']
+            long['a'] = (max if forward else min)(long['a'], small['a'])
+            long['b'] = (min if forward else max)(long['b'], small['b'])
+            long['lo'] = min(long['lo'], small['lo'])
+            long['hi'] = max(long['hi'], small['hi'])
+            long['wall'] = long['wall'] or small['wall']
+            long['ids'] = long['ids'] + small['ids']
+            long['owners'] = long['owners'] | small['owners']
+            tasks.remove(small)
+            merges += 1
+            changed = True
+            break
+        if not changed:
+            break
+    isolated = sum(t['hi'] - t['lo'] < minimum for t in tasks)
+    tasks = [t for t in tasks if t['hi'] - t['lo'] >= minimum]
+    if not merges:
+        return tasks, 0, isolated
+    # Edges always go from shallower to deeper material. The original window
+    # sequence is also retained, so a depth record cannot advance prematurely.
+    direction = 1 if plan[0][1] >= plan[-1][1] else -1
+    # A window's first and last *cut* radii give the OD/ID direction reliably,
+    # even when the last window has no reachable lower levels.
+    for w in dict.fromkeys(t['w'] for t in originals):
+        radii = [t['r'] for t in originals if t['w'] == w]
+        if radii and abs(radii[0] - radii[-1]) > 1e-7 * mm:
+            direction = 1 if radii[0] > radii[-1] else -1
+            break
+    edges = [set() for _ in tasks]
+    for i, upper in enumerate(tasks):
+        for j, lower in enumerate(tasks):
+            if (direction * (upper['r'] - lower['r']) > 1e-7 * mm
+                    and min(upper['hi'], lower['hi']) - max(upper['lo'], lower['lo']) > 1e-5 * mm):
+                edges[i].add(j)
+    by_original = {original: i for i, t in enumerate(tasks) for original in t['ids']}
+    for w in dict.fromkeys(t['w'] for t in originals):
+        sequence = list(dict.fromkeys(by_original[t['ids'][0]] for t in originals
+                                     if t['w'] == w and t['ids'][0] in by_original))
+        for a, b in zip(sequence, sequence[1:]):
+            edges[a].add(b)
+    pending = [0] * len(tasks)
+    for targets in edges:
+        for j in targets:
+            pending[j] += 1
+    ready = [(min(t['ids']), i) for i, t in enumerate(tasks) if not pending[i]]
+    heapq.heapify(ready)
+    ordered = []
+    while ready:
+        _priority, i = heapq.heappop(ready)
+        ordered.append(tasks[i])
+        for j in edges[i]:
+            pending[j] -= 1
+            if not pending[j]:
+                heapq.heappush(ready, (min(tasks[j]['ids']), j))
+    if len(ordered) != len(tasks):
+        raise ValueError('short-pass merges have conflicting cut dependencies')
+    return ordered, merges, isolated
 
 
 def _to_float(s):
@@ -47,6 +480,23 @@ def _fmt(val):
     # drift in the level stops when the same part was generated both ways.
     # Eight costs nothing in metric and removes it.
     return '%0.8f' % val
+
+
+def build_peck_policy_gcode(polyline_feature):
+    """Resolve fixed peck policy in Python; endpoints still come from the scan.
+
+    Only shipped enum choices select a global feed expression. Never interpolate
+    parameter text as code. Missing parameters on older features keep the
+    historical working/roughing retract.
+    """
+    def choice(name):
+        param = polyline_feature.get_param(name)
+        return _to_float(param.get_ngc_value()) if param is not None else 0.0
+
+    rapid = int(choice('param_peck_ret_mode') == 1)
+    feed = '_finish_feed' if choice('param_peck_ret_feed') == 1 else '_rough_feed'
+    return ('#<_pl_peck_ret_rapid> = %d\n#<_pl_peck_ret_feed> = #<%s>'
+            % (rapid, feed))
 
 
 def resolve_points_untrimmed(polyline_feature):
@@ -2535,8 +2985,34 @@ def ladder_consts(start_r, final_r, fin_off, prefin_off, doc,
             'rough_passes': passes}
 
 
+def spread_thin_floor(start_r, floor, step, first, doc, minimum):
+    """Redistribute a thin clamped floor landing without dropping the floor.
+
+    Artificial sections start at stock, but their phase-2 step can come from
+    the unused section ceiling. Its last full step then leaves a tiny tail
+    at a protected floor, which the ordinary skip rule must retain. Space the
+    actual stock-to-floor span instead, only when the threshold requires it
+    and every replacement cut can meet both the threshold and depth limit.
+    """
+    span = abs(floor - start_r)
+    direction = 1 if floor > start_r else -1
+    stride, head = direction * step, direction * first
+    if minimum <= 0 or doc <= EPS or stride <= EPS or head <= EPS or span <= head:
+        return step, first
+    count = max(2, int(math.ceil((span - head) / stride - 1e-10)) + 1)
+    tail = span - head - (count - 2) * stride
+    if not 0.000001 < tail < minimum:
+        return step, first
+    cuts = max(1, int(math.ceil(span / doc - 1e-10)))
+    depth = span / cuts
+    if cuts > count or depth < minimum or depth > doc + 0.000001:
+        return step, first
+    return direction * depth, direction * depth
+
+
 def ladder_phases(start_r, lad_tgt, step_target, cut_step, first_step, doc,
-                  dirsign, sect_on, sect_count, sect_top_r=None):
+                  dirsign, sect_on, sect_count, sect_top_r=None,
+                  sect_mode=0, skip_thin=0.0):
     """(top, p1_step, p1_first, p2_step, p2_first) - the ceiling and the two
     phase step sizes poly_lathe_mill works out above its window loop.
 
@@ -2572,6 +3048,9 @@ def ladder_phases(start_r, lad_tgt, step_target, cut_step, first_step, doc,
             # SPREAD, not whole steps - see poly_lathe_mill
             p2_step = (lad_tgt - top) / p2_n
             p2_first = p2_step
+        if sect_mode == 1 and skip_thin > 0:
+            p2_step, p2_first = spread_thin_floor(
+                start_r, lad_tgt, p2_step, p2_first, doc, skip_thin)
     return top, p1_step, p1_first, p2_step, p2_first
 
 
@@ -2608,7 +3087,9 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
     top_r = (got[2] / DIAMETER_MODE) if got is not None else None
     top, p1s, p1f, p2s, p2f = ladder_phases(
         start_r, c['lad_tgt'], c['step_target'], c['cut_step'],
-        c['first_step'], rough_cut, c['dirsign'], sect_on, n_win, top_r)
+        c['first_step'], rough_cut, c['dirsign'], sect_on, n_win, top_r,
+        int(got[1]) if got is not None else 0,
+        _p('param_skip_thin') if _p('param_pass_from') > 0 else 0.0)
     return '\n'.join([
         '(the ladder head, worked out at generation time: the direction, the)',
         '(two targets, the depth of cut and the first step. poly_lathe_mill)',
@@ -2641,7 +3122,7 @@ def build_ladder_consts_gcode(polyline_feature, rough_cut=0.0):
 def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
                     pass_from=False, floors=(), sectioning=False,
                     sect_top_r=None, sect_mode=0, windows=1,
-                    top_override=None):
+                    top_override=None, skip_thin=0.0):
     """The roughing level radii, per window, worked out at generation time.
 
     A REPLICA of what poly_lathe_mill computes at runtime, written to be
@@ -2673,7 +3154,8 @@ def roughing_ladder(start_r, final_r, fin_off, prefin_off, doc,
 
     top, p1_step, p1_first, p2_step, p2_first = ladder_phases(
         start_r, lad_tgt, step_target, cut_step, first_step, doc, dirsign,
-        sectioning, 1 if sectioning else 0, sect_top_r)
+        sectioning, 1 if sectioning else 0, sect_top_r, sect_mode,
+        skip_thin if pass_from else 0.0)
 
     def walk(lvl_start, lvl_floor, step, first, staged=False):
         # THE LADDER RE-ANCHORS ON EACH FLOOR STAGE. Reaching one is not the
@@ -3212,7 +3694,8 @@ def build_level_table_gcode(polyline_feature, rough_cut=0.0):
         _p('param_pf_off') * (1 if _p('param_pf_on') else 0),
         rough_cut, _p('param_pass_from') > 0,
         floor_stages(polyline_feature, rough_cut),
-        sectioning, top_r, int(sect_mode), n_win)
+        sectioning, top_r, int(sect_mode), n_win,
+        skip_thin=_p('param_skip_thin'))
     ladder = [(w, radii) for w, radii in ladder if radii]
     if not ladder:
         return ''
@@ -3499,7 +3982,7 @@ def roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r=0.0,
         return roughing_ladder(start_r, final_r, fin, pre, rough_cut,
                                _p('param_pass_from') > 0, stgs, sectioning,
                                top_r, sect_mode, max(len(sects), 1),
-                               top_override=over)
+                               top_override=over, skip_thin=skip_thin)
 
     lad = _ladder()
     eff_top = top
@@ -4538,6 +5021,55 @@ def cam_pass_offsets(fin_off, pf_off, fin_passes):
     return [fin_off] + [fin_off * (n - i) / float(n) for i in range(1, n + 1)]
 
 
+def project_finish_front(points, begin_z):
+    """Extend the canonical CAM front once, before any wall subpaths split.
+
+    A reversed cleanup part can locally travel toward the back. That does not
+    make it a profile front and must never project its tangent to Begin Z.
+    Store the real front extension in the geometry so either traversal uses
+    the same contour. Points carry diameters, as offset_contour returns them.
+    """
+    if len(points) < 2 or points[0][0] <= points[-1][0]:
+        return list(points)
+    (z0, x0), (z1, x1) = points[:2]
+    dz, dx = z1 - z0, (x1 - x0) / DIAMETER_MODE
+    length = math.hypot(dz, dx)
+    if length <= 1e-6 or abs(dz) <= .001 * length:
+        return list(points)            # a radial entry has no Z projection
+    if abs(begin_z - z0) <= EPS:
+        return list(points)
+    front = (begin_z, x0 + (begin_z - z0) * (x1 - x0) / dz)
+    return [front] + list(points[1:])
+
+
+def cam_path_layout(counts, split=False):
+    """(point bases, owner base), or None when the CAM banks cannot fit.
+
+    Native soft-contour points in FC are never read in In-CAM mode: that
+    branch loads the CAM directory instead. Reuse that existing bank only
+    when CAM alone is full, keeping each subpath contiguous for cam_load.
+    The record buffer still sizes itself from _pl_cam_max and _pl_fc_n.
+    """
+    start = CAM_BASE + 2 * len(counts)
+
+    def pack(spare=False):
+        ptr, fc, bases = start, FC_BASE, []
+        for count in counts:
+            size = 2 * count
+            if spare and fc + size <= FC_TOP:
+                bases.append(fc)
+                fc += size
+            else:
+                bases.append(ptr)
+                ptr += size
+        owner = ptr if split else 0
+        if ptr + (len(counts) if split else 0) > CAM_TOP:
+            return None
+        return bases, owner
+
+    return pack() or pack(spare=True)
+
+
 def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
                          flank_len=0.0, clearance=0.0):
     """Literal G-code with the CAM-offset contours, or a warning comment.
@@ -4615,6 +5147,12 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
         return _refuse('the offset path collapsed - the nose radius is too '
                        'large for this profile')
 
+    begin_z = _off('param_b_z')
+    if _off('param_fr_z_on'):
+        begin_z = min(begin_z, z_limit_abs(polyline_feature, 'front'))
+    begin_z += ext_dz(polyline_feature, 'front')
+    paths = [project_finish_front(p, begin_z) for p in paths]
+
     # EACH PASS MAY BECOME SEVERAL SUB-PATHS, split where the contour meets a
     # perpendicular X wall - see split_contour_at_walls. The directory below is
     # a flat list of sub-paths and `owner` says which pass each belongs to, so
@@ -4622,12 +5160,17 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     # profile with no wall, or the feature off, yields exactly one sub-path per
     # pass and the identical directory this emitted before.
     xw_mode, xw_front, xw_back, xw_tol = xw_settings(polyline_feature)
+    fin_dir = int(_off('param_f_dir'))
     subs, owner = [], []
     for k, p in enumerate(paths):
+        # Wall detours belong only to forward cutting. Reverse finishing is
+        # one connected contour; Both uses that rule on its even passes.
+        # Pass zero is pre-finish: it takes the first finishing direction.
+        reverse = fin_dir == 1 or (fin_dir == 2 and k > 0 and k % 2 == 0)
         parts = (split_contour_at_walls(p, xw_tol, xw_front, xw_back,
                                         2.0 * nose_r,
                                         _stock_x(polyline_feature), nose_r)
-                 if xw_mode == 2 and xw_front > 0 else [p])
+                 if not reverse and xw_mode == 2 and xw_front > 0 else [p])
         for part in parts:
             subs.append(part)
             owner.append(k)
@@ -4643,20 +5186,16 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
 
     # directory first, then the points; the base of each table depends on how
     # long every table before it turned out to be
-    ptr = CAM_BASE + 2 * len(subs)
-    ptrs = []
-    for p in subs:
-        ptrs.append(ptr)
-        ptr += 2 * len(p)
-    own_base = 0
-    if split:
-        own_base = ptr
-        ptr += len(subs)
-    if ptr > CAM_TOP:
+    layout = cam_path_layout([len(p) for p in subs], split)
+    if layout is None:
+        needed = 2 * len(subs) + sum(2 * len(p) for p in subs)
+        needed += len(subs) if split else 0
         return _refuse('the offset path needs %d parameter slots and only %d '
                        'are safe to use - reduce the number of finish passes, '
-                       'or use Native LinuxCNC' % (ptr - CAM_BASE,
-                                                   CAM_TOP - CAM_BASE))
+                       'or use Native LinuxCNC' % (needed,
+                                                   CAM_TOP - CAM_BASE
+                                                   + FC_TOP - FC_BASE))
+    ptrs, own_base = layout
 
     lines = ['(nose compensation done in CAM: these are already-offset control)',
              '(point paths, so the machine runs uncompensated - see _tip_cam)',
@@ -4755,6 +5294,10 @@ FLANK_BASE = 2400
 # tables built from the simplified reachable one: 226 slots on testing_15_2,
 # where 200 was not enough and it silently fell back to the old scan
 FLANK_TOP = 2600
+# Full roughing intervals which artificial sectioning must not mistake for
+# isolated short cuts. Three slots per (level, low Z, high Z) record.
+SHORT_BASE = 2600
+SHORT_TOP = 2800
 # THE 3600..4600 REGION IS REPACKED, all four of these windows reading their
 # base from a global the O-code never hardcodes, so this is a Python-only move.
 # Keeping the drawn arcs pushed the entry contour to 100 points on
@@ -5022,19 +5565,15 @@ def build_rough_nose_gcode(polyline_feature, nose_r=0.0, orient=0):
         '#<_pl_ramp_face> = %d' % ramp_facing(orient)])
 
 
-def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
-                              flank_len=0.0, clearance=0.0, entry_off=0.0, orient=0):
-    """The entry contour as a point table, or '' when there is nothing to say.
-
-    Emitted next to the finishing contour and read the same way. The runtime
-    gate is _pl_entry_n > 0, so '' leaves roughing exactly as it was.
-    """
+def entry_contour_data(polyline_feature, back_deg, nose_r=0.0,
+                       flank_len=0.0, clearance=0.0, entry_off=0.0, orient=0):
+    """Shared entry contour for the walker table and its tangent directions."""
     if entry_off is None or _to_float(entry_off) <= 0:
-        return ''
+        return None
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
                                 clearance)
     if not pts or len(pts) < 2:
-        return ''
+        return None
     d = polyline_feature.get_param('param_dir')
     # one decomposition frame - see rough_frame_dir
     rough_dir = rough_frame_dir(
@@ -5068,7 +5607,15 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     env = entry_contour([(z, x / DIAMETER_MODE) for z, x in pts],
                         fin_off + pf_off + _e, rough_dir, _nr, _or,
                         fin_off_z + pf_off + _e)
-    if len(env) < 2:
+    return env if len(env) >= 2 else None
+
+
+def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
+                              flank_len=0.0, clearance=0.0, entry_off=0.0, orient=0):
+    """Emit the shared entry contour, or retain legacy roughing when absent."""
+    env = entry_contour_data(polyline_feature, back_deg, nose_r, flank_len,
+                             clearance, entry_off, orient)
+    if env is None:
         return ''
     top = ENTRY_BASE + 2 * len(env)
     if top > ENTRY_TOP:
@@ -5097,7 +5644,7 @@ def build_entry_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 
 def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
                               flank_len=0.0, clearance=0.0, orient=0,
-                              rough_cut=0.0):
+                              rough_cut=0.0, include_zero=False):
     """(env, renv, rough_dir) - the floor contour and the resume
     envelope as DATA, or None.
 
@@ -5137,7 +5684,10 @@ def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
     if pf_on is not None and _to_float(pf_on.get_ngc_value()) <= 0:
         pf_off = 0.0
     floor_x, floor_z = fin_off + pf_off, fin_off_z + pf_off
-    if max(floor_x, floor_z) <= 0:
+    # Section tangent selection still needs the compensated profile when
+    # roughing leaves no allowance. Existing table/planner callers retain
+    # their zero-allowance fallback unless they explicitly request it.
+    if max(floor_x, floor_z) <= 0 and not include_zero:
         return None
 
     # THE RAW PROFILE, not the reachable one. The scan this replaces walks the
@@ -5183,6 +5733,103 @@ def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
     return env, renv, rough_dir
 
 
+def continuous_cut_spans(floor_contour, resume_env, levels, w_from, w_to,
+                         minimum, boundaries, oz=0.0, mm=1.0):
+    """Long continuous cuts split by sections, as (level, low Z, high Z).
+
+    Reuse the same level/interval planners as roughing. Only the length of
+    the unsplit interval decides whether a section fragment may be skipped.
+    No toolpath is extended here: the existing walker still chooses its ends.
+    """
+    spans = []
+    direction = 1.0 if w_from >= w_to else -1.0
+    for level in sorted(set(levels), reverse=True):
+        for start, bound in level_calls(floor_contour, resume_env, level,
+                                        w_from, w_to, oz, True, mm):
+            blocked, end = level_stop_z(floor_contour, level, start, bound,
+                                        oz, True, mm)
+            if blocked or end is None:
+                continue
+            start -= oz
+            if direction * (start - end) < minimum:
+                continue
+            lo, hi = sorted((start, end))
+            if any(lo + EPS < z < hi - EPS for z in boundaries):
+                spans.append((level, lo, hi))
+    return spans
+
+
+def build_short_pass_gcode(polyline_feature, rough_cut, back_deg, nose_r,
+                           flank_len, clearance, orient, floor_data):
+    """Register merged literal calls; never retain a tiny standalone piece."""
+    reset = '#<_pl_short_n> = 0\n#<_pl_merge_id> = 0'
+    prm = polyline_feature.get_param('param_min_pass')
+    minimum = _to_float(prm.get_ngc_value()) if prm is not None else 0.0
+    if minimum <= 0 or rough_cut <= EPS:
+        return reset
+    operation = polyline_feature.get_param('param_op')
+    if operation is not None and _to_float(operation.get_ngc_value()) == 2:
+        return reset
+    sections = section_windows(polyline_feature)
+    if sections is None or sections[1] != 1:
+        return reset
+    plan = roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r,
+                             flank_len, clearance, orient)
+    if plan is None:
+        return reset
+    _ox, oz = rough_nose_terms(polyline_feature, nose_r, orient)
+    tasks, joins, isolated = merge_short_calls(plan, floor_data[0], oz,
+                                              minimum, PROGRAM_MM)
+    if not joins:
+        return reset
+    def value(name):
+        prm = polyline_feature.get_param(name)
+        return _to_float(prm.get_ngc_value()) if prm is not None else 0.0
+    start, end = rough_radius_bounds(polyline_feature)
+    direction = 1 if start >= end else -1
+    allowance = value('param_f_off') + value('param_pf_off') * bool(value('param_pf_on'))
+    leads = ' '.join('[%s]' % _fmt(value(name)) for name in
+                     ('param_li_len', 'param_li_ang', 'param_li_feed',
+                      'param_lo_len', 'param_lo_ang', 'param_lo_feed',
+                      'param_li_rad', 'param_lo_rad'))
+    MERGED_ROUGHING_PLANS.append(dict(tasks=tasks, joins=joins, isolated=isolated,
+                                      leads=leads, allowance=direction * allowance,
+                                      stock=_stock_x(polyline_feature) / DIAMETER_MODE))
+    return ('(merged %d short section pieces; filtered %d isolated short cuts)\n'
+            '#<_pl_short_n> = 0\n#<_pl_merge_id> = %d'
+            % (joins, isolated, len(MERGED_ROUGHING_PLANS)))
+
+
+def merged_roughing_definitions():
+    """One dispatcher per generated program, containing all operation plans."""
+    if not MERGED_ROUGHING_PLANS:
+        return ''
+    out = ['o<ncam_merge_rough> sub', '#<merge_pds> = #1', '#<merge_id> = #2']
+    for number, plan in enumerate(MERGED_ROUGHING_PLANS, 1):
+        out.append('o<merge_%d> if [#<merge_id> EQ %d]' % (number, number))
+        for index, task in enumerate(plan['tasks']):
+            w = task['w']
+            label = '%d_%d' % (number, index)
+            out += ['#<_pl_w_idx> = %d' % w,
+                    '#<_pl_merge_wall> = %d' % task['wall'],
+                    '#<_pl_prev_lvl> = #%d' % (WDEEP_BASE + w),
+                    'o<mprev_%s> if [#<_pl_prev_lvl> GT 999998]' % label,
+                    '#<_pl_prev_lvl> = %s' % _fmt(plan['stock']),
+                    'o<mprev_%s> endif' % label,
+                    '#<_pl_level_z_end> = %s' % _fmt(task['a']),
+                    '#<_level_blocked> = 0',
+                    'o<lathe_level_pass> CALL [#<merge_pds>] [%s] [%s] [%s] [%s] [#<_rough_feed>] %s'
+                    % (_fmt(task['r']), _fmt(plan['allowance']), _fmt(task['a']),
+                       _fmt(task['b']), plan['leads']),
+                    'o<mran_%s> if [#<_pl_level_ran> GT 0]' % label]
+            for owner in sorted(task['owners']):
+                out.append('#%d = %s' % (WDEEP_BASE + owner, _fmt(task['r'])))
+            out.append('o<mran_%s> endif' % label)
+        out.append('o<merge_%d> endif' % number)
+    out.append('o<ncam_merge_rough> endsub')
+    return '\n'.join(out) + '\n'
+
+
 def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
                               flank_len=0.0, clearance=0.0, orient=0,
                               rough_cut=0.0):
@@ -5190,12 +5837,13 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     got = floor_contour_data(polyline_feature, back_deg, nose_r,
                             flank_len, clearance, orient, rough_cut)
     if got is FLOORC_OVERFLOW:
-        return ('(WARNING - the floor contour does not fit the %d parameter '
+        return ('#<_pl_short_n> = 0\n#<_pl_merge_id> = 0\n'
+                '(WARNING - the floor contour does not fit the %d parameter '
                 'slots free for it, so roughing works its own floor out as '
                 'before and a separate Z offset will not reach it.)'
                 % (FLOORC_TOP - FLOORC_BASE))
     if got is None:
-        return ''
+        return '#<_pl_short_n> = 0\n#<_pl_merge_id> = 0'
     env, renv, rough_dir = got
     lines = ['(where a roughing LEVEL stops: the profile offset by the floor)',
              '(allowance, joined at its corners and blended between the radial)',
@@ -5228,6 +5876,8 @@ def build_floor_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
                      'and only %d are free, so the resume scan falls back to '
                      'the record array.)'
                      % (2 * len(renv), RESUME_TOP - RESUME_BASE))
+    lines.append(build_short_pass_gcode(polyline_feature, rough_cut, back_deg,
+                                        nose_r, flank_len, clearance, orient, got))
     return '\n'.join(lines)
 
 

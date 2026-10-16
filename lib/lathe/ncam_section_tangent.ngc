@@ -1,0 +1,5 @@
+(The generated program supplies the actual Python-computed section tangents.)
+(CALL plan[1] z[2] radius[3] end[4] level[5] entry_dz[6] entry_dr[7])
+o<ncam_section_tangent> sub
+    (ABORT, Section tangent plan is missing - regenerate the NativeCAM project.)
+o<ncam_section_tangent> endsub

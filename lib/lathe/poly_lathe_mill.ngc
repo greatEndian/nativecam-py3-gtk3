@@ -636,6 +636,9 @@ o<poly_lathe_mill> sub
         o<w_idx_init> else
                 #<w_idx> = -1
         o<w_idx_init> endif
+        o<st_phase_new> if [EXISTS[#<_pl_st_full_valid>]]
+                #<_pl_w_idx> = -1
+        o<st_phase_new> endif
         #<_pl_ph1_front_cut> = 0
         (set when phase 1 hands over mid-level, read once that level is done)
         #<ph1_fin> = 0
@@ -651,7 +654,13 @@ o<poly_lathe_mill> sub
         (loop stays as the fallback and runs whenever _pl_flat_sub is 0 -)
         (an older project, a second polyline, or a profile Python declines)
         (to describe.)
-        o<flat_go> if [#<_pl_flat_sub> GT 0]
+        #<merge_plan> = 0
+        o<merge_exists> if [EXISTS[#<_pl_merge_id>]]
+                #<merge_plan> = #<_pl_merge_id>
+        o<merge_exists> endif
+        o<flat_go> if [#<merge_plan> GT 0]
+                o<ncam_merge_rough> call [#<m_pds>] [#<merge_plan>]
+        o<flat_go> elseif [#<_pl_flat_sub> GT 0]
                 o<ncam_flat_rough> call [#<m_pds>]
         o<flat_go> else
         o<wh_w> while [1]

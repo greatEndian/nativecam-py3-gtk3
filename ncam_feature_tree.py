@@ -220,12 +220,21 @@ class NCamFeatureTreeMixin:
                 self.details_filter = a_filter
 
                 if self.treeview2 is not None:
-                    self.treeview2.set_model(self.treestore)
-                    self.treeview2.set_model(self.details_filter)
-                    self.treeview2.expand_all()
+                    restoring = getattr(self, '_restoring_detail_groups', False)
+                    self._restoring_detail_groups = True
+                    try:
+                        self.treeview2.set_model(self.treestore)
+                        self.treeview2.set_model(self.details_filter)
+                    finally:
+                        self._restoring_detail_groups = restoring
+                    self.restore_detail_groups()
 
         if tree_path is not None :
-            self.treeview.expand_to_path(gtk.TreePath(list(tree_path) + [0, 0]))
+            self.treeview.set_show_expanders(True)
+            if self.iter_selected_type == tv_select.feature:
+                self.treeview.expand_row(tree_path, False)
+            elif self.iter_selected_type == tv_select.items:
+                self.treeview.expand_to_path(gtk.TreePath(list(tree_path) + [0, 0]))
         self.can_delete_duplicate = (self.iter_selected_type == tv_select.feature)
         self.set_actions_sensitives()
 

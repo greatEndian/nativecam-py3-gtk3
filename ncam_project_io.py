@@ -1,9 +1,11 @@
+import io
 import os
 import subprocess
 
 from lxml import etree
 
 import lathe_sections
+import atomic_write
 
 import ncam
 from ncam import (
@@ -15,6 +17,113 @@ from ncam import (
 
 
 class NCamProjectIOMixin:
+    def get_project_directory(self):
+        """The selected project folder, remembered separately for each catalog."""
+        default = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR,
+                               self.catalog_dir, PROJECTS_DIR)
+        config = ncam.ConfigParser.ConfigParser(interpolation=None)
+        config.read(os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, ncam.CONFIG_FILE))
+        return config.get('project_directories', self.catalog_dir, fallback=default)
+
+
+    def set_project_directory(self, directory):
+        directory = directory.strip()
+        if directory.startswith('file:'):
+            directory = ncam.Gio.File.new_for_uri(directory).get_path()
+        if not directory:
+            raise ValueError(_('Enter the path of an existing local folder.'))
+        directory = os.path.abspath(os.path.expanduser(directory))
+        if not os.path.isdir(directory):
+            raise ValueError(_('Folder does not exist:\n%s') % directory)
+        if not os.access(directory, os.R_OK | os.X_OK):
+            raise ValueError(_('Cannot read this folder:\n%s') % directory)
+
+        # Raw values allow ordinary directory names containing percent signs.
+        # Read before writing so layout and other catalogs keep their settings.
+        cfg_file = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, ncam.CONFIG_FILE)
+        config = ncam.ConfigParser.ConfigParser(interpolation=None)
+        config.read(cfg_file)
+        if not config.has_section('project_directories'):
+            config.add_section('project_directories')
+        config.set('project_directories', self.catalog_dir, directory)
+        text = io.StringIO()
+        config.write(text)
+        atomic_write.write_atomic(cfg_file, text.getvalue())
+        return directory
+
+
+    def _set_project_chooser_folder(self, chooser):
+        directory = self.get_project_directory()
+        if not os.path.isdir(directory):
+            mess_dlg(_('Working directory is unavailable:\n%s\n\n'
+                       'Use Projects → Working Directory to select another folder.')
+                     % directory)
+            directory = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR,
+                                     self.catalog_dir, PROJECTS_DIR)
+        chooser.set_current_folder(directory)
+
+
+    def action_working_directory(self, *arg):
+        dialog = gtk.Dialog(title=_('Working Directory'),
+                            transient_for=self.get_toplevel(), modal=True,
+                            destroy_with_parent=True)
+        dialog.add_buttons('gtk-cancel', gtk.ResponseType.CANCEL,
+                           'gtk-ok', gtk.ResponseType.OK)
+        dialog.set_default_response(gtk.ResponseType.OK)
+        dialog.set_default_size(700, -1)
+        content = dialog.get_content_area()
+        content.set_border_width(12)
+        content.set_spacing(8)
+        label = gtk.Label(label=_('Choose the folder for opening and saving projects.'))
+        label.set_xalign(0)
+        content.pack_start(label, False, False, 0)
+        row = gtk.Box(spacing=8)
+        entry = gtk.Entry()
+        entry.set_text(self.get_project_directory())
+        entry.set_activates_default(True)
+        row.pack_start(entry, True, True, 0)
+        browse = gtk.Button(label=_('Browse…'))
+        row.pack_start(browse, False, False, 0)
+        content.pack_start(row, False, False, 0)
+        error = gtk.Label()
+        error.set_xalign(0)
+        error.set_line_wrap(True)
+        content.pack_start(error, False, False, 0)
+
+        def choose_folder(*unused):
+            chooser = gtk.FileChooserDialog(
+                _('Choose Working Directory'), dialog, gtk.FileChooserAction.SELECT_FOLDER,
+                ('gtk-cancel', gtk.ResponseType.CANCEL, 'gtk-ok', gtk.ResponseType.OK))
+            chooser.set_destroy_with_parent(True)
+            try:
+                directory = os.path.expanduser(entry.get_text().strip())
+                if os.path.isdir(directory):
+                    chooser.set_current_folder(directory)
+                if chooser.run() == gtk.ResponseType.OK:
+                    entry.set_text(chooser.get_filename())
+            finally:
+                chooser.destroy()
+
+        browse.connect('clicked', choose_folder)
+        dialog.show_all()
+        entry.grab_focus()
+        try:
+            while dialog.run() == gtk.ResponseType.OK:
+                try:
+                    self.set_project_directory(entry.get_text())
+                    break
+                except (ValueError, OSError, ncam.ConfigParser.Error) as err:
+                    error.set_text(str(err))
+                    entry.grab_focus()
+            else:
+                return
+        finally:
+            dialog.destroy()
+        # Let the existing Open action list the selected folder and load the
+        # project the user picks; choosing a directory never picks a file for them.
+        self.action_open_project(None, (0,))
+
+
     def treestore_from_xml(self, xml):
 
         treestore = gtk.TreeStore(object, str, bool, bool)
@@ -36,12 +145,8 @@ class NCamProjectIOMixin:
                         p_hidden = get_int(p.attr['hidden'] if 'hidden' in p.attr else '0')
 
                         if self.actionDualView.get_active() :
-                            if self.actionSubHdrs.get_active() :
-                                m_visible = p_type in ['items', 'header', 'sub-header'] and not p_hidden
-                                is_visible = p_type not in ['items', 'header', 'sub-header'] and not p_hidden
-                            else :
-                                m_visible = p_type in ['items', 'header'] and not p_hidden
-                                is_visible = p_type not in ['items', 'header'] and not p_hidden
+                            m_visible = p_type == 'items' and not p_hidden
+                            is_visible = p_type != 'items' and not p_hidden
                         else :
                             m_visible = not p_hidden
                             is_visible = False
@@ -89,9 +194,14 @@ class NCamProjectIOMixin:
         self.treestore = treestore
         self.master_filter = self.treestore.filter_new()
         self.master_filter.set_visible_column(2)
-        self.treeview.set_model(self.treestore)
-        self.treeview.set_model(self.master_filter)
-        self.set_expand()
+        self._restoring_detail_groups = True
+        try:
+            self.treeview.set_model(self.treestore)
+            self.treeview.set_model(self.master_filter)
+            self.set_expand()
+        finally:
+            self._restoring_detail_groups = False
+        self.restore_master_property_groups()
 
 
     def resolve_program_units(self) :
@@ -133,6 +243,7 @@ class NCamProjectIOMixin:
         else :
             ncam.TBL_SCALE = 25.4            # inch table into a metric program
 
+        lathe_sections.PROGRAM_MM = 1.0 if ncam.program_metric else 1.0 / 25.4
         self.pref.create_defaults()
 
 
@@ -145,6 +256,8 @@ class NCamProjectIOMixin:
         lathe_sections.WORKPIECE_ID = None
         lathe_sections.TOOL_FRONT_ANGLE = 0.0
         lathe_sections.TOOL_NOSE_R = 0.0
+        lathe_sections.MERGED_ROUGHING_PLANS.clear()
+        lathe_sections.SECTION_TANGENT_PLANS.clear()
         self.resolve_program_units()
 
         def recursive(itr, ldr, parent_feature = None) :
@@ -153,6 +266,9 @@ class NCamProjectIOMixin:
             sub_ldr = ldr
             f = self.treestore.get(itr, 0)[0]
             if f.__class__ is Feature :
+                pane = getattr(self, 'preview_pane', None)
+                if pane is not None:
+                    pane.generation_step(_('Generating: %s') % f.get_attr('name'))
                 # Tell the tool table which tool is loaded from here on. The
                 # Tool Change [INIT] does this too, but INIT only runs when a
                 # feature is built from its cfg or migrates - never on a plain
@@ -304,6 +420,8 @@ class NCamProjectIOMixin:
         # definition may be built from the geometry the feature describes
         for f_def in def_order :
             gcode_def += f_def.get_definitions()
+        gcode_def += lathe_sections.merged_roughing_definitions()
+        gcode_def += lathe_sections.section_tangent_definitions()
         if self.pref.use_pct :
             return self.pref.default + gcode_def + \
             _("(end sub definitions)\n\n") + gcode + self.pref.ngc_post_amble + '\n%\n'
@@ -494,7 +612,7 @@ class NCamProjectIOMixin:
             filt.set_name(_("All files"))
             filt.add_pattern("*")
             filechooserdialog.add_filter(filt)
-            filechooserdialog.set_current_folder(os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, self.catalog_dir, PROJECTS_DIR))
+            self._set_project_chooser_folder(filechooserdialog)
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
             filechooserdialog.set_destroy_with_parent(True)
@@ -653,7 +771,10 @@ class NCamProjectIOMixin:
             return self.action_save_project(*arg)
         try :
             xml = self.treestore_to_xml()
-            etree.ElementTree(xml).write(path, pretty_print = True)
+            # A file object keeps libxml2 from interpreting '%' in a local
+            # filename as URI escaping.
+            with open(path, 'wb') as project_file:
+                etree.ElementTree(xml).write(project_file, pretty_print = True)
             self.file_changed = False
         finally :
             self.display_proj_name()
@@ -670,7 +791,7 @@ class NCamProjectIOMixin:
             filt.add_pattern("*.xml")
             filechooserdialog.add_filter(filt)
             d, fname = os.path.split(ncam.CURRENT_PROJECT)
-            filechooserdialog.set_current_folder(os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, self.catalog_dir, PROJECTS_DIR))
+            self._set_project_chooser_folder(filechooserdialog)
             filechooserdialog.set_current_name(fname)
             filechooserdialog.set_do_overwrite_confirmation(True)
             filechooserdialog.set_keep_above(True)
@@ -679,10 +800,12 @@ class NCamProjectIOMixin:
 
             if filechooserdialog.run() == gtk.ResponseType.OK:
                 xml = self.treestore_to_xml()
-                ncam.CURRENT_PROJECT = filechooserdialog.get_filename()
-                if not ncam.CURRENT_PROJECT.lower().endswith(".xml") :
-                    ncam.CURRENT_PROJECT += ".xml"
-                etree.ElementTree(xml).write(ncam.CURRENT_PROJECT, pretty_print = True)
+                filename = filechooserdialog.get_filename()
+                if not filename.lower().endswith(".xml") :
+                    filename += ".xml"
+                with open(filename, 'wb') as project_file:
+                    etree.ElementTree(xml).write(project_file, pretty_print = True)
+                ncam.CURRENT_PROJECT = filename
                 self.file_changed = False
         finally:
             self.display_proj_name()
@@ -699,7 +822,6 @@ class NCamProjectIOMixin:
         if arg[1][0] == 0 :  # user project
             dlg_title = _("Open project")
             flt_name = _("NativeCAM projects")
-            dir_ = os.path.join(ncam.NCAM_DIR, CATALOGS_DIR, self.catalog_dir, PROJECTS_DIR)
         else :  # example
             dlg_title = _("Open example project")
             flt_name = _("NativeCAM example projects")
@@ -717,7 +839,10 @@ class NCamProjectIOMixin:
             else :
                 filt.add_pattern("*.*")
             filechooserdialog.add_filter(filt)
-            filechooserdialog.set_current_folder(dir_)
+            if arg[1][0] == 0:
+                self._set_project_chooser_folder(filechooserdialog)
+            else:
+                filechooserdialog.set_current_folder(dir_)
             filechooserdialog.set_keep_above(True)
             filechooserdialog.set_transient_for(self.get_toplevel())
             filechooserdialog.set_destroy_with_parent(True)
@@ -729,6 +854,7 @@ class NCamProjectIOMixin:
                 if src_data.find(XML_TAG) != 1 :
                     subprocess.call(["xdg-open '%s'" % filename], shell = True)
                 else :
+                    self.configure_preview_context(filename)
                     xml = etree.fromstring(src_data)
                     xml = self.update_features(xml)
                     self.treestore_from_xml(xml)

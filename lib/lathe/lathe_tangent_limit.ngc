@@ -1,0 +1,78 @@
+(Clip a precomputed tangent ray using an actual endpoint and cut history.)
+(CALL low_z[1] high_z[2] slope[3] intercept[4] normal_length[5] base_z[6] base_r[7])
+(Geometry and the conservative lead/blend footprint come from Python.)
+o<lathe_tangent_limit> sub
+    o<st_empty> if [#<_pl_st_cap> LE 0]
+        o<lathe_tangent_limit> return
+    o<st_empty> endif
+    #<low> = [#1 - #<_pl_st_zh>]
+    #<high> = [#2 - #<_pl_st_zl>]
+    #<t0> = 0
+    #<t1> = #<_pl_st_cap>
+    o<st_axial> if [ABS[#<_pl_st_dz>] GT 0.00000001]
+        #<a> = [[#<low> - #6] / #<_pl_st_dz>]
+        #<b> = [[#<high> - #6] / #<_pl_st_dz>]
+        o<st_swap> if [#<a> GT #<b>]
+            #<tmp> = #<a>
+            #<a> = #<b>
+            #<b> = #<tmp>
+        o<st_swap> endif
+        o<st_low> if [#<a> GT #<t0>]
+            #<t0> = #<a>
+        o<st_low> endif
+        o<st_high> if [#<b> LT #<t1>]
+            #<t1> = #<b>
+        o<st_high> endif
+    o<st_axial> else
+        o<st_outside> if [[#6 LT #<low>] OR [#6 GT #<high>]]
+            o<lathe_tangent_limit> return
+        o<st_outside> endif
+    o<st_axial> endif
+    o<st_miss> if [#<t0> GT #<t1>]
+        o<lathe_tangent_limit> return
+    o<st_miss> endif
+    #<support> = 0
+    #<v> = [#<_pl_x_sgn> * [#<_pl_st_cr> - #3 * #<_pl_st_cz>] - #<_pl_st_rad> * #5]
+    o<st_circle> if [#<v> LT #<support>]
+        #<support> = #<v>
+    o<st_circle> endif
+    #<v> = [#<_pl_x_sgn> * [#<_pl_st_tr> - #3 * #<_pl_st_tz>]]
+    o<st_tangent> if [#<v> LT #<support>]
+        #<support> = #<v>
+    o<st_tangent> endif
+    #<v> = [#<_pl_x_sgn> * [#<_pl_st_fr> - #3 * #<_pl_st_fz>]]
+    o<st_far> if [#<v> LT #<support>]
+        #<support> = #<v>
+    o<st_far> endif
+    #<height> = [#<_pl_x_sgn> * [#7 - #3 * #6 - #4] + #<support>]
+    #<slope> = [#<_pl_x_sgn> * [#<_pl_st_dx> - #3 * #<_pl_st_dz>]]
+    (The tangent body must be clear throughout, but the lead exists only at)
+    (its final position. Search backward for a clear terminal lead footprint.)
+    o<st_terminal> if [#<_pl_st_probe> GT 0]
+        o<st_beyond> if [#<_pl_st_cap> GT [#<t1> + 0.00000001]]
+            o<lathe_tangent_limit> return
+        o<st_beyond> endif
+        #<v> = [#<height> + #<_pl_st_cap> * #<slope>]
+        o<st_bad> if [#<v> LT -0.000001]
+            #<_pl_st_bad> = 1
+            #<limit> = [#<t0> - 0.000001]
+            o<st_root> if [#<slope> LT -0.00000001]
+                #<root> = [0 - #<height> / #<slope>]
+                o<st_root_in> if [#<root> GE #<t0>]
+                    #<limit> = #<root>
+                o<st_root_in> endif
+            o<st_root> endif
+            o<st_reduce> if [#<limit> LT #<_pl_st_next>]
+                #<_pl_st_next> = #<limit>
+            o<st_reduce> endif
+        o<st_bad> endif
+        o<lathe_tangent_limit> return
+    o<st_terminal> endif
+    #<v0> = [#<height> + #<t0> * #<slope>]
+    #<v1> = [#<height> + #<t1> * #<slope>]
+    o<st_blocked> if [#<v0> LT -0.000001]
+        #<_pl_st_cap> = #<t0>
+    o<st_blocked> elseif [#<v1> LT -0.000001]
+        #<_pl_st_cap> = [0 - #<height> / #<slope>]
+    o<st_blocked> endif
+o<lathe_tangent_limit> endsub

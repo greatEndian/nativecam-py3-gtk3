@@ -3,7 +3,7 @@ import os
 import ncam
 from ncam import (
     gtk, gdk, gobject, pango, _, tv_select, CellRendererMx, Feature, get_float,
-    NO_ICON_TYPES, GROUP_HEADER_TYPES, NUMBER_TYPES, SUPPORTED_DATA_TYPES,
+    NO_ICON_TYPES, NUMBER_TYPES, SUPPORTED_DATA_TYPES,
     decimal_point, items_fmt_str, gray_header_fmt_str, gray_sub_header_fmt_str2,
     gray_sub_header_fmt_str, gray_items_fmt_str, gray_val, gray_feature_fmt_str,
     header_fmt_str, sub_header_fmt_str2, sub_header_fmt_str, feature_fmt_str,
@@ -64,6 +64,9 @@ class NCamTreeviewMixin:
         self.treeview.add_events(TV_EVENT_MASK)
         self.treeview.connect('realize', arm_scroll_events)
         self.treeview.connect('button-press-event', self.pop_menu)
+        self.treeview.connect('button-press-event', self._detail_heading_clicked)
+        self.treeview.connect('row-expanded', self._detail_group_toggled, True)
+        self.treeview.connect('row-collapsed', self._detail_group_toggled, False)
         self.treeview.connect('row_activated', self.tv_row_activated)
         self.treeview.connect('key_press_event', self.tv_key_pressed_event)
 
@@ -115,14 +118,12 @@ class NCamTreeviewMixin:
         self.treeview2.add_events(TV_EVENT_MASK)
         self.treeview2.connect('realize', arm_scroll_events)
         self.treeview2.connect('button-press-event', self.pop_menu)
+        self.treeview2.connect('button-press-event', self._detail_heading_clicked)
         self.treeview2.connect('cursor-changed', self.tv2_selected)
         self.treeview2.connect('row_activated', self.tv_row_activated)
         self.treeview2.set_grid_lines(gtk.TreeViewGridLines.VERTICAL)
-        self.treeview2.set_show_expanders(self.pref.tv2_expandable)
-        if self.pref.tv2_expandable :
-            self.treeview2.set_level_indentation(-5)
-        else :
-            self.treeview2.set_level_indentation(12)
+        self.treeview2.set_show_expanders(True)
+        self.treeview2.set_level_indentation(-5)
 
         # icon and name
         col = gtk.TreeViewColumn(_("Name"))
@@ -162,6 +163,108 @@ class NCamTreeviewMixin:
         self.treeview2.set_model(self.details_filter)
         self.params_scroll.add(self.treeview2)
         self.treeview2.connect('key-press-event', self.tv_key_pressed_event)
+        self.treeview2.connect('row-expanded', self._detail_group_toggled, True)
+        self.treeview2.connect('row-collapsed', self._detail_group_toggled, False)
+
+
+    def restore_detail_groups(self):
+        """Property sections start closed; keep explicit choices on refilter."""
+        feature = self.selected_feature
+        self._detail_owner = self._property_owner_key(feature) if feature is not None else None
+        self.treeview2.set_show_expanders(True)
+        self.treeview2.set_level_indentation(-5)
+        if self.treeview2.get_model() is None:
+            return
+        restoring = getattr(self, '_restoring_detail_groups', False)
+        self._restoring_detail_groups = True
+        try:
+            self.treeview2.collapse_all()
+            choices = getattr(self, '_detail_group_expanded', {})
+            def restore(model, path, itr):
+                param = model.get_value(itr, 0)
+                if choices.get((self._detail_owner, param.attr.get('call')), False):
+                    self.treeview2.expand_row(path, False)
+            self.treeview2.get_model().foreach(restore)
+        finally:
+            self._restoring_detail_groups = restoring
+
+
+    def _detail_group_toggled(self, tv, itr, path, expanded):
+        if getattr(self, '_restoring_detail_groups', False):
+            return
+        key = self._property_group_key(tv, itr)
+        if key is None:
+            return
+        if not hasattr(self, '_detail_group_expanded'):
+            self._detail_group_expanded = {}
+        self._detail_group_expanded[key] = expanded
+        if expanded:
+            model = tv.get_model()
+            child = model.iter_children(itr)
+            while child is not None:
+                child_key = self._property_group_key(tv, child)
+                if self._detail_group_expanded.get(child_key, False):
+                    tv.expand_row(model.get_path(child), False)
+                child = model.iter_next(child)
+
+
+    def _property_owner_key(self, feature):
+        return (self.catalog_dir, feature.get_attr('id') or id(feature))
+
+
+    def _property_group_key(self, tv, itr):
+        model = tv.get_model()
+        param = model.get_value(itr, 0)
+        if param.get_type() not in ('header', 'sub-header'):
+            return None
+        if tv == self.treeview2:
+            owner = getattr(self, '_detail_owner', None)
+        else:
+            parent = model.iter_parent(itr)
+            owner = None
+            while parent is not None:
+                feature = model.get_value(parent, 0)
+                if isinstance(feature, Feature):
+                    owner = self._property_owner_key(feature)
+                    break
+                parent = model.iter_parent(parent)
+        return (owner, param.attr.get('call')) if owner is not None else None
+
+
+    def restore_master_property_groups(self):
+        restoring = getattr(self, '_restoring_detail_groups', False)
+        self._restoring_detail_groups = True
+        try:
+            def restore(model, path, itr):
+                key = self._property_group_key(self.treeview, itr)
+                if key is not None:
+                    if getattr(self, '_detail_group_expanded', {}).get(key, False):
+                        self.treeview.expand_row(path, False)
+                    else:
+                        self.treeview.collapse_row(path)
+            self.master_filter.foreach(restore)
+        finally:
+            self._restoring_detail_groups = restoring
+
+
+    def _detail_heading_clicked(self, tv, event):
+        if event.button != 1:
+            return False
+        hit = tv.get_path_at_pos(int(event.x), int(event.y))
+        if hit is None:
+            return False
+        path, column = hit[:2]
+        model = tv.get_model()
+        if self._property_group_key(tv, model.get_iter(path)) is None:
+            return False
+        if event.type == gdk.EventType.BUTTON_PRESS:
+            tv.grab_focus()
+            tv.set_cursor(path, column, False)
+            if tv.row_expanded(path):
+                tv.collapse_row(path)
+            else:
+                tv.expand_row(path, False)
+        return True
 
 
     def tv2_selected(self, tv, *arg):
@@ -175,10 +278,6 @@ class NCamTreeviewMixin:
             self.selected_type = self.treestore.get_value(itr_m, 0).get_type()
             self.selected_param = itr_m
             self.hint_label.set_markup(self.treestore.get_value(itr_m, 0).get_tooltip())
-            if self.selected_type in GROUP_HEADER_TYPES :
-                tree_path = model.get_path(itr)
-                if not tv.row_expanded(tree_path) :
-                    tv.expand_row(tree_path, True)
 
         self.set_actions_sensitives()
 
@@ -210,6 +309,15 @@ class NCamTreeviewMixin:
             path = model.get_path(itr)
         else :
             path = None
+
+        if (itr is not None and not event.state
+                and keyname in ('Return', 'KP_Enter', 'space')
+                and self._property_group_key(widget, itr) is not None):
+            if widget.row_expanded(path):
+                widget.collapse_row(path)
+            else:
+                widget.expand_row(path, False)
+            return True
 
         if event.state & gdk.ModifierType.SHIFT_MASK :
             if event.state & gdk.ModifierType.CONTROL_MASK :
@@ -513,6 +621,12 @@ class NCamTreeviewMixin:
     def get_col_name(self, column, cell, model, itr, *arg) :
         data_type = model.get_value(itr, 0).get_type()
         val = model.get_value(itr, 0).get_name()
+        if (data_type in ('header', 'sub-header')
+                and self._property_group_key(column.get_tree_view(), itr) is not None):
+            style = ('<span foreground="gray" weight="bold">%s</span>'
+                     if model.get_value(itr, 0).get_grayed() else '<b>%s</b>')
+            cell.set_property('markup', style % ncam.GLib.markup_escape_text(val))
+            return
         if model.get_value(itr, 0).get_grayed() :
             if data_type == 'header' :
                 cell.set_property('markup', gray_header_fmt_str % val)
@@ -557,6 +671,15 @@ class NCamTreeviewMixin:
             cell.set_tooltip(_(param.get_tooltip()))
 
         cell.set_edit_datatype(data_type)
+
+        if (data_type in SUPPORTED_DATA_TYPES
+                and data_type not in ncam.GROUP_HEADER_TYPES + ['prjname']):
+            pane = getattr(self, 'preview_pane', None)
+            if pane is not None:
+                # Do this before CellRendererMx defers its dialog to idle.
+                # Playback can otherwise keep GTK busy painting old geometry
+                # while the operator waits for the property editor to open.
+                pane.pause_for_edit()
 
         if data_type in ['combo', 'combo-user', 'list']:
             cell.set_options(_(param.get_options()))

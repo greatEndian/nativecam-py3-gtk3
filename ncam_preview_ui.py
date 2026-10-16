@@ -20,6 +20,7 @@ AXIS, on a machine that may be cutting - every time Regenerate is pressed.
 import os
 import sys
 import threading
+import time
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -70,7 +71,6 @@ class PreviewPane(object):
               ('0.1x', 0.1), ('0.2x', 0.2), ('0.5x', 0.5),
               ('1x', 1.0), ('2x', 2.0), ('5x', 5.0), ('10x', 10.0)]
     TICK_MS = 40
-    BASE_STEP = 0.005          # fraction of the path per tick at 1x
 
     # One definition, used both by add_events at construction and by
     # _arm_events at realize - the two must not be able to drift apart.
@@ -114,6 +114,10 @@ class PreviewPane(object):
         self._last_status = ''
         self._busy = False
         self._pending = None
+        self._generating = False
+        self._destroyed = False
+        self._progress_source = None
+        self._parse_serial = 0
         # collision detection - see _worker/_done. `_checked` tells apart
         # "ran and found nothing" from "had no tool/stock to run with", which
         # an empty hit list alone cannot: ncam_preview.collisions() returns []
@@ -227,6 +231,7 @@ class PreviewPane(object):
         self.sim_running = False
         self._sim_source = None
         self._acc = None
+        self._playback = None
         self._total = 0.0
         self.nose_r = 0.0
         self.orient = 0
@@ -262,8 +267,8 @@ class PreviewPane(object):
             self.speed_combo.append(str(mult), label)
         self.speed_combo.set_active_id('1.0')
         self.speed_combo.set_tooltip_text(
-            _('Playback speed. The whole path takes about 8 seconds at 1x, '
-              'whatever its length.'))
+            _('Playback speed. Motion takes about 8 seconds at 1x, plus '
+              'programmed dwells. Dwell pauses scale with playback speed.'))
         self.speed_combo.connect('changed', self._on_speed)
 
         self.sim_scale = gtk.Scale.new_with_range(
@@ -473,10 +478,16 @@ class PreviewPane(object):
         self.status.set_halign(gtk.Align.START)
         self.status.set_ellipsize(3)      # PANGO_ELLIPSIZE_END
 
+        self.progress = gtk.ProgressBar()
+        self.progress.set_show_text(True)
+        self.progress.set_ellipsize(3)
+        self.progress.set_no_show_all(True)
+
         self.box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.box.pack_start(self.widget, True, True, 0)
         self.box.pack_start(self.sim_box, False, False, 0)
         self.box.pack_start(self.cmp_box, False, False, 0)
+        self.box.pack_start(self.progress, False, False, 2)
         self.box.pack_start(self.status, False, False, 2)
         # A GLib timeout is owned by the main loop, not by the widget, so a
         # running simulation keeps firing after the panel is torn down and
@@ -484,7 +495,7 @@ class PreviewPane(object):
         # surfaces as a burst of
         #   gdk_frame_clock_end_updating: assertion GDK_IS_FRAME_CLOCK failed
         # followed by an X BadWindow, and it takes LinuxCNC down with it.
-        self.box.connect('destroy', lambda _w: self._stop_sim())
+        self.box.connect('destroy', self._on_destroy)
         self.box.show_all()
         # after show_all, so the row's own children get shown once and only the
         # row itself is toggled from here on. Both halves are needed: without
@@ -496,9 +507,72 @@ class PreviewPane(object):
         self.cmp_box.hide()
 
     # -- refreshing ---------------------------------------------------------
+    def _on_destroy(self, _widget):
+        self._destroyed = True
+        self._pending = None
+        self._stop_sim()
+        self._end_work()
+
+    def _show_work(self, stage):
+        if self._destroyed:
+            return
+        self._work_stage = stage
+        self._set_status(stage)
+        if self._progress_source is None:
+            self._work_started = time.monotonic()
+            self._progress_source = GLib.timeout_add(100, self._pulse_work)
+        self.progress.show()
+        self._pulse_work()
+
+    def _pulse_work(self):
+        if self._destroyed:
+            return False
+        self.progress.set_text(_('%(stage)s — %(seconds)ds') % {
+            'stage': self._work_stage,
+            'seconds': time.monotonic() - self._work_started})
+        self.progress.pulse()
+        return True
+
+    def _end_work(self):
+        if self._progress_source is not None:
+            GLib.source_remove(self._progress_source)
+            self._progress_source = None
+        self.progress.hide()
+
+    def generation_started(self):
+        self._generating = True
+        self._stop_sim()
+        self.generation_step(_('Generating toolpath…'))
+
+    def generation_step(self, stage):
+        if not self._generating or self._destroyed:
+            return
+        self._show_work(stage)
+        # Generation reads GTK's feature tree on this thread. Paint its status
+        # before entering that work without dispatching input or reentrant edits.
+        self.box.get_toplevel().check_resize()
+        window = self.box.get_window()
+        if window is not None:
+            window.process_updates(True)
+
+    def generation_finished(self, error=None):
+        self._generating = False
+        if not self._busy:
+            self._end_work()
+        if error is not None and not self._destroyed:
+            self._set_status(_('Generation failed: %s') % error)
+        elif not self._busy and not self._destroyed:
+            self._set_status(_('Toolpath generated.'))
+
+    def _worker_stage(self, serial, stage):
+        if (not self._destroyed and self._busy and serial == self._parse_serial
+                and self._pending is None and not self._generating):
+            self._show_work(stage)
+        return False
+
     def refresh(self, fname=None):
         """Re-parse and redraw. Safe to call from the GTK thread."""
-        if fname is None:
+        if fname is None or self._destroyed:
             return
         self._load_text(fname)
         if self._busy:
@@ -508,6 +582,9 @@ class PreviewPane(object):
             return
         _trace('refresh start')
         self._busy = True
+        self._parse_serial += 1
+        self._stop_sim()
+        self._show_work(_('Reading toolpath…'))
         self._set_status(_('Reading toolpath...'))
         # Collision detection needs the stock extents and the current tool
         # geometry, and both are read here - on the GTK thread, before the
@@ -526,19 +603,25 @@ class PreviewPane(object):
                 'front_deg': self.front_deg, 'back_deg': self.back_deg,
                 'flank_len': self.flank_len, 'cl_deg': self.cl_deg,
                 'shank_h': self.shank_h, 'shank_off': self.shank_off}
-        t = threading.Thread(target=self._worker, args=(fname, stock, tool),
+        t = threading.Thread(target=self._worker, args=(fname, stock, tool, self._parse_serial),
                              daemon=True)
         t.start()
 
-    def _worker(self, fname, stock, tool):
-        tp = ncam_preview.parse_program(fname, self.ini_path)
+    def _worker(self, fname, stock, tool, serial):
         # Runs here, not on the GTK thread: both parse_program and
         # ncam_preview.collisions() are GTK-free pure functions (see the
         # module docstring), and the check costs on the order of a second on
         # a real project - doing it inline in _done would freeze the panel
         # the same way an inline interpreter run would.
-        checked = ncam_preview.collisions_checked(tp, stock, tool['nose_r'])
-        hits = ncam_preview.collisions(tp, stock, **tool) if checked else []
+        checked, hits = False, []
+        try:
+            tp = ncam_preview.parse_program(fname, self.ini_path)
+            GLib.idle_add(self._worker_stage, serial, _('Checking collisions…'))
+            checked = ncam_preview.collisions_checked(tp, stock, tool['nose_r'])
+            hits = ncam_preview.collisions(tp, stock, **tool) if checked else []
+        except Exception as error:
+            tp = ncam_preview.Toolpath()
+            tp.error = str(error)
         GLib.idle_add(self._done, tp, checked, hits)
 
     def _done(self, tp, checked=False, hits=None):
@@ -553,11 +636,13 @@ class PreviewPane(object):
         # refresh the guard could not fire at all. A parse that finished after
         # the pane went away then ran on through set_text/_render_stats/
         # _render_info, touching widgets that no longer exist.
-        if self.area.get_window() is None:
+        if self._destroyed or self.area.get_window() is None:
             self._busy = False
+            self._end_work()
             return False
         self.toolpath = tp
         self._acc = None          # lengths belong to the old path
+        self._playback = None
         self._reset_field()
         self._collisions_checked = checked
         self._collisions = hits or []
@@ -579,6 +664,8 @@ class PreviewPane(object):
         nxt, self._pending = self._pending, None
         if nxt:
             self.refresh(nxt)
+        elif not self._generating:
+            self._end_work()
         return False
 
     def _update_collision_marks(self):
@@ -709,6 +796,9 @@ class PreviewPane(object):
 
     def _render_status(self):
         text = self._last_status
+        playback = getattr(self, '_playback', None)
+        if playback is not None and playback.remaining > 1e-12:
+            text = _('Dwell: %.2f s remaining') % playback.remaining + '  |  ' + text
         if not self.view.fitted:
             text = '%s  -  zoom %.0f%%, double-click to fit' % (
                 text, self.view.scale * 100.0)
@@ -861,10 +951,16 @@ class PreviewPane(object):
         _trace('play')
         self.sim_running = not self.sim_running
         if self.sim_running:
-            if self.sim_t >= 0.999:
+            if (self.sim_t >= 1.0
+                    and (self._playback is None or self._playback.finished)):
                 self.sim_t = 0.0        # replay rather than sit at the end
+                self._playback = None
                 self._reset_field()
-            self._sim_source = GLib.timeout_add(self.TICK_MS, self._sim_tick)
+            # Editors, layout changes and worker completions use idle sources.
+            # A priority-0 playback timer plus frames slower than TICK_MS can
+            # keep those callbacks from ever running. Share their priority.
+            self._sim_source = GLib.timeout_add(
+                self.TICK_MS, self._sim_tick, priority=GLib.PRIORITY_DEFAULT_IDLE)
         else:
             self._stop_sim()
         self._sync_play_icon()
@@ -874,8 +970,10 @@ class PreviewPane(object):
         _trace('stop')
         self._stop_sim()
         self.sim_t = 0.0
+        self._playback = None
         self._reset_field()
         self.sim_scale.set_value(0.0)
+        self._render_status()
         self._sync_play_icon()
         self.area.queue_draw()
         self._render_info()
@@ -1052,6 +1150,11 @@ class PreviewPane(object):
             GLib.source_remove(self._sim_source)
             self._sim_source = None
 
+    def pause_for_edit(self):
+        """Leave the tool/material/dwell in place while an editor is open."""
+        self._stop_sim()
+        self._sync_play_icon()
+
     def _sync_play_icon(self):
         self.play_btn.set_image(gtk.Image.new_from_icon_name(
             'media-playback-pause' if self.sim_running
@@ -1064,11 +1167,14 @@ class PreviewPane(object):
         if self.area.get_window() is None:
             self._sim_source = None
             return False
-        # ~8 s for the whole path at 1x regardless of length, so a long program
-        # is still watchable and a short one is not over before it is seen
-        self.sim_t = min(1.0, self.sim_t + self.BASE_STEP * self.speed)
+        if self._playback is None or self._playback.toolpath is not self.toolpath:
+            self._playback = ncam_preview.Playback(self.toolpath, self.sim_t)
+        self.sim_t = self._playback.advance(self.TICK_MS / 1000.0, self.speed)
         self.sim_scale.set_value(self.sim_t)     # which redraws and re-informs
-        if self.sim_t >= 1.0:
+        # A hold leaves the slider unchanged, so GTK emits no value-changed.
+        # Refresh the countdown explicitly on every tick.
+        self._render_status()
+        if self._playback.finished:
             # Returning False is what removes this source, so the id must be
             # dropped WITHOUT calling GLib.source_remove on it - removing a
             # source from inside its own dispatch and then returning False
@@ -1085,6 +1191,8 @@ class PreviewPane(object):
         v = scale.get_value()
         if abs(v - self.sim_t) > 1e-9:
             self.sim_t = v
+            self._playback = ncam_preview.Playback(self.toolpath, v)
+        self._render_status()
         self.area.queue_draw()
         self._render_info()
 
@@ -1188,6 +1296,41 @@ class PreviewPane(object):
 class NCamPreviewMixin(object):
     """Builds the preview pane and hangs it under the existing panel."""
 
+    def configure_preview_context(self, project_path=None):
+        """Use one machine context for generation-time tools and previewing."""
+        import ncam
+
+        ini = getattr(self, 'ini_file', None)
+        if ini is None:
+            ncam.machine_metric = ncam.default_metric
+            paths = [self.get_project_directory()]
+            project_path = project_path or ncam.CURRENT_PROJECT
+            if project_path and os.path.isabs(project_path):
+                paths.append(project_path)
+            for path in paths:
+                matches = ncam_preview.project_ini_candidates(
+                    path, self.catalog_dir, ncam.default_metric)
+                if matches:
+                    ini = matches[0] if len(matches) == 1 else None
+                    break
+            previous = getattr(self, 'preview_ini_file', None)
+            if ini != previous:
+                if ini:
+                    table = ncam_preview.ini_value(ini, 'EMCIO', 'TOOL_TABLE')
+                    if table:
+                        table = os.path.join(os.path.dirname(ini),
+                                             os.path.expanduser(table))
+                    ncam.TOOL_TABLE.table_fname = table if table and os.path.isfile(table) else None
+                else:
+                    ncam.TOOL_TABLE.table_fname = None
+                ncam.TOOL_TABLE.orientation = 0
+                ncam.TOOL_TABLE.load_table()
+        self.preview_ini_file = ini
+        pane = getattr(self, 'preview_pane', None)
+        if pane is not None:
+            pane.ini_path = ini
+        return ini
+
     def create_preview_pane(self):
         """Slot a draggable plot pane in under the existing tree/params area.
 
@@ -1203,7 +1346,8 @@ class NCamPreviewMixin(object):
         if parent is None:
             return None
 
-        ini = getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME')
+        ini = (getattr(self, 'preview_ini_file', None)
+               or getattr(self, 'ini_file', None) or os.getenv('INI_FILE_NAME'))
         plane = 'ZX' if getattr(self, 'catalog_dir', '') == 'lathe' else 'XY'
         # keyword-named from comp_cb on: rough_cb was inserted into the
         # signature and a positional call silently handed _preview_comp_mode

@@ -1,0 +1,5 @@
+(Generated programs supply the literal stock-clearance lookup.)
+o<ncam_section_position> sub
+(CALL plan_id[1] z[2] radius[3] level[4])
+(ABORT, Section positioning needs a regenerated project.)
+o<ncam_section_position> endsub

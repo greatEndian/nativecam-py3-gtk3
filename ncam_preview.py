@@ -90,6 +90,10 @@ class Toolpath(object):
         # feeds and rapids were originally kept in two separate lists, which
         # draws fine and cannot be walked.
         self.moves = []           # [Move]
+        # (number of preceding moves, seconds, operation). Keep holds outside
+        # geometry so material removal, collision indices and scrubbing agree.
+        self.dwells = []
+        self.peck_stops = []      # (number of preceding moves, position, operation)
         self.flat = ''         # the same program as plain G-code, see flatten_canon
         self.error = None      # human-readable, or None
         # Did the interpreter REACH THE END of the program? A run that stops
@@ -156,6 +160,50 @@ def ini_value(ini_path, section, key, default=None):
     except OSError:
         pass
     return default
+
+
+def project_ini_candidates(project_path, catalog, metric):
+    """Configurations owning this project folder, for this catalog and units.
+
+    A standalone project chooser can point into a machine configuration without
+    starting LinuxCNC. Only consider INIs whose NCAM_DIR actually contains that
+    catalog's project folder; finding some unrelated INI nearby is insufficient.
+    Return all matches so the caller never guesses between configurations.
+    """
+    if not project_path:
+        return []
+    directory = os.path.realpath(os.path.expanduser(project_path))
+    if not os.path.isdir(directory):
+        directory = os.path.dirname(directory)
+    parent = directory
+    matches = []
+    while True:
+        try:
+            paths = [os.path.join(parent, name) for name in os.listdir(parent)
+                     if name.lower().endswith('.ini')]
+        except OSError:
+            paths = []
+        for path in paths:
+            root = ini_value(path, 'DISPLAY', 'NCAM_DIR')
+            if not root:
+                continue
+            root = os.path.realpath(os.path.join(parent, os.path.expanduser(root)))
+            projects = os.path.join(root, 'catalogs', catalog, 'projects')
+            if os.path.commonpath((directory, projects)) != projects:
+                continue
+            lathe = ini_value(path, 'DISPLAY', 'LATHE', '').lower() in ('1', 'true')
+            command = (ini_value(path, 'DISPLAY', 'GLADEVCP', '') + ' '
+                       + ini_value(path, 'DISPLAY', 'EMBED_TAB_COMMAND', ''))
+            cat = re.search(r'(?:--catalog[=\s]+|-c\s*)(mill|lathe|plasma)\b', command)
+            machine = 'lathe' if lathe else cat.group(1) if cat else 'mill'
+            units = ini_value(path, 'TRAJ', 'LINEAR_UNITS', '').lower()
+            if machine == catalog and units in ('mm', 'metric', 'inch') \
+                    and (units in ('mm', 'metric')) == bool(metric):
+                matches.append(path)
+        ancestor = os.path.dirname(parent)
+        if ancestor == parent:
+            return sorted(matches)
+        parent = ancestor
 
 
 def _scratch_parameter_file(ini_path, tmpdir):
@@ -299,6 +347,10 @@ def parse_program(path, ini_path=None):
 
         tp.completed = bool(_FLAT_RE['end'].search(canon))
         for line in canon.splitlines():
+            if 'COMMENT("ncam peck stop")' in line:
+                if pos is not None:
+                    tp.peck_stops.append((len(tp.moves), pos, op))
+                continue
             m = _RE['comment'].search(line)
             if m:
                 # NativeCAM brackets every feature it writes. That makes
@@ -365,6 +417,12 @@ def parse_program(path, ini_path=None):
                                          feed, fmode,
                                          rpm_for((pos[0] + nxt[0]) / 2.0)))
                 pos = nxt
+                continue
+            m = _FLAT_RE['dwell'].search(line)
+            if m:
+                seconds = float(m.group(1))
+                if seconds > 0:
+                    tp.dwells.append((len(tp.moves), seconds, op))
                 continue
             m = _RE['arc'].search(line)
             if m:
@@ -732,6 +790,16 @@ def _fit(tp, stock, plane, width, height, margin):
     return s, ox, oy
 
 
+def peck_stop_points(tp, moves=None):
+    """Interpreter-marked stop points belonging to the visible path moves."""
+    if not tp.peck_stops:
+        return []
+    visible = None if moves is None else {id(move) for move in moves}
+    return [point for after, point, _op in tp.peck_stops
+            if 0 < after <= len(tp.moves)
+            and (visible is None or id(tp.moves[after - 1]) in visible)]
+
+
 def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                   view=None, tool=None, field=None, classes=None,
                   moves=None, move_colour=None, points=False,
@@ -853,6 +921,18 @@ def draw_toolpath(cr, width, height, tp, plane='ZX', stock=None, margin=10,
                 cr.rectangle(x - 1.0, y - 1.0, 2.0, 2.0)
         cr.fill()
 
+    # Small round stop markers are always visible, independently of the option
+    # for all segment vertices. Fixed pixels keep them small at every zoom.
+    for point in peck_stop_points(tp, moves):
+        x, y = pt(point)
+        cr.new_sub_path()
+        cr.arc(x, y, 2.3, 0, 2 * math.pi)
+        cr.set_source_rgb(1.0, 0.85, 0.35)
+        cr.fill_preserve()
+        cr.set_source_rgb(*COL['bg'])
+        cr.set_line_width(0.7)
+        cr.stroke()
+
     # the tool last, so it is never hidden under the path it is cutting
     if tool is not None and tool.get('pos') is not None:
         draw_tool(cr, tool['pos'], plane, s, ox, oy,
@@ -927,8 +1007,7 @@ class View(object):
 def path_lengths(tp):
     """Cumulative length along the program, and the total.
 
-    Parameterised by DISTANCE, not time: the canon dump carries no feed rates,
-    so a time-accurate simulation would be inventing them. Distance makes the
+    Parameterised by DISTANCE, not time. Distance makes the
     scrub bar predictable - halfway along the slider is halfway along the path -
     and it is honest about what it knows. Rapids are included, so the tool is
     seen travelling between cuts rather than teleporting.
@@ -938,6 +1017,57 @@ def path_lengths(tp):
         total += math.sqrt(_dist2(m.a, m.b))
         acc.append(total)
     return acc, total
+
+
+class Playback(object):
+    """Distance-based preview motion with the interpreter's real dwell holds.
+
+    Motion keeps the existing eight-second overview at 1x. Dwell seconds are
+    additional and scale with playback speed. They are never turned into fake
+    moves or skipped when a tick crosses several short pecks.
+    """
+
+    def __init__(self, tp, t=0.0):
+        self.toolpath = tp
+        acc, total = path_lengths(tp)
+        self.holds = [(acc[after - 1] / total if after and total else 0.0, seconds)
+                      for after, seconds, _op in tp.dwells]
+        self.seek(t)
+
+    def seek(self, t):
+        self.t = max(0.0, min(1.0, t))
+        self.next_hold = 0
+        while (self.next_hold < len(self.holds)
+               and self.holds[self.next_hold][0] < self.t - 1e-12):
+            self.next_hold += 1
+        self.remaining = 0.0
+
+    def advance(self, seconds, speed=1.0):
+        budget = max(0.0, seconds * speed)
+        while budget > 1e-12:
+            if self.remaining > 0:
+                used = min(budget, self.remaining)
+                self.remaining -= used
+                budget -= used
+            elif self.next_hold < len(self.holds):
+                at, hold = self.holds[self.next_hold]
+                travel = max(0.0, (at - self.t) * 8.0)
+                if travel > budget:
+                    self.t = min(1.0, self.t + budget / 8.0)
+                    break
+                self.t = at
+                budget -= travel
+                self.remaining = hold
+                self.next_hold += 1
+            else:
+                self.t = min(1.0, self.t + budget / 8.0)
+                break
+        return self.t
+
+    @property
+    def finished(self):
+        return (self.t >= 1.0 and self.remaining <= 1e-12
+                and self.next_hold >= len(self.holds))
 
 
 DEFAULT_RAPID = 1200.0          # mm/min, if the ini will not say
@@ -1014,8 +1144,13 @@ def statistics(tp, rapid=DEFAULT_RAPID):
         row = per_op.setdefault(key, {'name': key, 'dist': 0.0, 'time': 0.0})
         row['dist'] += d
         row['time'] += secs
+    st['dwell_time'] = sum(seconds for _after, seconds, _op in tp.dwells)
+    for _after, seconds, op in tp.dwells:
+        key = op or NO_OP
+        row = per_op.setdefault(key, {'name': key, 'dist': 0.0, 'time': 0.0})
+        row['time'] += seconds
     st['dist'] = st['cut_dist'] + st['rapid_dist']
-    st['time'] = st['cut_time'] + st['rapid_time']
+    st['time'] = st['cut_time'] + st['rapid_time'] + st['dwell_time']
     st['ops'] = tp.operations
     st['changes'] = len(tp.tools)
     for row in per_op.values():

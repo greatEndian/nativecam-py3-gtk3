@@ -698,6 +698,9 @@ class NCamAppActionsMixin:
         self.actionNew = ca("New", 'gtk-new', _("_New Project"), "<control>N", None, self.action_new_project)
         self.actionOpen = ca("Open", 'gtk-open', _("_Open Project"), "<control>O", None, self.action_open_project, 0)
         self.actionOpenExample = ca("OpenExample", None, _('Open Example'), '', _('Open Example Project'), self.action_open_project, 1)
+        self.actionWorkingDirectory = ca("WorkingDirectory", 'gtk-directory', _('Working _Directory…'), None,
+                                        _('Choose and remember the folder for opening and saving projects'),
+                                        self.action_working_directory)
         # SAVE AND SAVE AS ARE TWO ACTIONS NOW. Ctrl+S writes back to the open
         # project without a dialog; Save As keeps the chooser and lives in the
         # menu below it, unaccelerated. The Ctrl+S key handler in
@@ -864,19 +867,12 @@ class NCamAppActionsMixin:
 
         for mi in self.mi_current_list: mi.set_visible(not self.pref.autosave)
         self.name_cell.set_property('ellipsize', self.pref.name_ellipsis)
-        self.treeview.set_show_expanders(self.pref.tv_expandable)
-        if self.pref.tv_expandable :
-            self.treeview.set_level_indentation(-5)
-        else :
-            self.treeview.set_level_indentation(12)
+        self.treeview.set_show_expanders(True)
+        self.treeview.set_level_indentation(-5)
 
         if self.treeview2 is not None :
             self.name_cell2.set_property('ellipsize', self.pref.name_ellipsis)
-            self.treeview2.set_show_expanders(self.pref.tv2_expandable)
-            if self.pref.tv2_expandable :
-                self.treeview2.set_level_indentation(-5)
-            else :
-                self.treeview2.set_level_indentation(12)
+            self.restore_detail_groups()
 
 
     def get_widgets(self):
@@ -922,13 +918,25 @@ class NCamAppActionsMixin:
                 return None
         except Exception:
             return None
-        fname = os.path.join(ncam.NGC_DIR, GENERATED_FILE)
-        # Atomic, because a Regenerate can land while the preview's rs274 -
-        # or LinuxCNC, which is handed this path by name - is still reading
-        # it, and a plain open(..., "w") truncates at open() and only then
-        # refills. analysis/213 measured 2 of 165 preview parses dying on EOF
-        # mid-subroutine from exactly that.
-        atomic_write.write_atomic(fname, self.to_gcode())
+        pane = getattr(self, 'preview_pane', None)
+        if pane is not None:
+            pane.generation_started()
+        try:
+            self.configure_preview_context()
+            fname = os.path.join(ncam.NGC_DIR, GENERATED_FILE)
+            # Atomic, because a Regenerate can land while the preview's rs274 -
+            # or LinuxCNC, which is handed this path by name - is still reading
+            # it, and a plain open(..., "w") truncates at open() and only then
+            # refills. analysis/213 measured 2 of 165 preview parses dying on EOF
+            # mid-subroutine from exactly that.
+            atomic_write.write_atomic(fname, self.to_gcode())
+        except Exception as error:
+            if pane is not None:
+                pane.generation_finished(error)
+            raise
+        else:
+            if pane is not None:
+                pane.generation_finished()
         return fname
 
     def send_to_linuxcnc(self, fname = None) :
@@ -1369,7 +1377,8 @@ class NCamAppActionsMixin:
             self.frame2.set_visible(self.actionDualView.get_active())
             self.actionTopBottom.set_enabled(self.actionDualView.get_active())
             self.actionSideSide.set_enabled(self.actionDualView.get_active())
-            self.actionSubHdrs.set_enabled(self.actionDualView.get_active())
+            # Kept for saved settings; property headings now share one layout.
+            self.actionSubHdrs.set_enabled(False)
             self.actionHideCol.set_enabled(self.actionDualView.get_active())
             self.treeview.get_column(1).set_visible(self.actionSingleView.get_active() or \
                                         not self.actionHideCol.get_active())

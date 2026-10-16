@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # coding: utf-8
-"""An entry lead into metal that is already gone is not emitted as a cut.
+"""Optional omission of an entry lead into metal that is already gone.
+
+This driver selects Skip lead-in in cleared metal explicitly. The default
+retains the configured lead; test_roughing_lead_in verifies that behavior.
 
 Standalone, like the other test_*.py here - run it directly, no pytest.
 
@@ -125,7 +128,9 @@ def measure(P, project, sets, d, tag, selftest=0.0):
     out = os.path.join(d, tag + '.ngc')
     cmd = [sys.executable, GEN, '--ini', INI, '--project', project,
            '--out', out, '--config-copy']
-    for kv in sets:
+    # This driver verifies the optional optimization. Configured lead-in is
+    # now preserved by default; test_roughing_lead_in covers that policy.
+    for kv in ['polyline:param_li_air=1'] + sets:
         cmd += ['--set', kv]
     subprocess.run(cmd, capture_output=True, text=True)
     if not os.path.isfile(out):
@@ -224,7 +229,10 @@ def main():
         cases = (
             ('artificial front to back', 'testing_15_9.xml',
              ['polyline:param_dir=0'], 'art0',
-             dict(ent_n=19, cut_n=54, feed=1352.9, rap=0)),
+             # Four short pieces now merge into adjacent longer passes.
+             # Removing their separate lead cycles saves 2.9 mm of feed;
+             # test_section_arc_contact checks their complete cutting spans.
+             dict(ent_n=20, cut_n=53, feed=1353.3, rap=0)),
             ('artificial back to front', 'testing_15_9.xml',
              ['polyline:param_dir=1'], 'art1',
              dict(ent_n=0, cut_n=309, feed=1319.0, rap=80)),
@@ -291,19 +299,19 @@ def main():
 
         # ---- the lead-out setting, off and on ------------------------------
         # _pl_lo_air is greatEndian's per-project choice and 0 is the original
-        # behaviour, so OFF must match the numbers above exactly and ON must
+        # behaviour, so OFF must match the current baseline and ON must
         # remove air without removing work. The pair is asserted together
         # because "the leads that cut are identical either way" is the whole
         # proof that nothing goes unremoved.
         pairs = (
             ('front to back', 'testing_15_9.xml', ['polyline:param_dir=0'],
-             'lo0', 1352.9, 1103.9),
+             'lo0', 'art0'),
             ('both directions', 'testing_15_9.xml', ['polyline:param_dir=2'],
-             'lo2', 1445.8, 1324.8),
+             'lo2', 'both'),
             ('natural 15_5', 'testing_15_5.xml',
-             ['polyline:param_sectioning=1'], 'lo5', 1215.6, 1173.6),
+             ['polyline:param_sectioning=1'], 'lo5', 'nat5'),
         )
-        for name, project, sets, tag, f_off, f_on in pairs:
+        for name, project, sets, tag, reference in pairs:
             a = measure(P, project, sets, d, tag + 'off')
             b = measure(P, project, sets + ['polyline:param_lo_air=1'], d,
                         tag + 'on')
@@ -311,12 +319,17 @@ def main():
                   a is not None and b is not None)
             if not (a and b):
                 continue
-            check('   %s off is the original motion' % name,
-                  abs(a['feed'] - f_off) < 0.5,
-                  '%.1f mm against %.1f' % (a['feed'], f_off))
+            check('   %s off matches the current baseline' % name,
+                  abs(a['feed'] - seen[reference]['feed']) < 0.001,
+                  '%.1f mm against %.1f' % (a['feed'], seen[reference]['feed']))
             check('   %s on removes the air lead-outs' % name,
-                  abs(b['feed'] - f_on) < 0.5,
-                  '%.1f mm against %.1f' % (b['feed'], f_on))
+                  b['air_l'] < a['air_l'] - 1.0,
+                  'air lead length %.1f on against %.1f off'
+                  % (b['air_l'], a['air_l']))
+            check('   %s removes only independently measured air distance' % name,
+                  abs((a['feed'] - b['feed']) - (a['air_l'] - b['air_l'])) < 0.01,
+                  'feed saving %.3f, air saving %.3f'
+                  % (a['feed'] - b['feed'], a['air_l'] - b['air_l']))
             check('   %s on removes NO work' % name,
                   b['cut_n'] == a['cut_n'],
                   'leads that cut: %d on against %d off'

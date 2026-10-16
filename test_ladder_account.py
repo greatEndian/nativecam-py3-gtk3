@@ -162,7 +162,8 @@ def predict(src, wz):
             (topd / dm) if topd is not None else None,
             int(num(src, r'#<_pl_sect_mode>\s*=\s*([\d.]+)', 0.0) or 0),
             max(cnt, 1))
-    lad = ls.roughing_ladder(*args)
+    skip_thin = num(src, r'#<_pl_skip_thin>\s*=\s*([-\d.]+)', 0.0) or 0.0
+    lad = ls.roughing_ladder(*args, skip_thin=skip_thin)
     # THE PHASE-1 HANDOVER, predicted rather than assumed absent. Where phase 1
     # is blocked from its own window start with nothing cut, poly_lathe_mill
     # abandons it and hands that radius to phase 2 - see phase1_stop and
@@ -177,7 +178,7 @@ def predict(src, wz):
                          or 0) > 0,
             mm=num(src, r'#<_mm>\s*=\s*([-\d.]+)', 1.0))
         if stop is not None:
-            lad = ls.roughing_ladder(*args, top_override=stop)
+            lad = ls.roughing_ladder(*args, top_override=stop, skip_thin=skip_thin)
     return lad
 
 
@@ -210,7 +211,16 @@ def generate(project, sect, direction, work):
                     '--set', 'polyline:param_sectioning=%d' % sect,
                     '--set', 'polyline:param_dir=%d' % direction],
                    capture_output=True, text=True)
-    return out if os.path.isfile(out) else None
+    if not os.path.isfile(out):
+        return None
+    # This instrument observes the runtime ladder loop. Merged/literal plans
+    # bypass it; explicitly select the loop so saved project settings cannot
+    # make the accounting gate measure an unexecuted branch.
+    src = open(out).read()
+    src = re.sub(r'(?m)^(#<_pl_(?:merge_id|flat_sub)>\s*=\s*)[-\d.]+', r'\g<1>0', src)
+    with open(out, 'w') as stream:
+        stream.write(src)
+    return out
 
 
 def account(ngc, ini):

@@ -1423,84 +1423,88 @@ class CellRendererMx(gtk.CellRendererText):
             return vkb.run(self.not_allowed)
 
     def edit_list(self, time_out = 0.05):
-        # must reset here: set True once this popup closes, and never reset
-        # since, so every popup after the first silently ignored its own
-        # focus-out-event and could only be dismissed by clicking a row -
-        # clicking away instead left the modal .run() loop blocked forever
-        self.lst_is_closing = False
-        self.list_window = gtk.Dialog(parent=self.tv.get_toplevel(), flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
-        self.list_window.set_border_width(0)
-        self.list_window.set_decorated(False)
-        self.list_window.set_property("skip-taskbar-hint", True)
-        
+        # A dropdown must dismiss on an outside click. An undecorated modal
+        # Dialog blocks that click without losing focus, leaving the whole
+        # panel apparently frozen. Popover owns the normal GTK popup grab.
+        popup = gtk.Popover.new(self.tv)
+        self.list_window = popup
+        popup.set_pointing_to(self.cell_area)
+        popup.set_position(gtk.PositionType.BOTTOM)
+        popup.set_transitions_enabled(False)
         sw = gtk.ScrolledWindow()
-        sw.set_shadow_type(gtk.ShadowType.ETCHED_IN)
         sw.set_policy(gtk.PolicyType.NEVER, gtk.PolicyType.AUTOMATIC)
-        
-        self.list_window.get_content_area().pack_start(sw, True, True, 0)
+        popup.add(sw)
 
-        self.list_window.realize()
-        self.list_window.resize(1, 1)
-        lw, base_height = self.list_window.get_size()
-
-        ls = gtk.ListStore(str, str)
+        choices = gtk.ListStore(str, str)
+        initial_value = self.param_value
         active_row = 0
-        count = 0
-        for option in self.options.split(":") :
-            opt = option.split('=')
-            ls.append([opt[0], opt[1]])
-            if (opt[1] == self.param_value) :
-                active_row = count
-            count += 1
+        for index, option in enumerate(self.options.split(":")):
+            label, value = option.split('=', 1)
+            choices.append([label, value])
+            if value == initial_value:
+                active_row = index
 
-        ls_view = gtk.TreeView(ls)
-        ls_view.set_headers_visible(False)
-        tvcolumn = gtk.TreeViewColumn('Column 0')
-        ls_view.append_column(tvcolumn)
-        rdr = gtk.CellRendererText()
-        row_height = self.cell_area.height - 4
-        rdr.set_fixed_size(self.cell_area.width, row_height)
-        tvcolumn.pack_start(rdr, True)
-        tvcolumn.add_attribute(rdr, 'text', 0)
-        tvcolumn.set_min_width(self.cell_area.width - 2)
-        self.list_window.connect('focus-out-event', self.list_out)
-        ls_view.connect('button-release-event', self.list_btn_released)
-        ls_view.connect('key-press-event', self.list_keypress)
-        sw.add(ls_view)
+        view = gtk.TreeView(choices)
+        view.set_headers_visible(False)
+        column = gtk.TreeViewColumn('Choice', gtk.CellRendererText(), text=0)
+        view.append_column(column)
+        sw.add(view)
+        sw.set_size_request(max(100, self.cell_area.width),
+                            max(30, self.cell_area.height) * min(len(choices), 10))
 
-        lw_height = base_height + 4 + self.cell_area.height * min(count, 10)
-        status, tree_x, tree_y = self.tv.get_bin_window().get_origin()
-        tree_w, tree_h = self.tv.get_allocated_width(), self.tv.get_allocated_height()
-        y = tree_y + min(self.cell_area.y, tree_h - lw_height)
+        # Keep the synchronous return used by combo-user's linked editor, but
+        # every dismissal and parent teardown must release this local loop.
+        loop = GLib.MainLoop()
+        result = [gtk.ResponseType.CANCEL, initial_value]
+        closed = [False]
 
-        self.list_window.move(tree_x + self.cell_area.x - 5, y - 2)
-        self.list_window.resize(tree_w - self.cell_area.x + 5, lw_height)
-        position = int(sw.get_vadjustment().get_upper() * active_row / count)
-        sw.get_vadjustment().set_value(position)
+        def close(*args):
+            closed[0] = True
+            loop.quit()
 
-        self.list_window.show_all()
-        ls_view.set_cursor(active_row)
-        ls_view.grab_focus()
+        def accept(*args):
+            model, itr = view.get_selection().get_selected()
+            if itr is not None:
+                result[:] = [gtk.ResponseType.OK, model.get_value(itr, 1)]
+            popup.popdown()
+            return True
 
-        response = self.list_window.run()
+        def keypress(widget, event):
+            key = gdk.keyval_name(event.keyval)
+            if key in ('Return', 'KP_Enter', 'space'):
+                return accept()
+            if key == 'Escape':
+                popup.popdown()
+                return True
+            return False
 
-        if response == gtk.ResponseType.OK:
-            model, ls_itr = ls_view.get_selection().get_selected()
-            if ls_itr is not None:
-                new_val = model.get_value(ls_itr, 1)
-            else:
-                new_val = self.param_value
-        else:
-            new_val = self.param_value
+        def released(widget, event):
+            if event.button == 1 and view.get_path_at_pos(int(event.x), int(event.y)):
+                return accept()
+            return False
 
-        self.lst_is_closing = True
-        self.list_window.destroy()
-
-        return response, new_val
+        popup.connect('closed', close)
+        popup.connect('destroy', close)
+        parent = self.tv.get_toplevel()
+        parent_destroy = parent.connect('destroy', lambda *args: popup.destroy())
+        view.connect('button-release-event', released)
+        view.connect('key-press-event', keypress)
+        try:
+            popup.show_all()
+            view.set_cursor(active_row)
+            view.scroll_to_cell(gtk.TreePath([active_row]), None, True, 0.5, 0)
+            view.grab_focus()
+            popup.popup()
+            if not closed[0]:
+                loop.run()
+        finally:
+            if parent.handler_is_connected(parent_destroy):
+                parent.disconnect(parent_destroy)
+            popup.destroy()
+        return tuple(result)
 
     def edit_string(self, time_out = 0.05):
-        # same reset as edit_list's lst_is_closing - without it, every
-        # popup after the first ignores its own focus-out-event forever
+        # Reset for every popup so focus-out can dismiss repeated editors.
         self.str_is_closing = False
         self.stringedit_window = gtk.Dialog(parent=self.tv.get_toplevel(), flags=gtk.DialogFlags.DESTROY_WITH_PARENT)
         self.stringedit_window.hide()
@@ -1538,21 +1542,13 @@ class CellRendererMx(gtk.CellRendererText):
         self.stringedit_window.destroy()
         return response, new_val
 
-    def list_keypress(self, widget, event) :
-        keyname = gdk.keyval_name(event.keyval)
-        if keyname in ["Return", "KP_Enter", "space"] :
-            self.list_window.response(gtk.ResponseType.OK)
-
-    def list_out(self, widget, event):
-        if getattr(self, 'lst_is_closing', False): return
-        self.lst_is_closing = True
-        self.list_window.response(gtk.ResponseType.CANCEL)
-
-    def list_btn_released(self, widget, event):
-        self.list_window.response(gtk.ResponseType.OK)
-
     def do_start_editing(self, event, treeview, path, background_area, \
                         cell_area, flags):
+
+        # A second activation can arrive while an idle editor is queued or
+        # inside its nested loop. Keep that editor's state and popup intact.
+        if getattr(self, '_editor_pending', False):
+            return None
 
         if not self.get_property('editable'):
             self.inputKey = ''
@@ -1578,6 +1574,27 @@ class CellRendererMx(gtk.CellRendererText):
         self.cell_area.y = cell_area.y
         self.cell_area.width = cell_area.width
         self.cell_area.height = cell_area.height
+
+        # One renderer paints every property row. GTK may paint another row
+        # before the deferred editor runs, replacing param_value/data_type.
+        # Keep the selected cell's input independent of those later paints.
+        edit_value = self.param_value
+        edit_type = self.editdata_type
+        edit_text = self.get_property('text')
+
+        def queue_editor(callback):
+            self._editor_pending = True
+            def run():
+                try:
+                    # The tree may have gone away before this idle runs.
+                    if self.tv.get_bin_window() is None:
+                        return False
+                    self.param_value = edit_value
+                    self.data_type = edit_type
+                    return callback()
+                finally:
+                    self._editor_pending = False
+            GLib.idle_add(run)
 
         def defer_number():
             response, result = self.edit_number()
@@ -1643,8 +1660,7 @@ class CellRendererMx(gtk.CellRendererText):
             return False
 
         def defer_text():
-            # same reset as edit_list's lst_is_closing - without it, every
-            # popup after the first ignores its own focus-out-event forever
+            # Reset for every popup so focus-out can dismiss repeated editors.
             self.txt_is_closing = False
             self.selection = treeview.get_selection()
             self.treestore, self.treeiter = self.selection.get_selected()
@@ -1657,7 +1673,7 @@ class CellRendererMx(gtk.CellRendererText):
             self.textedit.set_editable(True)
             self.textbuffer = self.textedit.get_buffer()
             self.textedit.set_wrap_mode(gtk.WRAP_WORD)
-            self.textbuffer.set_property('text', self.get_property('text'))
+            self.textbuffer.set_property('text', edit_text)
 
             self.textedit_window.connect('key-press-event', self.text_edit_keyhandler)
             self.textedit_window.connect('focus-out-event', self.text_edit_focus_out, path)
@@ -1690,33 +1706,33 @@ class CellRendererMx(gtk.CellRendererText):
             return False
 
         if self.editdata_type in NUMBER_TYPES :
-            GLib.idle_add(defer_number)
+            queue_editor(defer_number)
             return None
 
         elif self.editdata_type in ['bool', 'boolean']:
             if self.inputKey :
                 self.inputKey = ''
                 return None
-            GLib.idle_add(defer_bool)
+            queue_editor(defer_bool)
             return None
 
         elif self.editdata_type in ['combo-user', 'combo', 'tool']:
             self.inputKey = ''
-            GLib.idle_add(defer_list)
+            queue_editor(defer_list)
             return None
 
         elif self.editdata_type in ['string', 'gcode'] :
-            GLib.idle_add(defer_string)
+            queue_editor(defer_string)
             return None
 
         elif self.editdata_type == 'filename':
             if self.inputKey :
                 self.inputKey = ''
-            GLib.idle_add(defer_filename)
+            queue_editor(defer_filename)
             return None
 
         else :  
-            GLib.idle_add(defer_text)
+            queue_editor(defer_text)
             return None
 
 
@@ -2721,6 +2737,14 @@ class Preferences(object):
             # nobody wrote - they would read as 0, i.e. "cut to the centre".
             self.default += ("#<_pl_w_idx>                = 0.0\n")
             self.default += ("#<_pl_wdeep_ok>             = 0.0\n")
+            self.default += ("#<_pl_short_base>           = %d\n" % lathe_sections.SHORT_BASE)
+            self.default += ("#<_pl_short_n>              = 0\n")
+            self.default += ("#<_pl_merge_id>             = 0\n")
+            self.default += ("#<_pl_merge_wall>           = 0\n")
+            self.default += ("#<_pl_level_ran>            = 0\n")
+            # Preserve configured entry leads unless their optional air-move
+            # optimization is selected for this operation.
+            self.default += ("#<_pl_li_air>               = 0.0\n")
             # Skip a roughing lead-out that runs entirely through metal an
             # earlier pass already removed. 0 = the original behaviour, always
             # lead out; the cfg parameter defaults to 0 as well, so this only
@@ -2767,6 +2791,8 @@ class Preferences(object):
             self.default += ("#<_pl_peck_len>             = 0.0\n")
             self.default += ("#<_pl_peck_ret>             = 0.0\n")
             self.default += ("#<_pl_peck_dwell>           = 0.0\n")
+            self.default += ("#<_pl_peck_ret_rapid>       = 0.0\n")
+            self.default += ("#<_pl_peck_ret_feed>        = 0.0\n")
             # the roughing ladder's radius bounds - see rough_radius_bounds
             self.default += ("#<_pl_rgh_hi_r>            = 0.0\n")
             self.default += ("#<_pl_rgh_lo_r>            = 0.0\n")
@@ -2853,6 +2879,22 @@ class Preferences(object):
             # 0 is the safe default - it refuses nothing, so a program that
             # predates this global behaves exactly as it always did.
             self.default += ("#<_pl_ramp_face>           = 0\n")
+            self.default += ("#<_pl_st_id> = 0\n#<_pl_st_cap> = 0\n#<_pl_st_air> = 0\n#<_pl_st_air_r> = 0\n"
+                             "#<_pl_st_uz> = 0\n#<_pl_st_ux> = 0\n"
+                             "#<_pl_st_dz> = 0\n#<_pl_st_dx> = 0\n"
+                             "#<_pl_st_cz> = 0\n#<_pl_st_cr> = 0\n"
+                             "#<_pl_st_tz> = 0\n#<_pl_st_tr> = 0\n"
+                             "#<_pl_st_fz> = 0\n#<_pl_st_fr> = 0\n"
+                             "#<_pl_st_rad> = 0\n#<_pl_st_zl> = 0\n#<_pl_st_zh> = 0\n")
+            self.default += ("#<_pl_st_probe> = 0\n#<_pl_st_bad> = 0\n#<_pl_st_next> = 0\n")
+            self.default += ("#<_pl_st_slope> = 0\n#<_pl_st_line_support> = 0\n"
+                             "#<_pl_st_prev_valid> = 0\n#<_pl_st_prev_w> = -1\n"
+                             "#<_pl_st_prev_z0> = 0\n#<_pl_st_prev_r0> = 0\n"
+                             "#<_pl_st_prev_z1> = 0\n#<_pl_st_prev_dz> = 0\n"
+                             "#<_pl_st_prev_dr> = 0\n"
+                             "#<_pl_begin_ref_z> = 0\n"
+                             "#<_pl_st_full_valid> = 0\n#<_pl_st_full_low> = 0\n"
+                             "#<_pl_st_full_high> = 0\n#<_pl_st_full_r> = 0\n")
             # The radial limits after their datum and the cutting-edge /
             # contact-point choice have been applied. Python resolves them so
             # the O-code and the point tables cannot disagree about one number.
@@ -3057,6 +3099,7 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
         elif "--ini" in optlist :
             ini = optlist["--ini"]
 
+        self.ini_file = os.path.abspath(ini) if ini is not None else None
         no_ini = ini is None
 
         if no_ini :
@@ -3153,6 +3196,7 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
 
         self.pref.read(self.catalog_dir)
         GLOBAL_PREF = self.pref
+        self.configure_preview_context()
 
         # main_window
         gtk.Box.__init__(self, orientation=gtk.Orientation.VERTICAL, *a, **kw)
