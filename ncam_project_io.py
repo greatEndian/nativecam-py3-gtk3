@@ -192,6 +192,7 @@ class NCamProjectIOMixin:
         if xml is not None :
             recursive(treestore.get_iter_first(), xml)
         self.treestore = treestore
+        self.treestore.foreach(lambda model, path, itr: self.refresh_merge_visibility(itr))
         self.master_filter = self.treestore.filter_new()
         self.master_filter.set_visible_column(2)
         self._restoring_detail_groups = True

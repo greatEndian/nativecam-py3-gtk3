@@ -81,6 +81,16 @@ retains the combined roughing/finishing setup. Facing, threading and parting
 are also available in the chooser. Dedicated outside/inside/face grooving and
 lathe drilling are marked **planned** and disabled until their generators exist.
 
+**Merge with previous** is hidden only on the first profile item and is
+available from the second **Line To**. The second item's join uses the
+polyline's **Start Diameter** and **Start Z** as the first line's reference.
+**Radius** creates a circular join; **Chamfer** creates a straight bevel.
+Merge settings on the first item are ignored.
+On the second item, **Radius → Flip** chooses the opposite side of the starting
+corner between straight lines. For example, with Start Diameter 50, a corner
+at X25 Z0 and an R5 join into negative Z, Flip changes the start from X35 Z0
+to X15 Z0; both arcs end at X25 Z−5 in diameter mode.
+
 The default operation menu follows application updates. For a custom menu,
 save it as `catalogs/lathe/menu-custom.xml` in the NativeCAM configuration folder;
 that override takes priority and is preserved.

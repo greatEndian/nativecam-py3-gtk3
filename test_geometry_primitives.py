@@ -87,7 +87,7 @@ check('ceiling: single point', ls.ceiling([(0, 7.0)]), 7.0)
 # apply_merge_radii(points, merges)
 #
 # PROPERTY: a vertex with merges[j+1] > 0 and a neighbour on both sides is
-# replaced by its two tangent points, computed in true (Z, radius) space -
+# replaced by its tangent points and circular arc in true (Z, radius) space -
 # NOT diameter space, a fillet is not scale-invariant. Derived independently
 # here via plain trig on a 90-degree corner, not by calling _fillet_vertex.
 # ---------------------------------------------------------------------------
@@ -99,10 +99,13 @@ check('ceiling: single point', ls.ceiling([(0, 7.0)]), 7.0)
 #   t1 = vertex - 2*(leg1 direction) = (10,20) - 2*(1,0) = (8,20)  -> dia (8,40)
 #   t2 = vertex - 2*(leg2 direction) = (10,20) - 2*(0,1) = (10,18) -> dia (10,36)
 pts_corner = [(0.0, 40.0), (10.0, 40.0), (10.0, 20.0)]
-check_points(
-    'apply_merge_radii: 90deg corner, R2 -> hand-derived tangent points',
-    ls.apply_merge_radii(pts_corner, [0.0, 0.0, 2.0]),
-    [(0.0, 40.0), (8.0, 40.0), (10.0, 36.0), (10.0, 20.0)])
+rounded = ls.apply_merge_radii(pts_corner, [0.0, 0.0, 2.0])
+check_points('apply_merge_radii: 90deg corner retains tangent points and endpoints',
+             [rounded[0], rounded[1], rounded[-2], rounded[-1]],
+             [(0.0, 40.0), (8.0, 40.0), (10.0, 36.0), (10.0, 20.0)])
+check('apply_merge_radii: the join is a circle about (8,18), not a chord',
+      len(rounded) > 4 and all(abs(math.hypot(z - 8, x / 2 - 18) - 2) < 1e-8
+                              for z, x in rounded[1:-1]), True)
 
 # NEGATIVE CONTROL: radius 0 must be a true no-op (byte-identical points).
 check_points('apply_merge_radii: control - radius 0 is a no-op',

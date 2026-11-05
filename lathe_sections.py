@@ -933,8 +933,9 @@ def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
     detection or ranking, only the final ceiling value, which
     poly_lathe_mill.ngc itself divides by #<_diameter_mode> on the way in).
 
-    The polyline's own Start Z/Start Diameter (the "origin") is used only
-    to resolve the first child's relative coordinates - it is NOT included
+    The polyline's Start Z/Start Diameter (the "origin") resolves the first
+    child's relative coordinates and the incoming line for a second-item
+    merge. It is NOT included
     in the returned list, matching the real G-code record array built by
     poly_add_item/poly_create, which likewise never stores the origin as
     a record (a poly_add_item CALL [-1] ... init call, not a real point).
@@ -970,6 +971,7 @@ def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
 
     points = []
     merges = []
+    flips = []
     prev_z, prev_r = origin
 
     for index, seg in enumerate(segments):
@@ -999,10 +1001,11 @@ def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
             # it belongs to the first sub-point only; apply_merge_radii reads
             # merges[j + 1] as the radius rounding points[j]
             merges.append(seg['merge'] if i == 0 else 0.0)
+            flips.append(seg.get('merge_flip', False) if i == 0 else False)
 
         prev_z, prev_r = seg['z'], seg['r']
 
-    pts = apply_merge_radii(points, merges)
+    pts = apply_merge_radii(points, merges, origin=(origin[0], origin[1] * DIAMETER_MODE), flips=flips)
     # and the back limit, if one falls inside the profile - see trim_to_end_z
     # the front limit first, then the back one - each gated on its own switch,
     # because no Z value is safe as a sentinel when a profile may begin at a
@@ -1146,11 +1149,30 @@ def resolve_segments(polyline_feature):
 
         style_param = child.get_param('param_m_style')
         r_param = child.get_param('param_m_r')
+        flip_param = child.get_param('param_m_flip')
         style = int(_to_float(style_param.get_ngc_value())) if style_param is not None else 0
         radius = _to_float(r_param.get_ngc_value()) if r_param is not None else 0.0
+        flip = bool(_to_float(flip_param.get_ngc_value())) if flip_param is not None else False
+        if len(segments) < 1:
+            style = 0
+        # Only the first corner has a reference line, rather than an incoming cut.
+        radius_flip = (style == MERGE_STYLE_RADIUS and flip and len(segments) == 1
+                       and segments[-1]['dir'] == 1 and direction == 1)
+        if style in (2, 21, 22) and direction == 1 and segments[-1]['dir'] == 1:
+            b_param = child.get_param('param_m_b')
+            second = _to_float(b_param.get_ngc_value()) if b_param is not None else 0.0
+            before = (segments[-2]['z'], segments[-2]['r']) if len(segments) > 1 else origin
+            chamfer = _chamfer_vertex(before, (prev_z, prev_r), (new_z, new_r),
+                                      radius, style, second, bool(flip))
+            if chamfer is not None:
+                a, b = chamfer
+                segments[-1].update(z=a[0], r=a[1])
+                segments.append({'z': b[0], 'r': b[1], 'dir': 1,
+                                 'cz': 0.0, 'cr': 0.0, 'merge': 0.0})
 
         segments.append({'z': new_z, 'r': new_r, 'dir': direction,
                          'cz': cz, 'cr': cr,
+                         'merge_flip': radius_flip,
                          'merge': radius if style == MERGE_STYLE_RADIUS and radius > 0 else 0.0})
 
         # field +5 is the angle from the record BACK to the point before it -
@@ -1417,10 +1439,25 @@ def _densify_arc(prev_z, prev_r, seg):
 MERGE_STYLE_RADIUS = 1
 
 
-def apply_merge_radii(points, merges):
-    """Replace every filleted vertex with the geometry the profile actually
-    has: the two tangent points, plus the arc's own extreme X when the arc
-    sweeps past it.
+def build_radius_flip_gcode(polyline_feature):
+    """Reverse the first line's reference for an opposite-side starting radius.
+
+    Run after all items have resolved their relative coordinates. The stock
+    limits and item endpoints stay fixed; poly_create sees the other ray of
+    the same reference line, so it builds a tangent arc with a new centre.
+    """
+    resolved = resolve_segments(polyline_feature)
+    if resolved is None:
+        return ''
+    origin, segments = resolved
+    if len(segments) < 2 or not segments[1].get('merge_flip') or segments[1]['merge'] <= 0:
+        return ''
+    return '(Flip first radius: reverse incoming reference)\n#4993 = %s\n#4994 = %s\n' % (
+        _fmt(2 * segments[0]['z'] - origin[0]), _fmt(2 * segments[0]['r'] - origin[1]))
+
+
+def apply_merge_radii(points, merges, origin=None, flips=None):
+    """Replace filleted vertices with tangent points and the actual arc mesh.
 
     Without this the analysis sees the sharp corner the user typed rather
     than the rounded one that gets cut, and both things this module produces
@@ -1438,8 +1475,11 @@ def apply_merge_radii(points, merges):
     (Z, radius) space - a fillet is not scale-invariant, so doing it on
     diameters would be wrong by exactly the factor of two.
 
+    The optional origin supplies the incoming first line for a second-item
+    merge; it remains a reference and is not added to the profile itself.
+    flips selects the opposite incoming ray for that first corner only.
     A vertex is left sharp when the fillet cannot be built: no preceding
-    point (the origin is deliberately not in points - see resolve_points),
+    point or origin,
     degenerate or straight corner, or tangent points that would run past
     either neighbour. Leaving it sharp is the conservative direction - it
     can only over-estimate the corner, never invent material.
@@ -1450,11 +1490,14 @@ def apply_merge_radii(points, merges):
     n = len(points)
     for j in range(n):
         # vertex j is rounded by the radius carried on item j + 1, and needs
-        # a neighbour on both sides to have a corner at all
+        # a neighbour on both sides; origin supplies the first incoming line
         radius = merges[j + 1] if j + 1 < len(merges) else 0.0
         filleted = None
-        if radius > 0 and 1 <= j <= n - 2:
-            filleted = _fillet_vertex(points[j - 1], points[j], points[j + 1], radius)
+        if radius > 0 and j <= n - 2:
+            previous = points[j - 1] if j > 0 else origin
+            if previous is not None:
+                flip = bool(flips and j == 0 and flips[j + 1])
+                filleted = _fillet_vertex(previous, points[j], points[j + 1], radius, flip=flip)
         if filleted is None:
             out.append(points[j])
         else:
@@ -1462,19 +1505,13 @@ def apply_merge_radii(points, merges):
     return _dedupe(out)
 
 
-def _fillet_vertex(a, v, c, radius):
-    """The two tangent points that replace vertex v, or None when no fillet
-    can be built there.
-
-    Deliberately only the tangent points - not the arc's own extreme-X
-    point. Adding that apex makes detect_sections see a direction reversal
-    at the top of a smooth arc and open a section boundary there, which
-    puts back the very split this is meant to remove. The apex is at most
-    radius*(1 - cos(sweep/2)) above the higher tangent point, so leaving it
-    out only understates the ceiling by a fraction of one roughing step."""
+def _fillet_vertex(a, v, c, radius, flip=False):
+    """Tangent points and arc samples in diameter units, or None if it cannot fit."""
     az, ax = a[0], a[1] / 2.0
     vz, vx = v[0], v[1] / 2.0
     cz, cx = c[0], c[1] / 2.0
+    if flip:
+        az, ax = 2 * vz - az, 2 * vx - ax
 
     d1z, d1x = az - vz, ax - vx
     d2z, d2x = cz - vz, cx - vx
@@ -1500,8 +1537,37 @@ def _fillet_vertex(a, v, c, radius):
 
     t1 = (vz + tangent * u1z, vx + tangent * u1x)
     t2 = (vz + tangent * u2z, vx + tangent * u2x)
+    bz, br = u1z + u2z, u1x + u2x
+    factor = radius / (sin_half * math.hypot(bz, br))
+    center = vz + bz * factor, vx + br * factor
+    cross = u1x * u2z - u1z * u2x
+    arc = {'z': t2[0], 'r': t2[1], 'cz': center[0], 'cr': center[1],
+           'dir': ARC_CW if cross < 0 else ARC_CCW}
+    return [(z, r * DIAMETER_MODE) for z, r in [t1] + _densify_arc(*t1, arc)]
 
-    return [(t1[0], t1[1] * 2.0), (t2[0], t2[1] * 2.0)]
+
+def _chamfer_vertex(a, v, c, length, style, second=0.0, flip=False):
+    """Chamfer endpoints in (Z, radius), matching the line-to merge options."""
+    d1, d2 = (a[0] - v[0], a[1] - v[1]), (c[0] - v[0], c[1] - v[1])
+    l1, l2 = math.hypot(*d1), math.hypot(*d2)
+    if min(l1, l2, length) <= EPS:
+        return None
+    u1, u2 = (d1[0] / l1, d1[1] / l1), (d2[0] / l2, d2[1] / l2)
+    gamma = math.degrees(math.acos(max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))))
+    if gamma < 1.0 or gamma > 179.0:
+        return None
+    p = n = length
+    if style == 21:
+        p, n = (second, length) if flip else (length, second)
+    elif style == 22:
+        if second <= .5 or gamma + second >= 179.0:
+            return None
+        other = length * math.sin(math.radians(second)) / math.sin(math.radians(gamma + second))
+        p, n = (other, length) if flip else (length, other)
+    if min(p, n) <= EPS or p >= l1 - EPS or n >= l2 - EPS:
+        return None
+    return ((v[0] + p * u1[0], v[1] + p * u1[1]),
+            (v[0] + n * u2[0], v[1] + n * u2[1]))
 
 
 def _dedupe(points):

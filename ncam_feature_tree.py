@@ -101,6 +101,44 @@ class NCamFeatureTreeMixin:
         self.action()
 
 
+    def refresh_merge_visibility(self, feature_itr):
+        """Only the first contour item has no previous item to merge with."""
+        feature = self.treestore.get_value(feature_itr, 0)
+        if (self.catalog_dir != 'lathe' or not isinstance(feature, Feature)
+                or feature.get_type() != 'poly-line-to'):
+            return
+        items = self.treestore.iter_parent(feature_itr)
+        if items is None or self.treestore.get_value(items, 0).get_type() != 'items':
+            return
+        previous = 0
+        previous_kind = None
+        sibling = self.treestore.iter_children(items)
+        target = self.treestore.get_path(feature_itr)
+        while sibling is not None and self.treestore.get_path(sibling) != target:
+            value = self.treestore.get_value(sibling, 0)
+            active = value.get_param('param_act')
+            if active is None or active.get_value() != '0':
+                previous += 1
+                previous_kind = value.get_type()
+            sibling = self.treestore.iter_next(sibling)
+        dual = self.actionDualView.get_active()
+        style = feature.get_param('param_m_style').get_value()
+        flip_allowed = (style in ('21', '22') or
+                        (style == '1' and previous == 1 and
+                         previous_kind in ('poly-line-to', 'poly-line-polar')))
+        feature.get_param('param_m_flip').set_grayed(not flip_allowed)
+
+        def update(itr):
+            while itr is not None:
+                value = self.treestore.get_value(itr, 0)
+                if value.get_attr('call') == '#param_h2' or value.get_attr('header') == 'h2':
+                    visible = previous >= 1 and not int(value.get_attr('hidden') or 0)
+                    self.treestore.set(itr, 2, visible and not dual, 3, visible and dual)
+                update(self.treestore.iter_children(itr))
+                itr = self.treestore.iter_next(itr)
+        update(self.treestore.iter_children(feature_itr))
+
+
     def get_selected_feature(self, widget) :
         old_selected_feature = self.selected_feature
         (model, itr) = self.treeview.get_selection().get_selected()
@@ -151,6 +189,7 @@ class NCamFeatureTreeMixin:
             self.selected_feature_ts_itr = ts_itr
             self.feature_ts_path = self.treestore.get_path(ts_itr)
             self.selected_feature_ts_path_s = self.treestore.get_string_from_iter(ts_itr)
+            self.refresh_merge_visibility(ts_itr)
 
             self.iter_next = model.iter_next(itr_p)
             if self.iter_next :
