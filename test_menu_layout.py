@@ -45,7 +45,7 @@ class Stub(NCamMenuCatalogMixin):
         self.main_box = gtk.Box(orientation=gtk.Orientation.VERTICAL)
         self.added = []
 
-    def add_feature(self, widget, src):
+    def add_feature(self, widget, src, preset=None):
         self.added.append(src)
 
 
@@ -198,7 +198,8 @@ def main():
           % (len(tb), len(declared)))
 
     # 4 - the dropdowns specifically
-    menus = {k: v for k, v in tb.items() if v != 'separator' and len(v) > 4}
+    menus = {k: v for k, v in tb.items()
+             if v != 'separator' and len(v) > 4 and v[4] is not None}
     names = sorted(v[0] for v in menus.values())
     check('both dropdowns are present', len(menus) == 2, 'found %s' % names)
 

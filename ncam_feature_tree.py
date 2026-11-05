@@ -374,7 +374,7 @@ class NCamFeatureTreeMixin:
             self.newnamedlg.response(gtk.ResponseType.OK)
 
 
-    def add_feature(self, widget, src) :
+    def add_feature(self, widget, src, preset=None) :
         src_file = search_path(search_warning.dialog, src, CFG_DIR)
         if src_file is None:
             return
@@ -386,12 +386,49 @@ class NCamFeatureTreeMixin:
         elif ('[SUBROUTINE]' in src_data)  :
             f = Feature(src = src_file)
             f.attr['src'] = src
+            if preset is not None:
+                try:
+                    self._apply_profile_preset(f, preset)
+                except ValueError as error:
+                    mess_dlg(str(error))
+                    return
             xml = etree.Element(XML_TAG)
             xml.append(f.to_xml())
         else :
             mess_dlg(_("'%(source_file)s' is not a valid cfg or xml file") % {'source_file':src_file})
             return
         self.import_xml(xml)
+
+
+    @staticmethod
+    def _apply_profile_preset(feature, preset):
+        """Initialize a new operation; saved projects keep their edited values."""
+        choices = {
+            'outside_roughing': (_('Outside roughing'), 0, 1, 'turning-roughing-od.png'),
+            'inside_roughing': (_('Inside roughing'), 1, 1, 'turning-roughing-id.png'),
+            'outside_finishing': (_('Outside finishing'), 0, 2, 'turning-finishing-od.png'),
+            'inside_finishing': (_('Inside finishing'), 1, 2, 'turning-finishing-id.png'),
+        }
+        if preset not in choices or feature.get_type() != 'polyline':
+            raise ValueError(_('Unknown turning operation preset: %s') % preset)
+        name, side, operation, icon = choices[preset]
+        params = {key: feature.get_param('param_' + key)
+                  for key in ('side', 'op', 'pf_on', 'b_x', 'e_x', 'b_x_dat', 'e_x_dat')}
+        if any(p is None for p in params.values()):
+            raise ValueError(_('The profile template does not support turning presets.'))
+        # Absolute diameters run outwards for ID and inwards for OD. Preserve
+        # stock-relative or expression-based custom defaults for the operator.
+        if all(params[key].get_value() == '0' for key in ('b_x_dat', 'e_x_dat')):
+            try:
+                start, end = (float(params[key].attr['value']) for key in ('b_x', 'e_x'))
+                if (start > end if side else start < end):
+                    params['b_x'].attr['value'], params['e_x'].attr['value'] = (
+                        params['e_x'].attr['value'], params['b_x'].attr['value'])
+            except ValueError:
+                pass
+        for key, value in (('side', side), ('op', operation), ('pf_on', 0)):
+            params[key].attr['value'] = str(value)
+        feature.attr.update(name=name, icon=icon, catalog_preset=preset)
 
 
     def action_hideField(self, *arg):

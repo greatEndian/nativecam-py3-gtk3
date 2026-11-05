@@ -663,9 +663,11 @@ class NCamProjectIOMixin:
                             # KeyError and takes down the whole project load the
                             # first time a version bump makes them migrate.
                             for a in ('name', 'expanded', 'old-selected',
-                                      'new-selected', 'hidden_count') :
+                                      'new-selected', 'hidden_count', 'catalog_preset') :
                                 if a in f_A.attr :
                                     f_B.attr[a] = f_A.attr[a]
+                            if f_A.get_attr('catalog_preset') and f_A.get_attr('icon'):
+                                f_B.attr['icon'] = f_A.attr['icon']
                             if f_A.get_value() != '' :
                                 f_B.set_value(f_A.get_value())
 

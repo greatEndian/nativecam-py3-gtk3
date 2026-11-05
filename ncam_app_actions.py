@@ -630,6 +630,8 @@ class NCamAppActionsMixin:
         self.add_iconview.set_model(self.icon_store)
         self.add_iconview.set_pixbuf_column(0)
         self.add_iconview.set_text_column(2)
+        for cell in self.add_iconview.get_cells():
+            self.add_iconview.set_cell_data_func(cell, self.catalog_cell_data)
 
         if self.catalog.tag == 'xml' :
             self.catalog_src = self.catalog

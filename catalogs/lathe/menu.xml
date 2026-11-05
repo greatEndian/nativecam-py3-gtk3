@@ -5,14 +5,28 @@
 			<menuitem action='iturning'  name=_("Initial Turning")_ tool_tip= _("Initial turning to help find X axis center")_ icon="od.png" src="lathe/init-turning.cfg"/>
 		</menu>
 		<menu action='cutting'  name=_("Cutting")_ icon="threading.png">
-			<menu action='contour'  name=_("Contour")_ icon="od-advanced.png" tool_tip=_("Profile operations built from a polyline - the general way to cut a shape")_>
-				<menuitem action='poly_start'  name=_("Start Contour")_ tool_tip= _("Start a contour profile - outside or inside, chosen on the feature")_ icon="lathe-multipass.png" src="lathe/polyline.cfg"/>
-				<separator/>
+			<menu action='contour' name=_("Turning")_ icon="turning-operations.png" show_label="true" tool_tip=_("Choose a turning operation")_>
+                <menuitem action="profile_rough_od" name=_("Outside roughing")_ icon="turning-roughing-od.png" src="lathe/polyline.cfg" preset="outside_roughing" tool_tip=_("Rough an outside profile. Starts with Outside and Roughing only selected; add lines and arcs to define the profile.")_/>
+                <menuitem action="profile_rough_id" name=_("Inside roughing")_ icon="turning-roughing-id.png" src="lathe/polyline.cfg" preset="inside_roughing" tool_tip=_("Rough an inside profile using the existing profile engine. Define the existing bore, final diameter and internal profile before generating.")_/>
+                <menuitem action="profile_finish_od" name=_("Outside finishing")_ icon="turning-finishing-od.png" src="lathe/polyline.cfg" preset="outside_finishing" tool_tip=_("Finish an outside profile. Starts with Outside and Finishing only selected.")_/>
+                <menuitem action="profile_finish_id" name=_("Inside finishing")_ icon="turning-finishing-id.png" src="lathe/polyline.cfg" preset="inside_finishing" tool_tip=_("Finish an inside profile. Starts with Inside and Finishing only selected; check the bore dimensions and tool clearance.")_/>
+                <separator/>
+                <menuitem action="turn_face" name=_("Facing")_ icon="lathe-facing.png" src="lathe/facing.cfg" tool_tip=_("Machine the front face of the workpiece.")_/>
+                <menuitem action="groove_od" name=_("Outside grooving (planned)")_ icon="turning-grooving-od.png" enabled="false" tool_tip=_("Dedicated radial OD grooving is planned. The current profile engine can enter reachable undercuts, but is not a plunge-grooving cycle.")_/>
+                <menuitem action="groove_id" name=_("Inside grooving (planned)")_ icon="turning-grooving-id.png" enabled="false" tool_tip=_("Dedicated internal grooving is planned and needs its own tool-width and bore-clearance handling.")_/>
+                <menuitem action="groove_face" name=_("Face grooving (planned)")_ icon="turning-grooving-face.png" enabled="false" tool_tip=_("Dedicated axial face grooving is planned and needs a face-grooving tool and radial clearance limits.")_/>
+                <menuitem action="turn_part" name=_("Parting off")_ icon="parting.png" src="lathe/parting.cfg" tool_tip=_("Cut the part from the stock using the existing parting cycle.")_/>
+                <menuitem action="turn_thread" name=_("Threading")_ icon="threading.png" src="lathe/threading.cfg" tool_tip=_("Cut external or internal threads using the existing threading cycle.")_/>
+                <menuitem action="turn_drill" name=_("Drilling (planned)")_ icon="drill-in-center.png" enabled="false" tool_tip=_("A dedicated lathe-axis drilling cycle is planned.")_/>
+                <separator/>
+                <menuitem action='poly_start' name=_("Custom profile")_ icon="lathe-multipass.png" src="lathe/polyline.cfg" tool_tip=_("Create the existing general profile operation, with roughing and finishing configurable together.")_/>
+                <menu action="profile_geometry" name=_("Profile geometry")_ icon="polyline.png" tool_tip=_("Add line and arc segments to the selected profile's Items group.")_>
 				<menuitem action='polyline_to'  name=_("Line To")_ tool_tip= _("Relative or absolute position")_ icon="line-to.png" src="lathe/polyline-to.cfg"/>
 				<menuitem action='polyline_pol'  name=_("Line Polar")_ tool_tip= _("Define angle and length")_ icon="line-polar.png" src="lathe/polyline-polar.cfg"/>
 				<menuitem action='poly_arc_ij'  name=_("Arc I,K")_ tool_tip= _("Defined center by offsets or absolute position")_ icon="arc-to-ij.png" src="lathe/polyline-arc-ij.cfg"/>
 				<menuitem action='poly_arc_coords'  name=_("Arc To Coords")_ tool_tip= _("Define end point, arc height or radius")_ icon="arc-to-coords.png" src="lathe/polyline-arc-to.cfg"/>
-			</menu>
+                </menu>
+            </menu>
 			<menuitem action='facing'  name=_("Facing")_ tool_tip= _("Finish face and optionnaly touch off")_ icon="lathe-facing.png" src="lathe/facing.cfg"/>
 			<menuitem action='drilling'  name=_("Drilling - not implemented yet")_ tool_tip= _("Placeholder. Centre drilling, peck drilling and tapping on the lathe axis are planned - see the drilling section of the plan.")_ icon="drill-in-center.png"/>
 			<menuitem action='threading'  name=_("Threading")_ tool_tip= _("External or internal threads, metric or imperial")_ icon="threading.png" src="lathe/threading.cfg"/>
@@ -57,7 +71,7 @@
     <toolbar>
         <toolitem action='ch_tool' />
         <separator/>
-        <toolmenu action='contour' icon="od-advanced.png" tool_tip=_("Contour operations - a profile built from a polyline")_ />
+        <toolmenu action='contour' icon="turning-operations.png" tool_tip=_("Turning - choose roughing, finishing, facing or another operation")_ />
         <toolitem action='facing' />
         <toolitem action='threading' />
         <separator/>

@@ -73,6 +73,18 @@ In standalone mode, projects inside a LinuxCNC configuration use that
 configuration's matching catalog and units for the preview and tool table.
 LinuxCNC does not need to be running. An INI supplied explicitly takes priority.
 
+The lathe **Turning** toolbar button opens the operation chooser. Choose
+**Outside roughing**, **Inside roughing**, **Outside finishing**, or
+**Inside finishing** to start a profile with its side and operation set.
+Add lines/arcs from **Profile geometry** to its **Items** group. **Custom profile**
+retains the combined roughing/finishing setup. Facing, threading and parting
+are also available in the chooser. Dedicated outside/inside/face grooving and
+lathe drilling are marked **planned** and disabled until their generators exist.
+
+The default operation menu follows application updates. For a custom menu,
+save it as `catalogs/lathe/menu-custom.xml` in the NativeCAM configuration folder;
+that override takes priority and is preserved.
+
 Regeneration shows a pulsing progress bar with the current stage and elapsed
 time. Property sections in all categories start collapsed; click a bold section heading
 or its arrow to show or hide its properties. Opened sections stay open when

@@ -3182,7 +3182,12 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
             print(_('Using %s\n') % (catname))
         else :
             catname = self.catalog_dir + '/menu.xml'
-            cat_dir_name = search_path(search_warning.dialog, catname, CATALOGS_DIR)
+            # menu-custom.xml is the documented user override. The shipped
+            # default must follow application updates, even when an older
+            # config-directory copy still exists. Leave that copy untouched.
+            shipped_menu = os.path.join(SYS_DIR, CATALOGS_DIR, catname)
+            cat_dir_name = (shipped_menu if os.path.isfile(shipped_menu) else
+                            search_path(search_warning.dialog, catname, CATALOGS_DIR))
             print(_('Using default %(mnu)s,  no %(dir)s/menu-custom.xml found\n') %
                   {'mnu':catname, 'dir':self.catalog_dir})
         if cat_dir_name is None :

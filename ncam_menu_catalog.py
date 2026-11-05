@@ -345,15 +345,33 @@ class NCamMenuCatalogMixin:
             if tag == "parent" :
                 self.update_catalog(xml = "parent")
             elif tag in ["menuitem", "sub"] :
+                path = self.icon_store.get(itr, 4)[0]
+                node = self.catalog_path[path]
+                if not self._catalog_item_available(node):
+                    return
                 self.addVBox.hide()
                 self.feature_Hpane.show()
                 self.menubar.set_sensitive(True)
                 self.main_toolbar.set_sensitive(True)
                 self.nc_toolbar.set_sensitive(True)
-                self.add_feature(None, src)
+                self.add_feature(None, src, node.get('preset'))
             elif tag in ["menu", "group"] :
                 path = self.icon_store.get(itr, 4)[0]
                 self.update_catalog(xml = self.catalog_path[path])
+
+
+    @staticmethod
+    def _catalog_item_available(node):
+        return (node.get('enabled', 'true').lower() != 'false'
+                and (node.tag.lower() in ('menu', 'group') or bool(node.get('src'))))
+
+
+    def catalog_cell_data(self, layout, cell, model, itr, data=None):
+        available = True
+        if model.get_value(itr, 1) != 'parent':
+            node = self.catalog_path[model.get_value(itr, 4)]
+            available = self._catalog_item_available(node)
+        cell.set_property('sensitive', available)
 
 
     def update_catalog(self, xml = None) :
@@ -406,10 +424,13 @@ class NCamMenuCatalogMixin:
                         img = gtk.Image()
                         img.set_from_pixbuf(get_pixbuf(icon, ncam.add_menu_icon_size))
                         a_menu_item.set_image(img)
+                        a_menu_item.set_always_show_image(True)
 
                     src = p.get('src')
-                    if src is not None :
-                        a_menu_item.connect("activate", self.add_feature, src)
+                    if p.tag.lower() in ('menuitem', 'sub'):
+                        a_menu_item.set_sensitive(self._catalog_item_available(p))
+                        if src is not None:
+                            a_menu_item.connect("activate", self.add_feature, src, p.get('preset'))
 
                     grp_menu.append(a_menu_item)
 
@@ -453,7 +474,10 @@ class NCamMenuCatalogMixin:
                         icon = p.get("icon")
 
                         if (actionname is not None) and (src is not None) :
-                            MENU_LISTING[actionname] = [name, tooltip, src, icon]
+                            entry = [name, tooltip, src, icon]
+                            if p.get('preset') is not None:
+                                entry += [None, p.get('preset')]
+                            MENU_LISTING[actionname] = entry
                     if p.tag.lower() in ["menu", "group"] :
                         if p.get("action") is not None :
                             MENU_NODES[p.get("action")] = p
@@ -520,15 +544,23 @@ class NCamMenuCatalogMixin:
                     self.build_menu_from_node(a_menu, li[4])
                     a_menu.show_all()
                     button.set_menu(a_menu)
+                    if li[4].get('show_label') == 'true':
+                        button.set_icon_widget(None)
+                        row = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=5)
+                        if icon is not None:
+                            row.pack_start(icon, False, False, 0)
+                        row.pack_start(gtk.Label(label=_(li[0])), False, False, 0)
+                        button.set_icon_widget(row)
                     # clicking the icon should open the menu too, not do nothing
                     button.connect('clicked',
-                                   lambda b : b.get_menu().popup_at_pointer(None))
+                                   lambda b : b.get_menu().popup_at_widget(
+                                       b, gdk.Gravity.SOUTH_WEST, gdk.Gravity.NORTH_WEST, None))
                 else :
                     if icon is not None :
                         button = gtk.ToolButton(icon_widget = icon, label = _(li[0]))
                     else :
                         button = gtk.ToolButton(label = li[0])
-                    button.connect('clicked', self.add_feature, li[2])
+                    button.connect('clicked', self.add_feature, li[2], li[5] if len(li) > 5 else None)
 
                 if li[1] is not None :
                     button.set_tooltip_markup(_(li[1]))
