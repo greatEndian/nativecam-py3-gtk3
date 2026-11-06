@@ -516,6 +516,7 @@ class NCamAppActionsMixin:
             return
         try:
             self.action_saveCurrent()
+            self._save_session_state()
         except Exception as e:
             mess_dlg(_('Could not save before restarting:\n%s') % e)
             return
@@ -618,6 +619,7 @@ class NCamAppActionsMixin:
         if not getattr(self, '_toplevel_key_hooked', False):
             toplevel.connect('key-press-event', self._toplevel_key_press)
             self._toplevel_key_hooked = True
+        self._connect_session_window(toplevel)
 
 
     def _on_realize(self, *arg):
@@ -746,6 +748,9 @@ class NCamAppActionsMixin:
         self.actionViewMenu = ca("ViewMenu", None, _("_View"), None, None, self.view_menu_activate)
         self.actionCollapse = ca("Collapse", 'gtk-zoom-out', _("Collapse All Other Nodes"), '<control>K', _("Collapse All Other Nodes"), self.action_collapse)
         self.actionSaveLayout = ca("SaveLayout", 'gtk-save', _('Save As Default Layout'), '', _('Save As Default Layout'), self.action_saveLayout)
+        self.actionRememberSession = cta("RememberSession", _('Remember Window and Layout'),
+                                         _('Automatically restore window size, pane dividers and display options from the previous session'),
+                                         self._remember_session_toggled)
         self.actionIconColour = ca("IconColour", 'gtk-select-color', _('Icon Colour...'), None, _('Set the accent colour of the icons'), self.action_icon_colour)
 
         def on_view_changed(action):
@@ -846,6 +851,7 @@ class NCamAppActionsMixin:
 
     def set_preferences(self):
         self.restore_bar_order()
+        self.actionRememberSession.set_state(GLib.Variant.new_boolean(self.pref.remember_session))
 
         self.main_toolbar.set_icon_size(ncam.toolbar_icon_size)
         self.add_toolbar.set_icon_size(ncam.toolbar_icon_size)
@@ -861,10 +867,11 @@ class NCamAppActionsMixin:
 
         ncam.WARN_UNREACHABLE = getattr(self.pref, 'warn_unreachable', True)
         self.actionWarnUnreach.set_active(ncam.WARN_UNREACHABLE)
-        self.actionTopBottom.set_active(not self.pref.side_by_side)
-        self.actionSideSide.set_active(self.pref.side_by_side)
-        self.actionSingleView.set_active(not self.pref.use_dual_views)
-        self.actionDualView.set_active(self.pref.use_dual_views)
+        # Restore both radio pairs without invoking their user-click guards.
+        self.actionTopBottom.set_state(GLib.Variant.new_boolean(not self.pref.side_by_side))
+        self.actionSideSide.set_state(GLib.Variant.new_boolean(self.pref.side_by_side))
+        self.actionSingleView.set_state(GLib.Variant.new_boolean(not self.pref.use_dual_views))
+        self.actionDualView.set_state(GLib.Variant.new_boolean(self.pref.use_dual_views))
         self.actionAutoRefresh.set_active(self.pref.autorefresh)
 
         for mi in self.mi_current_list: mi.set_visible(not self.pref.autosave)
@@ -875,6 +882,7 @@ class NCamAppActionsMixin:
         if self.treeview2 is not None :
             self.name_cell2.set_property('ellipsize', self.pref.name_ellipsis)
             self.restore_detail_groups()
+        self.set_layout()
 
 
     def get_widgets(self):
@@ -1384,6 +1392,7 @@ class NCamAppActionsMixin:
             self.actionHideCol.set_enabled(self.actionDualView.get_active())
             self.treeview.get_column(1).set_visible(self.actionSingleView.get_active() or \
                                         not self.actionHideCol.get_active())
+            self._queue_session_save()
             
             return False  
 

@@ -2423,6 +2423,7 @@ class Preferences(object):
             self.sub_hdrs_in_tv1 = read_boolean(config, 'layout', 'subheaders_in_master', False)
             self.hide_value_column = read_boolean(config, 'layout', 'hide_value_column', False)
             self.autorefresh = read_boolean(config, 'layout', 'autorefresh', False)
+            self.remember_session = read_boolean(config, 'layout', 'remember_session', True)
             # does the Send button regenerate before loading? Default False -
             # "send" honestly means "load what is on disk", and Regenerate is
             # its own button now
@@ -2797,6 +2798,7 @@ class Preferences(object):
             self.default += ("#<_pl_rgh_hi_r>            = 0.0\n")
             self.default += ("#<_pl_rgh_lo_r>            = 0.0\n")
             self.default += ("#<_pl_ext_bk_dz>            = 0.0\n")
+            self.default += ("#<_pl_ext_fr_dz>            = 0.0\n")
             self.default += ("#<_pl_pause_on>             = 0.0\n")
             self.default += ("#<_tip_cam>                = 0.0\n")
             self.default += ("#<_pl_pass_from>           = 0.0\n")
@@ -2842,6 +2844,7 @@ class Preferences(object):
             self.default += ("#<_pl_rgh_ox>              = 0.0\n")
             self.default += ("#<_pl_skip_thin>           = 0.0\n")
             self.default += ("#<_pl_begin_z>             = 0.0\n")
+            self.default += ("#<_pl_fin_begin_z>         = 0.0\n")
             # how many floors the profile is entitled to. 1 or 0 means one
             # floor fits the whole part, and poly_lathe_mill then takes exactly
             # the ladder it took before floor stages existed.
@@ -3374,6 +3377,7 @@ class NCam(NCamFeatureTreeMixin, NCamProjectIOMixin, NCamUIChromeMixin,
         self.edit_menu_activate()
         self.treeview.grab_focus()
         self.show_not_connected = True
+        self._init_session_state()
 
 
 
@@ -3590,5 +3594,5 @@ if __name__ == "__main__":
     for mi in ncam.mi_current_list:
         mi.set_visible(True)
     window.connect("destroy", gtk.main_quit)
-    window.set_default_size(400, 800)
+    ncam.restore_session_window(window)
     exit(window.run())

@@ -64,7 +64,7 @@ SUB = 'lathe/poly_lathe_mill.ngc'
 ANCHORS = (
     # the RAW bounds, read before the extension and the limit clamp so both
     # are Python's to reproduce
-    ('        #<l_z> = [#<l_z> + #<_pl_ext_bk_dz>]\n',
+    ('        #<e_z> = [#<e_z> + #<_pl_ext_fr_dz>]\n',
      '        (debug, RAWREC ez=#<e_z> lz=#<l_z>)\n', False),
     # one per window, after its span and band are resolved. ANCHORED ON THE
     # TABLE LOOKUP, not on the assignment to current_radius: the level table
@@ -210,6 +210,7 @@ def main():
                 banded += sum(1 for w in obs if w[3] > -999998)
                 dm = num(src, r'#<_diameter_mode>\s*=\s*([\d.]+)', 2.0)
                 ext = num(src, r'#<_pl_ext_bk_dz>\s*=\s*([-\d.]+)', 0.0) or 0.0
+                front_ext = num(src, r'#<_pl_ext_fr_dz>\s*=\s*([-\d.]+)', 0.0) or 0.0
                 lim = None
                 if (num(src, r'#<_pl_lim_on>\s*=\s*([-\d.]+)', 0.0) or 0) > 0:
                     lim = (num(src, r'#<_pl_lim_lo>\s*=\s*([-\d.]+)'),
@@ -228,7 +229,7 @@ def main():
                 elif not on:
                     single += sum(1 for w in obs if w[0] < 0)
                 mine = ls.roughing_windows(raw[0], raw[1], ext, lim, secs,
-                                           mode, on, dm)
+                                           mode, on, dm, ext_fr_dz=front_ext)
                 same = len(mine) == len(obs) and all(
                     a_[0] == b_[0]
                     and all(abs(a_[k] - b_[k]) < 0.002 for k in (1, 2, 3, 4))
@@ -242,7 +243,7 @@ def main():
                 # NEGATIVE CONTROL: the other sectioning mode must not
                 # produce the same sweep, or the mode is being ignored
                 if ls.roughing_windows(raw[0], raw[1], ext, lim, secs,
-                                       1 - mode, on, dm) != mine:
+                                       1 - mode, on, dm, ext_fr_dz=front_ext) != mine:
                     ctrl += 1
 
     check('the sweep actually ran', ran >= 25, '%d configurations' % ran)

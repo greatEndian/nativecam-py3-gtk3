@@ -979,6 +979,16 @@ class PreviewPane(object):
         self._render_info()
         _trace('stop done')
 
+    def session_widgets(self):
+        """User display choices, independent of toolpath and playback progress."""
+        widgets = dict(contour=self.contour_btn, points=self.points_btn,
+                       programmed_point=self.point_btn, rewind=self.regen_btn,
+                       accuracy=self.accuracy_scale, speed=self.speed_combo,
+                       leftover=self.leftover_entry, tolerance=self.tol_entry)
+        for prefix, items in (('mode_', self.mode_items), ('color_', self.col_items), ('category_', self.cat_btns)):
+            widgets.update((prefix + str(key), widget) for key, widget in items.items())
+        return widgets
+
     def _on_mode(self, item, mid):
         # a radio group fires twice per change - once for the item losing the
         # selection and once for the item gaining it. Acting on both would set
@@ -1381,7 +1391,7 @@ class NCamPreviewMixin(object):
         return paned
 
     def _format_panes_once(self, widget, allocation):
-        """Put both splits at half, once at startup, then get out of the way.
+        """Restore saved splits or use half, once after the startup layout.
 
         A Paned position cannot be set as a FRACTION before the panel has been
         allocated: at construction every allocation is 1x1, so half of it is
@@ -1416,17 +1426,31 @@ class NCamPreviewMixin(object):
                       priority=GLib.PRIORITY_LOW)
 
     def _apply_half_split(self, paned):
-        """Both splits to half, from an idle after the layout has settled."""
+        """Apply remembered split ratios, with half as the unsaved default."""
+        saved = getattr(self, '_session_state', {}).get('splits', {})
+        if not isinstance(saved, dict):
+            saved = {}
+        def position(key, size):
+            value = saved.get(key, .5)
+            if not isinstance(value, (float, int)) or not .05 <= value <= .95:
+                value = .5
+            return int(size * value)
+
         h = paned.get_allocated_height()
         w = self.feature_Hpane.get_allocated_width()
         if h > 200:
-            want = h // 2
+            want = position('preview', h)
             if paned.get_position() != want:
                 paned.set_position(want)
         if w > 200:
-            want = w // 2
+            want = position('horizontal', w)
             if self.feature_Hpane.get_position() != want:
                 self.feature_Hpane.set_position(want)
+        vertical = getattr(self, 'feature_pane', None)
+        if vertical is not None and vertical.get_allocated_height() > 200:
+            vertical.set_position(position('vertical', vertical.get_allocated_height()))
+        if hasattr(self, '_session_layout_ready'):
+            self._session_layout_ready()
         return False                # one shot
 
     def _preview_soft_profile(self):
@@ -1581,7 +1605,7 @@ class NCamPreviewMixin(object):
             # the reachable contour depends on it, so 0.0 here would draw a
             # different curve from the one the program walks
             pts, _soft = lathe_sections.finish_profile(f, back, nose_r, flank,
-                                                       clear)
+                                                       clear, phase='rough')
             if not pts or len(pts) < 2:
                 return None
             d = f.get_param('param_dir')
@@ -1658,7 +1682,7 @@ class NCamPreviewMixin(object):
             if f is None:
                 return None
             import lathe_sections
-            pts = lathe_sections.resolve_points(f)
+            pts = lathe_sections.resolve_points(f, phase='finish')
             return pts if pts and len(pts) >= 2 else None
         except Exception:
             return None

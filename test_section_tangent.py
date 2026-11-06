@@ -114,7 +114,7 @@ def main():
     def generate(name, front=0, back=0, **overrides):
         data = copy.deepcopy(saved)
         poly = data.find('.//feature[@type="polyline"]')
-        values = dict(op=1, pf_on=0, sectioning=1, sec_len=5, dir=0,
+        values = dict(op=1, pf_on=0, sectioning=1, sec_len=5, dir=0, ext_fr=0, ext_bk=0,
                       sec_ext_fr=front, sec_ext_bk=back)
         values.update(overrides)
         units = values.pop('units', 21)

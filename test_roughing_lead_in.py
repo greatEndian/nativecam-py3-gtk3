@@ -84,7 +84,7 @@ def main():
         f = data.find('.//feature[@type="polyline"]')
         # Fix the policy test's geometry independently of the operator's
         # currently saved Natural/Artificial and extension choices.
-        settings = dict(sectioning=1, sec_len=5, sec_ext_fr=0, sec_ext_bk=0,
+        settings = dict(sectioning=1, sec_len=5, sec_ext_fr=0, sec_ext_bk=0, ext_fr=0, ext_bk=0,
                         ret_mode=0, **settings)
         for key, value in settings.items():
             p = f.find('./param[@call="#param_%s"]' % key)

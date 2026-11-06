@@ -115,6 +115,17 @@ def main():
           abs(math.hypot(dz, dr) - 3.0) < 1e-9 and abs(dz - (-dr)) < 1e-9,
           'dz %.4f, dr %.4f' % (dz, dr))
 
+    from test_sections import Poly, line_to
+    independent = Poly(0, 80, [line_to(40, 0), line_to(60, -10)])
+    independent.params.update(param_ext_fr='2', param_ext_bk='0',
+                              param_f_ext_fr='0', param_f_ext_bk='0')
+    rough = L.resolve_points(independent)
+    finish = L.resolve_points(independent, phase='finish')
+    check('roughing extension does not change the finishing profile',
+          rough[0] != finish[0] and finish[0] == (0, 40))
+    window = L.roughing_windows(0, -10, ext_fr_dz=2)
+    check('roughing window includes the front extension', window[0][1] == 2)
+
     # ---- and at the machine ---------------------------------------------
     if not (os.path.isfile(INI) and os.path.isfile(GEN)):
         print('SKIP  demo config or generator not present')
@@ -126,8 +137,10 @@ def main():
         if off is not None:
             print('      off        front Z%.4f  maxX %.4f'
                   % (off['front'], off['maxx']))
-            fr = run(['polyline:param_ext_fr=3.0'])
-            bk = run(['polyline:param_ext_bk=3.0'])
+            # Measure the contour extension separately from roughing's
+            # additional per-pass entry/exit travel (test_roughing_tangent).
+            fr = run(['polyline:param_f_ext_fr=3.0'])
+            bk = run(['polyline:param_f_ext_bk=3.0'])
             # BY THE EXTENSION'S Z COMPONENT, NOT ITS LENGTH. This asserted a
             # shift of 3.0 and so encoded a bug: `_pl_begin_z` was adding the
             # raw tangent length, which starts the sweep further forward than
@@ -136,7 +149,7 @@ def main():
             # profile's first segment is 45 degrees, so 3.0 along it is
             # 3.0/sqrt(2) = 2.1213 of Z, and that is what the cut may move.
             want = 3.0 / math.sqrt(2.0)
-            check('a front extension moves where CUTTING starts, by its Z '
+            check('a finishing front extension moves where CUTTING starts, by its Z '
                   'component',
                   fr is not None
                   and abs(fr['front'] - off['front'] - want) < 1e-2,
@@ -207,16 +220,17 @@ def main():
                 shutil.rmtree(d, ignore_errors=True)
 
         a = rough_front([])
-        b = rough_front(['polyline:param_ext_fr=3.0'])
+        b = rough_front(['polyline:param_ext_fr=3.0', 'polyline:param_f_ext_fr=3.0'])
         if a and b:
             print('      no extension  roughing front Z%.4f, %d levels'
                   % (a[0], a[2]))
             print('      front 3.0     roughing front Z%.4f, %d levels'
                   % (b[0], b[2]))
-            # THE ONE THAT MATTERS: roughing must reach as far as the contour
-            # passes do. It used to stop 1.28 short while they ran on out.
+            # Compare coverage, not identical endpoints: these independent
+            # phases have different lead/compensation paths in front of stock.
+            # Roughing must not stop short of the requested extension.
             check('ROUGHING reaches the extension, not just the contour passes',
-                  abs((b[0] + b[3]) - b[1]) < 0.01,
+                  (b[0] + b[3]) >= b[1] - 0.01,
                   'roughing front Z%.4f + nose term %.4f = Z%.4f against the '
                   'contour passes\' Z%.4f'
                   % (b[0], b[3], b[0] + b[3], b[1]))

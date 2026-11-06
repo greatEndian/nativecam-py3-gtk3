@@ -16,18 +16,24 @@ import test_sections as oracle
 
 HERE = Path(__file__).resolve().parent
 POINTS = [(40, 1), (40, -10), (60, -10), (60, -20), (40, -20), (60, -30)]
+RAW_GCODE = oracle.gcode_for
 
 
 def item_call(item):
     p = item.params
     return ('o<poly_add_item> CALL [%s] [%s] [%s / #<_diameter_mode>] '
             '[1] [%s] [%s] [%s] [1] [%s] [0] [0]'
-            % (p['param_type'], p['param_z'], p['param_x'], p['param_m_style'],
-               p['param_m_r'], p.get('param_m_flip', 0), p.get('param_m_b', 0)))
+            % (p['param_type'], p['param_z'], p['param_x'], int(p['param_m_style'] == '1'),
+               p['param_m_r'], 0, p.get('param_m_b', 0)))
+
+
+def merged_gcode(feature, mesh=False):
+    return RAW_GCODE(feature, mesh).replace('o<poly_create> CALL',
+        ls.build_chamfer_gcode(feature) + '\n' + ls.build_radius_flip_gcode(feature) + '\no<poly_create> CALL')
 
 
 def geometry_checks():
-    with patch.object(oracle, 'item_call', item_call):
+    with patch.object(oracle, 'item_call', item_call), patch.object(oracle, 'gcode_for', merged_gcode):
         cases = [('radius-%d' % i, i, 1, 0, 0) for i in range(1, len(POINTS))]
         cases += [('second-item chamfer', 1, 2, 0, 0), ('chamfer', 2, 2, 0, 0), ('two lengths', 2, 21, 3, 0),
                   ('two lengths flipped', 2, 21, 3, 1), ('angle', 2, 22, 30, 0)]
@@ -80,6 +86,21 @@ def radius_flip_checks():
     print('PASS  first-corner Flip selects X15 Z0 to X25 Z-5, R5, with a 90-degree sweep', flush=True)
 
 
+def chamfer_flip_checks():
+    for style, second, depth in [(2, 0, 5), (21, 3, 3), (22, 30, 5 / math.sqrt(3))]:
+        children = [oracle.line_to(25, 0), oracle.line_to(25, -25)]
+        children[1].params.update(param_m_style=str(style), param_m_r='5',
+                                  param_m_b=str(second), param_m_flip='1')
+        poly = oracle.Poly(0, 50, children)
+        points = ls.resolve_points(poly, trim=False, extend=False)
+        assert math.dist(points[0], (0, 15)) < .001, ('chamfer Flip did not select the opposite side', style, points)
+        assert math.dist(points[1], (-depth, 25)) < .001, ('chamfer dimensions swapped', style, points)
+        with patch.object(oracle, 'item_call', item_call), patch.object(oracle, 'gcode_for', merged_gcode):
+            actual = [(r['z'], r['r'] * 2) for r in oracle.machine_records(poly)]
+            assert len(actual) == len(points) and all(math.dist(a, b) < .001 for a, b in zip(actual, points)), actual
+        print('PASS  chamfer starting-side Flip:', style, flush=True)
+
+
 def application_checks():
     root = Path(tempfile.mkdtemp(prefix='ncam_merge_regression_'))
     config = root / 'config'
@@ -128,14 +149,17 @@ def application_checks():
         items.append(line.to_xml())
     project.append(parent)
 
-    def generate(data, name):
+    paths = {}
+
+    def generate(data, name, phase=None):
         app.treestore_from_xml(copy.deepcopy(data))
         code = app.to_gcode()
         path = root / (name + '.ngc')
         path.write_text(code)
         tp = ncam_preview.parse_program(str(path), str(ini))
         assert tp.completed and not tp.error, tp.error
-        return [(m.kind, m.a, m.b, m.cat) for m in tp.moves]
+        paths[name] = tp
+        return [(m.kind, m.a, m.b, m.cat) for m in tp.moves if phase is None or phase in m.subs]
 
     baseline = generate(project, 'baseline')
     for index in (0,):
@@ -183,6 +207,9 @@ def application_checks():
     flipped_project = copy.deepcopy(project)
     profile = flipped_project.find('feature[@type="polyline"]')
     profile.set('version', '1.88')
+    for end, value in [('fr', 2), ('bk', 3)]:
+        profile.remove(profile.find('param[@call="#param_f_ext_%s"]' % end))
+        profile.find('param[@call="#param_ext_%s"]' % end).set('value', str(value / 25.4))
     profile.set('after', profile.get('after').replace(
         '<exec>print(lathe_sections.build_radius_flip_gcode(self))</exec>', ''))
     profile.find('param[@call="#param_b_x"]').set('value', str(50 / 25.4))
@@ -198,7 +225,11 @@ def application_checks():
     app.treestore_from_xml(flipped_project)
     flipped_project = app.update_features(app.treestore_to_xml())
     profile = flipped_project.find('feature[@type="polyline"]')
-    assert profile.get('version') == '1.89' and 'build_radius_flip_gcode' in profile.get('after')
+    assert profile.get('version') == '1.91' and 'build_radius_flip_gcode' in profile.get('after')
+    for end, value in [('fr', 2), ('bk', 3)]:
+        assert abs(float(profile.find('param[@call="#param_f_ext_%s"]' % end).get('value')) * 25.4 - value) < 1e-8
+        for prefix in ('ext_', 'f_ext_'):
+            profile.find('param[@call="#param_%s%s"]' % (prefix, end)).set('value', '0')
     assert profile.find('param[@type="items"]')[1].find('param[@call="#param_m_flip"]').get('value') == '1'
     for units in (21, 20):
         scale = 1 if units == 21 else 25.4
@@ -218,6 +249,77 @@ def application_checks():
             inside = [p for p in points if -4.99 < p[0] < -.01 and 7.51 < p[1] < 12.49]
             assert len(inside) >= 2 and all(abs(math.dist(p, (-5, 7.5)) - 5) < .008 for p in inside), inside
             print('PASS  migrated first-corner Flip: compensation', comp, 'G%d' % units, flush=True)
+
+    # A prefinish allowance shifts the rounded front ahead of Start Z.
+    # Projecting its first chord past the next point creates a reversed lead.
+    for units in (21, 20):
+        scale = 1 if units == 21 else 25.4
+        for comp in (1, 2):
+            modified = copy.deepcopy(flipped_project)
+            modified.find('feature[@type="workpiece"]/param[@call="#param_units"]').set('value', str(units))
+            profile = modified.find('feature[@type="polyline"]')
+            for key, value in [('op', 1), ('pf_on', 1), ('f_off', .508 / 25.4), ('n_comp', comp)]:
+                profile.find('param[@call="#param_%s"]' % key).set('value', str(value))
+            # Phase tags identify the actual prefinish pass, independent of leads' inferred categories.
+            moves = generate(modified, 'prefinish-entry-%d-G%d' % (comp, units), ncam_preview.PREFINISH)
+            feeds = [(a, b) for kind, a, b, _ in moves if kind == 'feed']
+            assert len(feeds) > 8
+            assert feeds[0][0][0] * scale < 8.5, ('prefinish entry ran beyond the first chord', comp, units)
+            assert all(b[2] <= a[2] + .0002 / scale for a, b in feeds[:8]), 'prefinish entry doubles back in Z'
+            print('PASS  rounded prefinish entry approaches from +Z:', comp, 'G%d' % units, flush=True)
+            profile.find('param[@call="#param_f_dir"]').set('value', '1')
+            profile.find('param[@call="#param_zc_ovr"]').set('value', str(1 / 25.4))
+            moves = generate(modified, 'prefinish-reverse-%d-G%d' % (comp, units), ncam_preview.PREFINISH)
+            a, b = next((a, b) for kind, a, b, _ in moves if kind == 'feed')
+            assert (a[2] - b[2]) * scale > .9, 'reverse prefinish approaches from -Z'
+            print('PASS  reversed prefinish also approaches from +Z:', comp, 'G%d' % units, flush=True)
+
+    for units in (21, 20):
+        scale = 1 if units == 21 else 25.4
+        for style, second, depth in [(2, 0, 5), (21, 3, 3), (22, 30, 5 / math.sqrt(3))]:
+            for flip in (0, 1):
+                modified = copy.deepcopy(flipped_project)
+                modified.find('feature[@type="workpiece"]/param[@call="#param_units"]').set('value', str(units))
+                profile = modified.find('feature[@type="polyline"]')
+                line = profile.find('param[@type="items"]')[1]
+                for key, value in [('m_style', style), ('m_flip', flip),
+                                   ('m_b', second / 25.4 if style != 22 or units == 21 else second)]:
+                    line.find('param[@call="#param_%s"]' % key).set('value', str(value))
+                moves = generate(modified, 'chamfer-%d-flip%d-G%d' % (style, flip, units), ncam_preview.FINISH)
+                points = [(p[2] * scale, p[0] * scale) for kind, a, b, _ in moves if kind == 'feed' for p in (a, b)]
+                assert min(math.dist(p, (0, 7.5 if flip else 17.5)) for p in points) < .02, (style, flip, units)
+                assert min(math.dist(p, (-depth, 12.5)) for p in points) < .02, (style, flip, units)
+        print('PASS  all chamfer styles select the same starting side in G%d' % units, flush=True)
+
+    def signature(tp, phase):
+        return [(m.a, m.b) for m in tp.moves if m.kind == 'feed' and
+                (phase in m.subs if phase else not m.subs)]
+
+    for units in (21, 20):
+        for comp in (1, 2):
+            data = copy.deepcopy(project)
+            data.find('feature[@type="workpiece"]/param[@call="#param_units"]').set('value', str(units))
+            data.find('feature[@type="workpiece"]/param[@call="#param_od"]').set('value', str(80 / 25.4))
+            profile = data.find('feature[@type="polyline"]')
+            profile.find('param[@call="#param_op"]').set('value', '0')
+            profile.find('param[@call="#param_pf_on"]').set('value', '1')
+            profile.find('param[@call="#param_f_off"]').set('value', str(.508 / 25.4))
+            profile.find('param[@call="#param_n_comp"]').set('value', str(comp))
+            name = 'separate-baseline-%d-G%d' % (comp, units)
+            generate(data, name)
+            baseline = paths[name]
+            for key in ('ext_fr', 'ext_bk', 'f_ext_fr', 'f_ext_bk'):
+                modified = copy.deepcopy(data)
+                modified.find('feature[@type="polyline"]/param[@call="#param_%s"]' % key).set('value', str(2 / 25.4))
+                case = '%s-%d-G%d' % (key, comp, units)
+                generate(modified, case)
+                rough_changed = signature(paths[case], None) != signature(baseline, None)
+                finish_changed = signature(paths[case], ncam_preview.FINISH) != signature(baseline, ncam_preview.FINISH)
+                pf_changed = signature(paths[case], ncam_preview.PREFINISH) != signature(baseline, ncam_preview.PREFINISH)
+                assert rough_changed == key.startswith('ext_'), ('wrong roughing extension consumer', key, comp, units)
+                assert finish_changed == key.startswith('f_ext_'), ('wrong finishing extension consumer', key, comp, units)
+                assert pf_changed == finish_changed, ('prefinish does not use finishing extensions', key, comp, units)
+            print('PASS  roughing and finishing front/back extensions are independent:', comp, 'G%d' % units, flush=True)
 
     app.treestore_from_xml(copy.deepcopy(project))
     store = app.treestore
@@ -240,12 +342,13 @@ def application_checks():
         for style in ('1', '2', '21', '22'):
             line.get_param('param_m_style').attr['value'] = style
             app.refresh_merge_visibility(itr)
-            assert line.get_param('param_m_flip').get_grayed() == (style == '2' or (style == '1' and index != 1))
+            assert line.get_param('param_m_flip').get_grayed() == (index != 1)
     print('PASS  only the first item hides merge controls', flush=True)
     print('ARTIFACTS', root, flush=True)
 
 
 if __name__ == '__main__':
+    chamfer_flip_checks()
     geometry_checks()
     radius_flip_checks()
     application_checks()

@@ -158,6 +158,7 @@ flake8 ncam_*.py lathe_sections.py --builtins="_" --select=E9,F63,F7,F82
 python3 test_lathe_validation.py   # checks cfg/lathe subroutine calls against .ngc signatures
 python3 test_coord_mapping.py      # turn-mill coordinate mapping math
 python3 test_vkb.py                # virtual keyboard arithmetic parser
+xvfb-run -a python3 test_roughing_tangent.py  # per-pass roughing extensions, directions and units
 
 # Whole-catalogue sweeps - slow (they generate every project), run before a commit
 python3 test_project_sweep.py      # every lathe project still generates and runs

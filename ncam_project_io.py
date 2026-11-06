@@ -725,6 +725,14 @@ class NCamProjectIOMixin:
                                         if 'grayed' in p.attr :
                                             q.attr['grayed'] = p.attr['grayed']
                                         break
+                            if f_B.get_type() == 'polyline':
+                                # Old projects applied one pair to both phases.
+                                for end in ('fr', 'bk'):
+                                    target = f_B.get_param('param_f_ext_' + end)
+                                    previous = f_A.get_param('param_ext_' + end)
+                                    if (target is not None and previous is not None
+                                            and f_A.get_param('param_f_ext_' + end) is None):
+                                        target.attr['value'] = previous.attr['value']
                             f = f_B
                             if 'init' in f.attr :
                                 upd2(f)

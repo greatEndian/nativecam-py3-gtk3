@@ -203,6 +203,7 @@ class NCamUIChromeMixin:
         """Close all active GTK popup windows when LinuxCNC exits.
         Prevents phantom combo dropdowns and VKB dialogs from remaining on screen.
         """
+        self._session_window_closed()
         self._ncam_shutting_down = True
         self._cancel_autorefresh_timer()
         # Close any open combo popups on all CellRenderers in treeviews
@@ -239,6 +240,7 @@ class NCamUIChromeMixin:
                 pass
 
         _safe_call(self._save_autorefresh_preference)
+        _safe_call(self._save_session_state)
         if self.pref.autosave:
             _safe_call(self.action_saveCurrent)
 

@@ -123,9 +123,8 @@ class NCamFeatureTreeMixin:
             sibling = self.treestore.iter_next(sibling)
         dual = self.actionDualView.get_active()
         style = feature.get_param('param_m_style').get_value()
-        flip_allowed = (style in ('21', '22') or
-                        (style == '1' and previous == 1 and
-                         previous_kind in ('poly-line-to', 'poly-line-polar')))
+        flip_allowed = (style in ('1', '2', '21', '22') and previous == 1 and
+                        previous_kind in ('poly-line-to', 'poly-line-polar'))
         feature.get_param('param_m_flip').set_grayed(not flip_allowed)
 
         def update(itr):

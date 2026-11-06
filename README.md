@@ -89,7 +89,20 @@ Merge settings on the first item are ignored.
 On the second item, **Radius → Flip** chooses the opposite side of the starting
 corner between straight lines. For example, with Start Diameter 50, a corner
 at X25 Z0 and an R5 join into negative Z, Flip changes the start from X35 Z0
-to X15 Z0; both arcs end at X25 Z−5 in diameter mode.
+to X15 Z0; both arcs end at X25 Z−5 in diameter mode. The same Flip selects
+the starting side for every chamfer style, without swapping its dimensions.
+
+**Roughing** and **Finishing** each have independent front and back tangential
+extensions, measured in the Z/radius plane. Roughing extends both its profile
+and each pass: the front continues the existing entry path, while the back
+follows the local compensated profile tangent. This also works with Sectioning
+off. Prefinish uses the finishing extensions. Older projects retain their
+saved extension lengths in both groups when reopened.
+
+**View → Remember Window and Layout** is enabled by default. It restores the
+NativeCAM window size and position, pane dividers, view layout and preview
+display options from the previous session. Turn it off to stop automatic
+session saving and use the default window geometry and divider positions.
 
 The default operation menu follows application updates. For a custom menu,
 save it as `catalogs/lathe/menu-custom.xml` in the NativeCAM configuration folder;
@@ -126,11 +139,12 @@ Finishing **Back to front** follows one continuous contour and ignores
 subsequent finishing passes as their allowance steps down. Wall splitting
 applies only to its front-to-back passes.
 
-With **Sectioning** enabled, **Section front tangential extension** moves each
+With **Sectioning** enabled, **Section front tangential extension** adds to the
+roughing front extension and moves each
 entry start backward along its existing entry path toward the previously cut
 area, continuing its profile-angle ramp where present. The normal cutting
 start and depth stay fixed. **Section back tangential extension** separately
-extends the back along its profile tangent. Physical front/back retain their
+adds to the roughing back extension along its profile tangent. Physical front/back retain their
 meaning in reverse. Each defaults to 0; extensions shorten where the profile,
 remaining stock or lead clearance blocks them.
 

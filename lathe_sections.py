@@ -59,27 +59,37 @@ def tangent_lead_footprint(unit, length, angle, radius, x_sign, z_dir, end=0):
 
 def build_section_tangent_gcode(feature, rough_cut, back_deg, nose_r=0.0,
                                 flank_len=0.0, clearance=0.0, orient=0):
-    """Register section-entry/profile tangents; zero resets the operation."""
+    """Register roughing entry/profile tangents; zero resets the operation."""
     def value(name):
         p = feature.get_param('param_' + name)
         return _to_float(p.get_ngc_value()) if p is not None else 0.0
 
     reset = '#<_pl_st_id> = 0'
-    front, back = value('sec_ext_fr'), value('sec_ext_bk')
-    if (max(front, back) <= 0 or not value('sectioning')
-            or value('op') == 2 or rough_cut <= EPS):
+    front, back = tangent_extensions(feature)
+    if value('sectioning'):
+        front += value('sec_ext_fr')
+        back += value('sec_ext_bk')
+    if max(front, back) <= 0 or value('op') == 2 or rough_cut <= EPS:
         return reset
     windows = section_windows(feature)
     data = floor_contour_data(feature, back_deg, nose_r, flank_len,
                               clearance, orient, rough_cut, include_zero=True)
-    if windows is None:
-        return reset
     if data is None or data is FLOORC_OVERFLOW:
-        return reset + '\n(ABORT, Section tangential extensions need a resolved profile table.)'
+        return reset + '\n(ABORT, Roughing tangential extensions need a resolved profile table.)'
     points = data[0]                     # compensated Z/radius, not diameters
+    sectioned = windows is not None
+    if sectioned:
+        windows = windows[0]
+    else:
+        profile = resolve_points(feature)
+        oz = rough_nose_terms(feature, nose_r, orient)[1]
+        # A full pass may feed through the nose-offset strip at the face.
+        # This is cutting at the current depth, not a claim of cleared stock.
+        front_z = max(profile[0][0], WORKPIECE_FACE_Z + oz) if WORKPIECE_FACE_Z is not None else profile[0][0]
+        windows = [(front_z, profile[-1][0], -999999.0, 999999.0)]
     stock = _stock_x(feature)
     if stock is None:
-        return reset + '\n(ABORT, Section tangential extensions need the stock diameter.)'
+        return reset + '\n(ABORT, Roughing tangential extensions need the stock diameter.)'
     entry = entry_contour_data(feature, back_deg, nose_r, flank_len,
                                clearance, rough_cut, orient)
     entry_dirs = []
@@ -89,7 +99,7 @@ def build_section_tangent_gcode(feature, rough_cut, back_deg, nose_r=0.0,
         entry_dirs.extend((dz, dr) for dz, dr, _z, _r in
                           entry_ramp_dirs(entry, 10 * rough_cut))
     SECTION_TANGENT_PLANS.append(dict(
-        points=points, windows=windows[0], front=front, back=back,
+        points=points, windows=windows, sectioned=sectioned, front=front, back=back,
         entry_dirs=entry_dirs,
         stock=stock / DIAMETER_MODE,
         face=WORKPIECE_FACE_Z,
@@ -243,6 +253,10 @@ def section_tangent_definitions():
                 if not min(a, b)-plan['oz'] <= middle <= max(a, b)-plan['oz']:
                     continue
                 label = '%d_%d_%d' % (number, cell, i)
+                if not plan['sectioned']:
+                    out += ['o<st_full_current%s> if [#<_pl_w_idx> LT 0]' % label,
+                            '#<depth> = #<level>', 'o<st_full_current%s> endif' % label]
+                    continue
                 out += ['o<st_w%s> if [[#<level> GE %s] AND [#<level> LE %s]]'
                         % (label, _fmt(rlo/DIAMETER_MODE-1e-6), _fmt(rhi/DIAMETER_MODE+1e-6)),
                         'o<st_known%s> if [[#<_pl_wdeep_ok> GT 0] AND [#%d LT 999998]]'
@@ -344,6 +358,8 @@ def section_position_definitions():
                 'o<sp_face%d> if [#2 GT %s]' % (number, _fmt(face + 1e-6 * PROGRAM_MM)),
                 '#<_pl_st_air> = 1', 'o<sp_face%d> endif' % number]
         for i, (a, b, rlo, rhi) in enumerate(plan['windows']):
+            if not plan['sectioned']:
+                continue
             label = '%d_%d' % (number, i)
             low, high = sorted((a-plan['oz'], b-plan['oz']))
             out += ['o<sp_z%s> if [[#2 GE %s] AND [#2 LE %s]]'
@@ -925,7 +941,7 @@ def trim_to_end_z(points, e_z):
     return out if len(out) >= 2 else points
 
 
-def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
+def resolve_points(polyline_feature, vertices=None, trim=True, extend=True, phase='rough'):
     """Ordered list of (z, x) absolute points for each active polyline
     child, in the same units the child's own param_x/param_z are entered
     in (diameter units as typed - see module docstring in the plan:
@@ -1031,14 +1047,21 @@ def resolve_points(polyline_feature, vertices=None, trim=True, extend=True):
     # contours, the section windows, the floor ladder and the entry and stop
     # tables are all derived from these points, so they can only agree with
     # each other if the profile they read has already been extended.
-    def _ext(name):
-        p = polyline_feature.get_param(name)
-        return _to_float(p.get_ngc_value()) if p is not None else 0.0
-
-    fr, bk = _ext('param_ext_fr'), _ext('param_ext_bk')
+    fr, bk = tangent_extensions(polyline_feature, phase)
     if extend and (fr > EPS or bk > EPS):
         pts = extend_tangent(pts, fr, bk)
     return pts
+
+
+def tangent_extensions(feature, phase='rough'):
+    """Independent lengths; unmigrated projects retain their shared settings."""
+    values = []
+    for end in ('fr', 'bk'):
+        p = feature.get_param('param_f_ext_' + end) if phase == 'finish' else None
+        if p is None:
+            p = feature.get_param('param_ext_' + end)
+        values.append(_to_float(p.get_ngc_value()) if p is not None else 0.0)
+    return tuple(values)
 
 
 # X is entered and carried here as a diameter, while a polar length, an arc
@@ -1156,14 +1179,16 @@ def resolve_segments(polyline_feature):
         if len(segments) < 1:
             style = 0
         # Only the first corner has a reference line, rather than an incoming cut.
-        radius_flip = (style == MERGE_STYLE_RADIUS and flip and len(segments) == 1
+        corner_flip = (style in (1, 2, 21, 22) and flip and len(segments) == 1
                        and segments[-1]['dir'] == 1 and direction == 1)
         if style in (2, 21, 22) and direction == 1 and segments[-1]['dir'] == 1:
             b_param = child.get_param('param_m_b')
             second = _to_float(b_param.get_ngc_value()) if b_param is not None else 0.0
             before = (segments[-2]['z'], segments[-2]['r']) if len(segments) > 1 else origin
+            if corner_flip:
+                before = (2 * prev_z - before[0], 2 * prev_r - before[1])
             chamfer = _chamfer_vertex(before, (prev_z, prev_r), (new_z, new_r),
-                                      radius, style, second, bool(flip))
+                                      radius, style, second)
             if chamfer is not None:
                 a, b = chamfer
                 segments[-1].update(z=a[0], r=a[1])
@@ -1172,7 +1197,7 @@ def resolve_segments(polyline_feature):
 
         segments.append({'z': new_z, 'r': new_r, 'dir': direction,
                          'cz': cz, 'cr': cr,
-                         'merge_flip': radius_flip,
+                         'merge_flip': corner_flip and style == MERGE_STYLE_RADIUS,
                          'merge': radius if style == MERGE_STYLE_RADIUS and radius > 0 else 0.0})
 
         # field +5 is the angle from the record BACK to the point before it -
@@ -1439,6 +1464,31 @@ def _densify_arc(prev_z, prev_r, seg):
 MERGE_STYLE_RADIUS = 1
 
 
+def build_chamfer_gcode(polyline_feature):
+    """Store Python-resolved chamfers before the shared record walker runs."""
+    children = getattr(polyline_feature, 'child_features', [])
+    if not any(c.get_param('param_m_style') is not None and
+               int(_to_float(c.get_param('param_m_style').get_ngc_value())) in (2, 21, 22)
+               for c in children):
+        return ''
+    resolved = resolve_segments(polyline_feature)
+    if resolved is None:
+        return '(ABORT, Cannot resolve the profile chamfers.)'
+    origin, segments = resolved
+    lines = ['(Chamfer geometry computed in Python)', '#5000 = %d' % len(segments)]
+    previous = origin
+    for i, seg in enumerate(segments):
+        point = (seg['z'], seg['r'])
+        phi = _phi(*point, *previous)
+        radial_phi = _phi(*point, seg['cz'], seg['cr']) if seg['dir'] in (2, 3) else phi
+        values = [*point, seg['dir'], seg['cz'], seg['cr'], phi, radial_phi,
+                  int(seg['merge'] > 0), seg['merge'], 0, .01]
+        for j, value in enumerate(values):
+            lines.append('#%d = %s' % (4982 - i * 11 + j, _fmt(value)))
+        previous = point
+    return '\n'.join(lines)
+
+
 def build_radius_flip_gcode(polyline_feature):
     """Reverse the first line's reference for an opposite-side starting radius.
 
@@ -1546,7 +1596,7 @@ def _fillet_vertex(a, v, c, radius, flip=False):
     return [(z, r * DIAMETER_MODE) for z, r in [t1] + _densify_arc(*t1, arc)]
 
 
-def _chamfer_vertex(a, v, c, length, style, second=0.0, flip=False):
+def _chamfer_vertex(a, v, c, length, style, second=0.0):
     """Chamfer endpoints in (Z, radius), matching the line-to merge options."""
     d1, d2 = (a[0] - v[0], a[1] - v[1]), (c[0] - v[0], c[1] - v[1])
     l1, l2 = math.hypot(*d1), math.hypot(*d2)
@@ -1558,12 +1608,12 @@ def _chamfer_vertex(a, v, c, length, style, second=0.0, flip=False):
         return None
     p = n = length
     if style == 21:
-        p, n = (second, length) if flip else (length, second)
+        p, n = length, second
     elif style == 22:
         if second <= .5 or gamma + second >= 179.0:
             return None
         other = length * math.sin(math.radians(second)) / math.sin(math.radians(gamma + second))
-        p, n = (other, length) if flip else (length, other)
+        p, n = length, other
     if min(p, n) <= EPS or p >= l1 - EPS or n >= l2 - EPS:
         return None
     return ((v[0] + p * u1[0], v[1] + p * u1[1]),
@@ -2589,7 +2639,7 @@ def rough_radius_bounds(polyline_feature):
     return min(b, lo_r), max(e, hi_r)
 
 
-def ext_dz(polyline_feature, end='front'):
+def ext_dz(polyline_feature, end='front', phase='rough'):
     """Signed Z displacement the tangential extension adds at one end, or 0.0.
 
     NOT the extension length. The extension runs along the segment's own
@@ -2609,8 +2659,8 @@ def ext_dz(polyline_feature, end='front'):
     extension is set, so adding it is byte-identical by construction, and it
     cannot disagree with the record array about where the profile ended.
     """
-    plain = resolve_points(polyline_feature, extend=False)
-    full = resolve_points(polyline_feature)
+    plain = resolve_points(polyline_feature, extend=False, phase=phase)
+    full = resolve_points(polyline_feature, phase=phase)
     if not plain or not full or len(plain) < 2 or len(full) < 2:
         return 0.0
     i = 0 if end == 'front' else -1
@@ -2636,8 +2686,9 @@ def build_rough_bounds_gcode(polyline_feature):
             '(how much further in Z the BACK extension reaches - the roughing)\n'
             '(sweep takes its far bound from the record array, which is built)\n'
             '(from the raw items and never sees an extension. 0.0 when off.)\n'
-            '#<_pl_ext_bk_dz> = %s'
-            % (_fmt(b), _fmt(e), _fmt(ext_dz(polyline_feature, 'back'))))
+            '#<_pl_ext_bk_dz> = %s\n#<_pl_ext_fr_dz> = %s'
+            % (_fmt(b), _fmt(e), _fmt(ext_dz(polyline_feature, 'back')),
+               _fmt(ext_dz(polyline_feature, 'front'))))
 
 
 def floor_stages(polyline_feature, rough_cut=0.0):
@@ -3532,7 +3583,7 @@ def sub_spans(split_table, level, w_from, w_to, z_dirw, dm=2.0, split=True):
 
 
 def roughing_windows(raw_e_z, raw_l_z, ext_bk_dz=0.0, lim=None,
-                     sections=(), sect_mode=0, sectioning=False, dm=2.0):
+                     sections=(), sect_mode=0, sectioning=False, dm=2.0, ext_fr_dz=0.0):
     """[(w_idx, w_from, w_to, r_lo, r_hi)] - the windows roughing sweeps.
 
     A REPLICA of poly_lathe_mill's o<wh_w> loop. Nothing in the toolpath reads
@@ -3568,7 +3619,7 @@ def roughing_windows(raw_e_z, raw_l_z, ext_bk_dz=0.0, lim=None,
     whose slots 3 and 4 hold the next window's Z pair. Treated as no band, so
     a stale file still roughs the way it used to.
     """
-    e_z, l_z = raw_e_z, raw_l_z + ext_bk_dz
+    e_z, l_z = raw_e_z + ext_fr_dz, raw_l_z + ext_bk_dz
     if lim is not None:
         lo, hi = lim
         e_z = min(max(e_z, lo), hi)
@@ -4028,7 +4079,8 @@ def roughing_call_plan(polyline_feature, rough_cut, back_deg, nose_r=0.0,
     wins = roughing_windows(raw[0][0], raw[-1][0],
                             ext_dz(polyline_feature, 'back'),
                             z_limit_band(polyline_feature),
-                            sects, sect_mode, sectioning, DIAMETER_MODE)
+                            sects, sect_mode, sectioning, DIAMETER_MODE,
+                            ext_fr_dz=ext_dz(polyline_feature, 'front'))
     if not wins:
         return None
 
@@ -5102,6 +5154,8 @@ def project_finish_front(points, begin_z):
     length = math.hypot(dz, dx)
     if length <= 1e-6 or abs(dz) <= .001 * length:
         return list(points)            # a radial entry has no Z projection
+    if (begin_z - z1) * dz > 0:
+        return list(points)            # past the next point would reverse the first cut
     if abs(begin_z - z0) <= EPS:
         return list(points)
     front = (begin_z, x0 + (begin_z - z0) * (x1 - x0) / dz)
@@ -5199,7 +5253,7 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     # matching the emitted program exactly. See analysis/107.
     # Offset in the drawn order and put the result back the way it came, so the
     # cut direction is preserved and only the geometry is corrected.
-    _ref = resolve_points(polyline_feature)
+    _ref = resolve_points(polyline_feature, phase='finish')
     _rev = (len(points) > 1 and len(_ref) > 1
             and (points[0][0] - points[-1][0])
             * (_ref[0][0] - _ref[-1][0]) < 0)
@@ -5216,7 +5270,7 @@ def build_cam_comp_gcode(polyline_feature, nose_r, orient, back_deg=None,
     begin_z = _off('param_b_z')
     if _off('param_fr_z_on'):
         begin_z = min(begin_z, z_limit_abs(polyline_feature, 'front'))
-    begin_z += ext_dz(polyline_feature, 'front')
+    begin_z += ext_dz(polyline_feature, 'front', phase='finish')
     paths = [project_finish_front(p, begin_z) for p in paths]
 
     # EACH PASS MAY BECOME SEVERAL SUB-PATHS, split where the contour meets a
@@ -5637,7 +5691,7 @@ def entry_contour_data(polyline_feature, back_deg, nose_r=0.0,
     if entry_off is None or _to_float(entry_off) <= 0:
         return None
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
-                                clearance)
+                                clearance, phase='rough')
     if not pts or len(pts) < 2:
         return None
     d = polyline_feature.get_param('param_dir')
@@ -5763,7 +5817,7 @@ def floor_contour_data(polyline_feature, back_deg, nose_r=0.0,
     # cost testing_15_2 nine of its 29 levels - the only thing that may change
     # here is the ALLOWANCE.
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r,
-                                flank_len, clearance, orient)
+                                flank_len, clearance, orient, phase='rough')
     if not pts or len(pts) < 2:
         return None
     d = polyline_feature.get_param('param_dir')
@@ -6096,7 +6150,7 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     if max(stop_x, stop_z) <= 0:
         return ''
     pts, _soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
-                               clearance)
+                               clearance, phase='rough')
     if not pts or len(pts) < 2:
         return ''
     d = polyline_feature.get_param('param_dir')
@@ -6126,14 +6180,14 @@ def build_stop_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
 
 
 def finish_profile(polyline_feature, back_deg, nose_r=0.0, flank_len=0.0,
-                   clearance=0.0, orient=None):
+                   clearance=0.0, orient=None, phase='finish'):
     """(points, soft) - the contour the finishing passes should follow.
 
     Returns the hard contour and soft=False when nothing constrains it: no back
     angle, the flank switch off, or an envelope that comes out identical.
     """
     corners = []
-    points = resolve_points(polyline_feature, corners)
+    points = resolve_points(polyline_feature, corners, phase=phase)
     if not points or len(points) < 2:
         return points, False
     if back_deg is None or back_deg <= 0:
@@ -6450,7 +6504,7 @@ def unreachable_spans(polyline_feature, back_deg, tol=0.01, flank_len=0.0,
 
     What the validation message reports, and what the preview colours.
     """
-    hard = resolve_points(polyline_feature)
+    hard = resolve_points(polyline_feature, phase='finish')
     soft, is_soft = finish_profile(polyline_feature, back_deg, 0.0, flank_len,
                                    clearance)
     if not is_soft:
@@ -6483,7 +6537,7 @@ def front_unreachable_spans(polyline_feature, front_deg, tol=0.01,
     # the same way for the trailing flank, and the two must agree.
     if front_deg is None or front_deg <= 0:
         return []
-    hard = resolve_points(polyline_feature)
+    hard = resolve_points(polyline_feature, phase='finish')
     if not hard or len(hard) < 2:
         return []
     d = polyline_feature.get_param('param_dir')
@@ -6574,7 +6628,7 @@ def build_finish_contour_gcode(polyline_feature, back_deg, nose_r=0.0,
     """
     pts, is_soft = finish_profile(polyline_feature, back_deg, nose_r, flank_len,
                                   clearance)
-    if not is_soft:
+    if not is_soft and not any(tangent_extensions(polyline_feature, 'finish')):
         return ''
 
     # Kept for the record: tracing this contour under native compensation used

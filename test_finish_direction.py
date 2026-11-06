@@ -30,6 +30,8 @@ def pure_checks():
         radial = [(0, 20 * scale), (0, 40 * scale), (-scale, 40 * scale)]
         assert L.project_finish_front(radial, scale) == radial
         assert L.project_finish_front(points, -scale) == points
+        rounded = [(.5 * scale, 15 * scale), (.48 * scale, 16 * scale), (-5 * scale, 25 * scale)]
+        assert L.project_finish_front(rounded, 0) == rounded, 'front projection ran past the first chord'
     counts = [72, 3, 72, 3, 72, 3]
     bases, owner = L.cam_path_layout(counts, split=True)
     intervals = [(b, b+2*n) for b, n in zip(bases, counts)]

@@ -419,6 +419,7 @@ o<poly_lathe_mill> sub
         o<sr_side> endif
         #<e_z> = #[#<r_pds> + 1]
         #<l_z> = #[#<r_pds> + [#[#<r_pds>] - 1] * 8 + 1]
+        #<e_z> = [#<e_z> + #<_pl_ext_fr_dz>]
         (and on past it by the back extension. The record array is built from)
         (the raw polyline items and never sees an extension, so this bound -)
         (the profile's last Z - stopped roughing short while the contour)

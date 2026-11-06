@@ -64,7 +64,7 @@ def main():
         for name, front, changes in cases:
             data = copy.deepcopy(saved)
             poly = data.find('.//feature[@type="polyline"]')
-            values = dict(sec_ext_fr=front, sec_ext_bk=0, dir=0,
+            values = dict(sec_ext_fr=front, sec_ext_bk=0, dir=0, ext_fr=0, ext_bk=0,
                           sectioning=1, sec_len=5, li_len=0, li_rad=0)
             values.update(changes)
             units = values.pop('units', 21)

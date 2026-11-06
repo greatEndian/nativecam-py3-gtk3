@@ -182,7 +182,11 @@ def main():
         assert max(p['zs'] for p in faces) - min(p['zs'] for p in faces) < .0001, (name, 'inconsistent front reference')
         assert results[name]['lead_lengths']
         assert all(abs(length-1) < .001 for length in results[name]['lead_lengths']), 'configured lead lost'
-    assert all(abs(p['sfz']-p['apz']-.2) < .0001 for p in results['front']['face_entries'])
+    before = results['disabled']['face_entries']
+    after = results['front']['face_entries']
+    assert len(before) == len(after)
+    assert all(abs((b['sfz']-b['apz']) - (a['sfz']-a['apz']) - .2) < .0001
+               for a, b in zip(before, after)), 'section extension did not add to the roughing extension'
     assert not results['front']['air_radials'], 'radial cutting feeds through already-cleared stock'
     for row in results['front']['cut_ends']:
         cut = dict((k, float(v)) for k, v in re.findall(r'(\w+)=([-\d.]+)', row))
