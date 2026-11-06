@@ -471,8 +471,10 @@ def parse_program(path, ini_path=None):
 
 
 _FLAT_RE = {
+    'comment': re.compile(r'COMMENT\("(.*)"\)'),
     'units': re.compile(r'USE_LENGTH_UNITS\(CANON_UNITS_(\w+)\)'),
     'plane': re.compile(r'SELECT_PLANE\(CANON_PLANE_(\w+)\)'),
+    'work_offset': re.compile(r'SET_G5X_OFFSET\(([1-9]),\s*([^)]*)\)'),
     'feed': re.compile(r'SET_FEED_RATE\(([-0-9.]+)\)'),
     'speed': re.compile(r'SET_SPINDLE_SPEED\([^,]*,\s*([-0-9.]+)\)'),
     'cw': re.compile(r'START_SPINDLE_CLOCKWISE\('),
@@ -482,6 +484,9 @@ _FLAT_RE = {
     'change': re.compile(r'CHANGE_TOOL\('),
     'flood_on': re.compile(r'FLOOD_ON\('),
     'flood_off': re.compile(r'FLOOD_OFF\('),
+    'command': re.compile(r'\b(PROGRAM_STOP|OPTIONAL_PROGRAM_STOP|MIST_ON)\(\)'),
+    'output_bit': re.compile(r'\b(SET|CLEAR)_(MOTION|AUX)_OUTPUT_BIT\((\d+)\)'),
+    'output_value': re.compile(r'\bSET_(MOTION|AUX)_OUTPUT_VALUE\((\d+),\s*([-0-9.]+)\)'),
     'dwell': re.compile(r'DWELL\(([-0-9.]+)\)'),
     'end': re.compile(r'PROGRAM_END\('),
 }
@@ -490,10 +495,9 @@ FLAT_HEADER = """(NativeCAM - the generated program as plain G-code)
 (Produced by running the real interpreter over ncam.ngc and writing down what)
 (it actually did, so every subroutine, loop and expression is already gone and)
 (every number here is a number the machine moves to)
-(COORDINATES ARE ABSOLUTE, in the SAME coordinate system the original program)
-(used - work offsets are NOT baked in. Verified: setting G54 Z to 12.0 in the)
-(var file leaves this output byte-identical, so it runs under the same G54 the)
-(program was written for, not under machine coordinates.)
+(COORDINATES ARE ABSOLUTE in the original program's work coordinate systems.)
+(Work coordinate selections G54 through G59.3 are preserved. Use the same)
+(work offsets as the original program; their values are NOT baked in.)
 (Cutter compensation IS already applied: these are TOOL CONTROL POINTS, not)
 (the programmed contour, so do not run this with G41/G42 active as well.)
 (X is a DIAMETER, as everywhere else in NativeCAM; arc I offsets are radius)
@@ -507,6 +511,23 @@ def _num(v):
     return s if s not in ('', '-0') else '0'
 
 
+def flat_setup_lines(source):
+    """Reset-only blocks compatible with absolute, compensated lathe output."""
+    allowed = {18, 40, 49, 90, 92.1, 94, 54}
+    result = []
+    for line in source.splitlines():
+        code = re.sub(r'\([^)]*\)', '', line).split(';', 1)[0].strip()
+        if not code:
+            continue
+        if not re.fullmatch(r'(?:G\s*\d+(?:\.\d+)?\s*)+', code, re.IGNORECASE):
+            return None
+        words = re.findall(r'G\s*(\d+(?:\.\d+)?)', code, re.IGNORECASE)
+        if any(float(word) not in allowed for word in words):
+            return None
+        result.append(code.upper())
+    return result or None
+
+
 def flatten_canon(canon):
     """The canon dump rewritten as plain, modal G-code.
 
@@ -514,7 +535,7 @@ def flatten_canon(canon):
     expressions - true, but it does not tell you where the tool goes. This is
     the other half: what the interpreter made of it.
 
-    Only the begin/end markers survive from the comments. The generated file
+    Custom G-code comments and begin/end markers survive. The generated file
     carries some 26,000 comment lines, nearly all of them subroutine headers
     repeated once per call, and keeping them buries the motion they describe.
 
@@ -523,11 +544,17 @@ def flatten_canon(canon):
     diameter, and the arc offsets are left in radius because that is what the
     interpreter wants whichever mode it is in.
     """
-    out = [FLAT_HEADER.rstrip('\n')]
+    out = [FLAT_HEADER.rstrip('\n'), 'G90 G40']
     pos = None               # (x, y, z) in canon units, X radius
-    g_modal = None
     feed = None
+    feed_mode = None
+    spindle_cap = 0.0
+    work_index = None
+    work_offset = (0.0, 0.0, 0.0)
+    length_units = None
+    unit_scale = 1.0
     depth = 0
+    custom_scopes = []
 
     def xz(x, z):
         words = []
@@ -542,12 +569,11 @@ def flatten_canon(canon):
             out.append(text)
 
     def emit(g, words, indent):
-        nonlocal g_modal
         if not words:
             return                              # a move to where we already are
-        head = [] if g == g_modal else [g]
-        g_modal = g
-        out.append('  ' * indent + ' '.join(head + words))
+        if g in ('G1', 'G2', 'G3') and feed is not None:
+            words.append('F' + _num(feed))
+        out.append('  ' * indent + ' '.join([g] + words))
 
     for line in canon.splitlines():
         m = _RE['comment'].search(line)
@@ -560,8 +586,42 @@ def flatten_canon(canon):
             elif depth:
                 depth -= 1
                 out.append('  ' * depth + '(end %s)' % name)
+                while custom_scopes and custom_scopes[-1] > depth:
+                    custom_scopes.pop()
             # ncam.ngc's header carries a couple of (end ...) comments with no
             # begin of their own; printing them would read as a listing bug
+            continue
+
+        m = _FLAT_RE['comment'].search(line)
+        if m:
+            text = m.group(1)
+            if text == 'ncam custom gcode begin':
+                custom_scopes.append(depth)
+            elif text == 'ncam custom gcode end':
+                if custom_scopes:
+                    custom_scopes.pop()
+            elif text.startswith('ncam flat setup: '):
+                commands = flat_setup_lines(text[len('ncam flat setup: '):])
+                if commands is not None:
+                    out.extend('  ' * depth + command for command in commands)
+            elif text.startswith(('custom gcode lines author :', 'CALL to included file ')) and not custom_scopes:
+                custom_scopes.append(depth)      # already-generated legacy files
+            elif text.startswith('Operator note:') or (custom_scopes and not text.startswith('interpreter:')):
+                out.append('  ' * depth + '(' + text + ')')
+            continue
+
+        m = _FLAT_RE['work_offset'].search(line)
+        if m:
+            index = int(m.group(1))
+            offset = tuple(float(v) for v in m.group(2).split(',')[:3])
+            if pos is not None:
+                # A frame change moves the current coordinates without moving
+                # the tool; arc I/K must still be measured from that position.
+                pos = tuple(p + old - new for p, old, new in zip(pos, work_offset, offset))
+            work_offset = offset
+            if index != work_index:
+                out.append('G%d' % (53 + index) if index <= 6 else 'G59.%d' % (index - 6))
+                work_index = index
             continue
 
         m = _RE['feed'].search(line) or _RE['rapid'].search(line)
@@ -589,15 +649,54 @@ def flatten_canon(canon):
         if m:
             f = float(m.group(1))
             if f > 0 and (feed is None or abs(f - feed) > 1e-6):
-                feed = f
                 out.append('  ' * depth + 'F' + _num(f))
+            feed = f if f > 0 else None
             continue
 
-        # the interpreter restates units and plane on every reset; a listing
-        # that says G21 four times is just noise
+        m = _RE['feed_mode'].search(line)
+        if m:
+            mode = 'G95' if int(float(m.group(1))) == 1 else 'G94'
+            if mode != feed_mode:
+                out.append(mode)
+                feed_mode = mode
+            continue
+
+        m = _RE['spindle_mode'].search(line)
+        if m:
+            spindle_cap = float(m.group(1))
+            if spindle_cap <= 0:
+                out.append('G97')
+            continue
+
+        m = _FLAT_RE['command'].search(line)
+        if m:
+            out.append('  ' * depth + {'PROGRAM_STOP': 'M0', 'OPTIONAL_PROGRAM_STOP': 'M1',
+                                      'MIST_ON': 'M7'}[m.group(1)])
+            continue
+        m = _FLAT_RE['output_bit'].search(line)
+        if m:
+            code = (62 if m.group(2) == 'MOTION' else 64) + (m.group(1) == 'CLEAR')
+            out.append('  ' * depth + 'M%d P%s' % (code, m.group(3)))
+            continue
+        m = _FLAT_RE['output_value'].search(line)
+        if m:
+            code = 67 if m.group(1) == 'MOTION' else 68
+            out.append('  ' * depth + 'M%d E%s Q%s' % (code, m.group(2), _num(float(m.group(3)))))
+            continue
+
+        # The interpreter restates units and plane on every reset.
         m = _FLAT_RE['units'].search(line)
         if m:
-            once('G21' if m.group(1).startswith('MM') else 'G20')
+            units = 'G21' if m.group(1).startswith('MM') else 'G20'
+            scale = 1.0 if units == 'G21' else 25.4
+            ratio = unit_scale / scale
+            work_offset = tuple(v * ratio for v in work_offset)
+            if pos is not None:
+                pos = tuple(v * ratio for v in pos)
+            unit_scale = scale
+            if units != length_units:
+                out.append(units)
+                length_units = units
             once('G7 (diameter mode)')
             continue
         m = _FLAT_RE['plane'].search(line)
@@ -613,7 +712,9 @@ def flatten_canon(canon):
             continue
         m = _FLAT_RE['speed'].search(line)
         if m:
-            out.append('S' + _num(float(m.group(1))))
+            # LinuxCNC requires S on the same block that selects G96.
+            prefix = 'G96 D' + _num(spindle_cap) + ' ' if spindle_cap > 0 else ''
+            out.append(prefix + 'S' + _num(float(m.group(1))))
             continue
         if _FLAT_RE['cw'].search(line):
             out.append('M3')

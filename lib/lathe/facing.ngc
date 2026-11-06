@@ -94,7 +94,7 @@ o<facing> sub
 	#<f_lox> = COS[#<lo_ang>]
 
 	G0 Z[#<begin_z> + #<_z_clear> * #<z_factor>]
-	M#<_cooling_mode>
+	o<set_cooling> CALL
 
 	(COMPENSATION IS ALL OR NOTHING: roughing has no interpreter compensation)
 	(in any mode, so with nose comp on the geometry reaches the COORDINATES.)

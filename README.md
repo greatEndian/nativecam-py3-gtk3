@@ -99,6 +99,22 @@ follows the local compensated profile tangent. This also works with Sectioning
 off. Prefinish uses the finishing extensions. Older projects retain their
 saved extension lengths in both groups when reopened.
 
+Under **Tool Change → Tool and usage**, set **Dwell after spindle (s)** below
+**Start spindle** and **Dwell after cooling (s)** below **Use cooling**.
+They emit `G4 Pseconds` after `M3`/`M4` and `M7`/`M8`, respectively. Coolant
+waits when it turns on; repeated operations with coolant already on do not
+wait again. Zero disables a wait. Values stay in seconds in inch programs.
+
+Each operation has an **Operator notes** field at the end of its properties.
+Notes are saved in the project and printed beside the operation in Raw and
+Flat G-code. **Miscellaneous → Comment** inserts a standalone operator comment.
+Flat preserves executable reset/setup blocks from manual and inserted-file
+G-code. Movement is expanded through the interpreter; operator notes remain
+comments.
+Flat also states the active work coordinate system, including `G54`, before
+motion and preserves changes through `G59.3`; no manual setup feature is needed
+to select the program's work offset.
+
 **View → Remember Window and Layout** is enabled by default. It restores the
 NativeCAM window size and position, pane dividers, view layout and preview
 display options from the previous session. Turn it off to stop automatic

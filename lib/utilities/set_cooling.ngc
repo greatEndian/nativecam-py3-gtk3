@@ -1,0 +1,10 @@
+o<set_cooling> sub
+    #<starting> = [[[#<_cooling_mode> EQ 7] AND [#<_mist> EQ 0]] OR [[#<_cooling_mode> EQ 8] AND [#<_flood> EQ 0]]]
+    M#<_cooling_mode>
+    (EXISTS keeps standalone callers without NativeCAM defaults compatible.)
+    o<cooling_delay_defined> if [EXISTS[#<_cooling_start_delay>]]
+        o<cooling_start_wait> if [#<starting> AND [#<_cooling_start_delay> GT 0]]
+            G4 P#<_cooling_start_delay>
+        o<cooling_start_wait> endif
+    o<cooling_delay_defined> endif
+o<set_cooling> endsub

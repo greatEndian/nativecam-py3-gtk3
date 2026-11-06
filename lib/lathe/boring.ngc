@@ -33,7 +33,7 @@ o<boring> sub
 	o13 endif
 	G0 X[#<begin_x> - #<_ix_clear>]
 	
-	M#<_cooling_mode>
+	o<set_cooling> CALL
 
 	o121 if [#<_tool_usage> LE 1]
 		F#<_rough_feed>

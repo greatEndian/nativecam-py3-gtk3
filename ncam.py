@@ -45,6 +45,7 @@ import tkinter as Tkinter
 import math
 import contextlib
 import warnings
+import textwrap
 
 # check for X11 vs Wayland for XEMBED compatibility
 try:
@@ -1580,7 +1581,6 @@ class CellRendererMx(gtk.CellRendererText):
         # Keep the selected cell's input independent of those later paints.
         edit_value = self.param_value
         edit_type = self.editdata_type
-        edit_text = self.get_property('text')
 
         def queue_editor(callback):
             self._editor_pending = True
@@ -1672,8 +1672,8 @@ class CellRendererMx(gtk.CellRendererText):
             self.textedit = gtk.TextView()
             self.textedit.set_editable(True)
             self.textbuffer = self.textedit.get_buffer()
-            self.textedit.set_wrap_mode(gtk.WRAP_WORD)
-            self.textbuffer.set_property('text', edit_text)
+            self.textedit.set_wrap_mode(gtk.WrapMode.WORD)
+            self.textbuffer.set_property('text', edit_value)
 
             self.textedit_window.connect('key-press-event', self.text_edit_keyhandler)
             self.textedit_window.connect('focus-out-event', self.text_edit_focus_out, path)
@@ -1692,11 +1692,12 @@ class CellRendererMx(gtk.CellRendererText):
             self.textedit_window.move(tree_x, y + self.cell_area.height)
             self.textedit_window.resize(tree_w, self.cell_area.height + 60)
             self.textedit_window.show_all()
+            self.textedit.grab_focus()
 
             response = self.textedit_window.run()
             if response == gtk.ResponseType.OK:
                 (iter_first, iter_last) = self.textbuffer.get_bounds()
-                text = self.textbuffer.get_text(iter_first, iter_last)
+                text = self.textbuffer.get_text(iter_first, iter_last, True)
                 self.edited(self, path, text)
                 
             self.txt_is_closing = True
@@ -2094,6 +2095,7 @@ class Feature(object):
 
         parent = self
         exec(self.attr['init'])
+        self._ensure_operator_notes()
 
     def from_xml(self, xml) :
         self.attr = {}
@@ -2103,6 +2105,49 @@ class Feature(object):
         self.param = []
         for p in xml :
             self.param.append(Parameter(xml = p))
+        self._ensure_operator_notes()
+
+    def _ensure_operator_notes(self):
+        if self.get_type() != 'comment' and self.get_param('param_operator_notes') is None:
+            self.param.append(Parameter(ini={
+                'name': _('Operator notes'), 'type': 'text', 'value': '',
+                'icon': 'comment.png',
+                'tool_tip': _('Multiline notes printed with this feature in Raw and Flat G-code.'),
+            }, ini_id='param_operator_notes'))
+
+    @staticmethod
+    def comment_lines(text, label):
+        # Prose must neither close its G-code comment nor become a template tag.
+        return ''.join('(%s: %s)\n' % (label, line.replace('(', '[').replace(')', ']'))
+                       for raw in text.splitlines() if raw.strip()
+                       for line in textwrap.wrap(raw, width=160, replace_whitespace=False,
+                                                 drop_whitespace=False))
+
+    def get_operator_notes(self):
+        param = self.get_param('param_operator_notes')
+        return self.comment_lines(param.get_value(), 'Operator note') if param is not None else ''
+
+    @staticmethod
+    def _with_flat_setup(program, start, end):
+        from ncam_preview import flat_setup_lines
+        before, opening, rest = program.partition(start)
+        body, closing, after = rest.partition(end)
+        if not opening or not closing:
+            return program
+        setup = flat_setup_lines(body)
+        if setup is None:
+            return program
+        records = ''.join('(ncam flat setup: %s)\n' % line for line in setup)
+        return before + opening + '\n' + records + body + closing + after
+
+    def get_call(self, line_leader=''):
+        if self.get_type() == 'comment':
+            param = self.get_param('param_n')
+            return self.comment_lines(param.get_value(), 'Operator note') if param is not None else ''
+        call = self.process(self.attr['call'], line_leader)
+        if self.get_type() == 'g-code':
+            call = self._with_flat_setup(call, '(ncam custom gcode begin)', '(ncam custom gcode end)')
+        return call
 
     def to_xml(self) :
         xml = etree.Element("feature")
@@ -2125,6 +2170,9 @@ class Feature(object):
         s = self.attr["definitions"] if "definitions" in self.attr else ''
         if s != '' :
             s = self.process(s)
+            if self.get_type() == 'incl_gcode':
+                sub = 'o<%s_sub>' % self.get_attr('id')
+                s = self._with_flat_setup(s, sub + ' sub', sub + ' endsub')
         return s
 
     def include(self, srce) :
@@ -2142,6 +2190,9 @@ class Feature(object):
 
     def replace_params(self, s):
         for p in self.param :
+            if (p.get_attr('call') == '#param_operator_notes'
+                    or (self.get_type() == 'comment' and p.get_type() == 'text')):
+                continue              # literal prose is emitted outside template expansion
             if "call" in p.attr and "value" in p.attr :
                 if p.attr['type'] == 'text' :
                     note_lines = p.get_value().split('\n')
@@ -2946,6 +2997,7 @@ class Preferences(object):
 
         if self.cat_name in ['mill', 'lathe'] :
             self.default += ("#<_spindle_speed_up_delay>  = " + self.ngc_spindle_speedup_time + "\n\n")
+            self.default += ("#<_cooling_start_delay>     = 0.0\n\n")
 
         if self.cat_name == 'plasma' :
             self.default += ("#<_plasma_test_mode>        = " + self.plasma_test_mode + "\n\n")

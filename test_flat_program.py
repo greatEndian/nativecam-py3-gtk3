@@ -19,14 +19,16 @@ total feed length, and the SET of feed endpoints.
 Two properties of the flat file are stated in its own header and both were
 verified rather than assumed:
 
-- work offsets are NOT baked in. Setting G54 Z to 12.0 in a scratch var file
-  leaves the canon output byte-identical, so it runs under the same G54 the
-  original was written for.
+- work offsets are NOT baked in, and G54 through G59.3 selections survive.
+  Replaying with distinct, nonzero offsets and G55 initially selected must
+  give the same physical coordinates, including arcs after a frame change.
 - cutter compensation IS applied - the coordinates are tool control points -
   so it must not be run with G41/G42 active as well.
 """
 import math
 import os
+from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +60,87 @@ def stats(tp):
                                        if m.kind == 'rapid'])
 
 
+def test_work_coordinates(directory, preview):
+    """Replay with G55 remembered and distinct, nonzero work offsets."""
+    root = Path(directory)
+    var = root / 'work-offsets.var'
+    live_var = Path(os.path.dirname(INI)) / preview.ini_value(INI, 'RS274NGC', 'PARAMETER_FILE')
+    before = live_var.read_bytes()
+    values = dict(line.split() for line in before.decode().splitlines() if line.strip())
+    values['5220'] = '2'
+    for index in range(1, 10):
+        for axis in range(1, 11):
+            values[str(5200 + 20 * index + axis)] = '0'
+        values[str(5201 + 20 * index)] = str(3 + 14 * (index - 1))
+        values[str(5203 + 20 * index)] = str(11 + 26 * (index - 1))
+    for key in range(5210, 5220):
+        values[str(key)] = '0'
+    var.write_text(''.join('%s %s\n' % (k, v) for k, v in sorted(values.items(), key=lambda kv: int(kv[0]))))
+    ini = root / 'work-offsets.ini'
+    ini.write_text(re.sub(r'(?m)^PARAMETER_FILE\s*=.*$', 'PARAMETER_FILE = ' + str(var),
+                         Path(INI).read_text()))
+
+    def canon(name, code):
+        path = root / (name + '.ngc')
+        path.write_text(code)
+        dump = root / (name + '_dump')
+        dump.mkdir()
+        raw, error = preview._canon_dump(str(path), str(ini), str(dump))
+        assert not error and 'STRAIGHT_FEED(' in raw, (name, error)
+        return raw
+
+    def machine_moves(raw):
+        offset, unit, result = (0, 0, 0), 1, []
+        for line in raw.splitlines():
+            m = re.search(r'USE_LENGTH_UNITS\(CANON_UNITS_(\w+)\)', line)
+            if m:
+                new_unit = 25.4 if m[1] == 'INCHES' else 1
+                offset = tuple(v * unit / new_unit for v in offset)
+                unit = new_unit
+            m = re.search(r'SET_G5X_OFFSET\(([^)]*)\)', line)
+            if m:
+                v = [float(x) for x in m[1].split(',')]
+                index, offset = int(v[0]), v[1:4]
+            m = re.search(r'(STRAIGHT_FEED|STRAIGHT_TRAVERSE|ARC_FEED)\(([^)]*)\)', line)
+            if not m:
+                continue
+            v = [float(x) for x in m[2].split(',')]
+            x, z = (v[1], v[0]) if m[1] == 'ARC_FEED' else (v[0], v[2])
+            row = (m[1], index, (x + offset[0]) * unit, (z + offset[2]) * unit)
+            if m[1] == 'ARC_FEED':
+                row += ((v[3] + offset[0]) * unit, (v[2] + offset[2]) * unit, v[4])
+            result.append(row)
+        return result
+
+    def replay(name, body, required):
+        raw = canon(name, body)
+        flat = preview.flatten_canon(raw)
+        active = [s.strip() for s in flat.splitlines() if s.strip() and not s.lstrip().startswith('(')]
+        first_move = next(i for i, line in enumerate(active) if re.match(r'G[0123]\b', line))
+        check('%s selects %s before its first move without manual setup' % (name, required),
+              required in active[:first_move])
+        a, b = machine_moves(raw), machine_moves(canon(name + '_flat', flat))
+        same = len(a) == len(b) and all(
+            p[:2] == q[:2] and len(p) == len(q)
+            and max(abs(x - y) for x, y in zip(p[2:], q[2:])) < .005
+            for p, q in zip(a, b))
+        check('%s replays at the same physical coordinates with G55 initially selected' % name,
+              same, '%s against %s' % (a[:2], b[:2]))
+        return flat
+
+    setup = 'G21 G18 G7 G90 G94 '
+    for index in range(1, 10):
+        code = 'G%d' % (53 + index) if index <= 6 else 'G59.%d' % (index - 6)
+        replay('work_%d' % index, setup + code + '\nG0 X40 Z2\nG1 X30 Z-3 F100\nM2\n', code)
+    replay('work_switch_arc', setup + 'G54\nG0 X40 Z2\nG1 X30 Z0 F100\n'
+           'G55\nG91 G3 X-10 Z-5 I-5 K0\nG90\nG1 X20 Z-20\n'
+           'G54\nG1 X30 Z0\nM2\n', 'G54')
+    replay('work_switch_inch', 'G20 G18 G7 G90 G94 G54\n'
+           'G0 X2 Z1\nG1 X1 Z0 F4\nG55\nG91 G3 X-0.2 Z-0.1 I-0.1 K0\n'
+           'G90 G1 X1 Z-1\nG21 G54\nG1 X30 Z-10\nM2\n', 'G54')
+    check('work-coordinate verification leaves the live variable file unchanged', live_var.read_bytes() == before)
+
+
 def main():
     if not (os.path.isfile(INI) and os.path.isfile(GEN)):
         print('SKIP  demo config or generator not present')
@@ -83,6 +166,7 @@ def main():
 
     d = tempfile.mkdtemp(prefix='flat_')
     try:
+        test_work_coordinates(d, P)
         out = os.path.join(d, 'p.ngc')
         subprocess.run([sys.executable, GEN, '--ini', INI, '--project',
                         PROJECT, '--out', out, '--config-copy',

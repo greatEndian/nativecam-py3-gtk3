@@ -389,8 +389,9 @@ class NCamProjectIOMixin:
                 # prepended either way, and the pass below walks the same
                 # features in the same order.
                 def_order.append(f)
+                gcode += f.get_operator_notes()
                 gcode += f.process(f.attr["before"], ldr)
-                gcode += f.process(f.attr["call"], ldr)
+                gcode += f.get_call(ldr)
             # an "items"-type param row sits between a feature and its item
             # children in the treestore (Feature -> Parameter(items) ->
             # child Feature) - skip over it so children still reach the
@@ -676,7 +677,8 @@ class NCamProjectIOMixin:
                                 call = p.attr['call']
                                 for q in f_B.param :
                                     if q.attr['call'] == call :
-                                        q.attr['path'] = p.attr['path']
+                                        if 'path' in p.attr:
+                                            q.attr['path'] = p.attr['path']
                                         if 'value' in p.attr :
                                             q.attr['value'] = p.attr['value']
                                         # BOUNDS ARE NOT COPIED, on purpose. `q` is a
@@ -725,6 +727,9 @@ class NCamProjectIOMixin:
                                         if 'grayed' in p.attr :
                                             q.attr['grayed'] = p.attr['grayed']
                                         break
+                            if (f_B.get_type() == 'tool_change'
+                                    and f_A.get_param('param_spindle_dwell') is None):
+                                f_B.get_param('param_spindle_dwell').attr['value'] = self.pref.ngc_spindle_speedup_time
                             if f_B.get_type() == 'polyline':
                                 # Old projects applied one pair to both phases.
                                 for end in ('fr', 'bk'):

@@ -35,7 +35,7 @@ o<taper> sub
 	#<rough_cut_z_total> = [#<cut_x_total> * SIN[90 - #<angle>] / SIN[#<angle>]]
 	#<z_step> = [#<rough_cut_z_total> / #<rough_passes> / #<_diameter_mode>]
 
-	M#<_cooling_mode>
+	o<set_cooling> CALL
 
 	(COMPENSATION IS ALL OR NOTHING - if it is on for this operation it is on)
 	(for the roughing passes too, not just the finish. A roughing wall that)

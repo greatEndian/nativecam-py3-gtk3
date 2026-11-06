@@ -2,9 +2,13 @@ o<set_spindle_rpm> sub
 (author : Fernand Veilleux)
 (CALL #1 = spindle speed, #2 = feed)
     #20 = #<_rpm>
-    M#<_spindle_dir> S#1 M#<_cooling_mode>
-    o11 if [#1 GT #20]
-        G4 P#<_spindle_speed_up_delay>
+    #<starting> = [[#<_spindle_on> EQ 0] OR [[#<_spindle_dir> EQ 3] AND [#<_spindle_cw> EQ 0]] OR [[#<_spindle_dir> EQ 4] AND #<_spindle_cw>]]
+    M#<_spindle_dir> S#1
+    o11 if [[[#<_spindle_dir> EQ 3] OR [#<_spindle_dir> EQ 4]] AND [[#1 GT #20] OR #<starting>]]
+        o<spindle_start_wait> if [#<_spindle_speed_up_delay> GT 0]
+            G4 P#<_spindle_speed_up_delay>
+        o<spindle_start_wait> endif
     o11 endif
+    o<set_cooling> CALL
     F#2
 o<set_spindle_rpm> endsub

@@ -84,6 +84,8 @@ def child(case, root):
         app.pref.autosave = False
         window.show_all()
         pane = app.preview_pane
+        # Earlier launches can remember Raw/Flat; map Plot before waiting for it.
+        pane.widget.set_current_page(0)
         wait_for(gtk, lambda: pane.area.get_window() is not None)
         check(case + ': preview receives the correct machine INI',
               pane.ini_path == str(ini))

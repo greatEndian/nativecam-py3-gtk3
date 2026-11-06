@@ -158,7 +158,12 @@ flake8 ncam_*.py lathe_sections.py --builtins="_" --select=E9,F63,F7,F82
 python3 test_lathe_validation.py   # checks cfg/lathe subroutine calls against .ngc signatures
 python3 test_coord_mapping.py      # turn-mill coordinate mapping math
 python3 test_vkb.py                # virtual keyboard arithmetic parser
+xvfb-run -a python3 test_gcode_editors.py  # multiline G-code editing and included-file selection
+xvfb-run -a python3 test_flat_custom_gcode.py  # custom commands and per-move feeds survive Flat export
+xvfb-run -a python3 test_flat_program.py  # work-offset selection and physical-coordinate replay, including arcs
+xvfb-run -a python3 test_operator_notes.py  # operator notes and setup-only code in the GUI Flat preview
 xvfb-run -a python3 test_roughing_tangent.py  # per-pass roughing extensions, directions and units
+xvfb-run -a python3 test_startup_dwells.py  # coolant/spindle start waits, units, Flat replay and migration
 
 # Whole-catalogue sweeps - slow (they generate every project), run before a commit
 python3 test_project_sweep.py      # every lathe project still generates and runs
